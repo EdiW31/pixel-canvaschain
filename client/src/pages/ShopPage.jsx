@@ -6,14 +6,6 @@ import ShopCard from '../components/ShopCard';
 import Header from '../components/Header';
 
 /**
- * ShopPage - Credit purchase page
- *
- * Features:
- * - Displays all 5 tier cards in a grid
- * - Shows wallet balance at top
- * - "Play" button (enabled if credits > 0)
- * - Protected route (redirects to /login if not connected)
- *
  * [FUTURE: Smart contract integration for purchases]
  * [FUTURE: Display transaction history]
  */
