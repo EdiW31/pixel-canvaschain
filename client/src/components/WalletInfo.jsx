@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
-import { useMockWallet } from '../hooks/useMockWallet';
+import { useWallet } from '../hooks/useWallet';
+import { useApp } from '../context/AppContext';
 
 /**
  * WalletInfo - Displays wallet connection status and balances
@@ -12,7 +13,9 @@ import { useMockWallet } from '../hooks/useMockWallet';
  */
 
 const WalletInfo = () => {
-  const { isConnected, getTruncatedAddress, egld, credits } = useMockWallet();
+  const { isConnected, getTruncatedAddress, egld } = useWallet();
+  const { wallet } = useApp();
+  const credits = wallet.credits;
 
   if (!isConnected) {
     return (

@@ -1,24 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMockWallet } from '../hooks/useMockWallet';
+import { useWallet } from '../hooks/useWallet';
 
 /**
- * LoginPage - Wallet connection screen
+ * LoginPage — MultiversX wallet connection screen (Phase 2)
  *
- * Features:
- * - Centered card design
- * - "Connect Wallet" button
- * - Loading state with spinner
- * - Auto-redirect to /shop after success
- * - Displays generated wallet address
- *
- * [FUTURE: Replace with @multiversx/sdk-dapp ExtensionLogin component]
- * [FUTURE: Support multiple wallet types (xPortal, DeFi Wallet, Web Wallet, Ledger)]
+ * Uses sdk-dapp v5 UnlockPanelManager to open the wallet picker.
+ * Supports: DeFi Browser Extension, xPortal (WalletConnect), Web Wallet, Ledger.
+ * Auto-redirects to /shop after successful login.
  */
 
 const LoginPage = () => {
-  const { isConnected, isConnecting, connectWallet, getTruncatedAddress } = useMockWallet();
+  const { isConnected, openLogin } = useWallet();
   const navigate = useNavigate();
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Redirect if already connected
   useEffect(() => {
@@ -27,8 +22,18 @@ const LoginPage = () => {
     }
   }, [isConnected, navigate]);
 
-  const handleConnect = async () => {
-    await connectWallet();
+  const handleConnect = () => {
+    setIsConnecting(true);
+    openLogin(
+      () => {
+        // onSuccess — sdk-dapp Zustand store updates; useEffect above will redirect
+        setIsConnecting(false);
+      },
+      () => {
+        // onClose — user dismissed the panel without logging in
+        setIsConnecting(false);
+      },
+    );
   };
 
   return (
@@ -49,7 +54,7 @@ const LoginPage = () => {
               Connect Wallet
             </h2>
             <p className="text-sm text-textSecondary">
-              Connect your wallet to start painting on the canvas
+              Connect your MultiversX wallet to start painting on the canvas
             </p>
           </div>
 
@@ -65,25 +70,25 @@ const LoginPage = () => {
           >
             {isConnecting ? (
               <span className="flex items-center justify-center space-x-3">
-                <div className="w-5 h-5 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                 <span>Connecting...</span>
               </span>
             ) : (
-              'Connect Mock Wallet'
+              'Connect Wallet'
             )}
           </button>
 
-          {/* Info */}
+          {/* Supported Wallets Info */}
           <div className="mt-6 p-4 bg-background/50 rounded border border-primary/10">
-            <p className="text-xs text-textSecondary leading-relaxed">
-              <span className="text-accent font-bold">Phase 1:</span> This generates a mock{' '}
-              <span className="font-mono text-primary">erd1...</span> address and assigns you{' '}
-              <span className="text-accent font-bold">100 fake EGLD</span>.
+            <p className="text-xs text-textSecondary leading-relaxed font-bold mb-2">
+              Supported wallets:
             </p>
-            <p className="text-xs text-textSecondary leading-relaxed mt-2">
-              <span className="text-secondary font-bold">Future:</span> Real MultiversX wallet
-              connection via xPortal, Browser Extension, or Web Wallet.
-            </p>
+            <ul className="text-xs text-textSecondary space-y-1">
+              <li>🦊 <span className="text-primary">DeFi Browser Extension</span></li>
+              <li>📱 <span className="text-primary">xPortal Mobile App</span> (via QR)</li>
+              <li>🌐 <span className="text-primary">MultiversX Web Wallet</span></li>
+              <li>🔑 <span className="text-primary">Ledger Hardware Wallet</span></li>
+            </ul>
           </div>
 
           {/* Loading Animation */}
@@ -95,7 +100,7 @@ const LoginPage = () => {
                 <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
               <p className="text-xs text-textSecondary mt-2">
-                Generating wallet address...
+                Opening wallet picker...
               </p>
             </div>
           )}
