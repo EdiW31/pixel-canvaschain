@@ -1,16 +1,14 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
+import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
+import { useContractCredits } from '../hooks/useContractCredits';
 
 /**
- * AppContext - Global state management for Pixel CanvasChain
+ * AppContext — Global state management for Pixel CanvasChain
  *
- * Manages:
- * - Wallet connection state
- * - EGLD and credit balances
- * - Selected paint color
- * - Canvas grid state
- * - Toast notifications
- *
- * [FUTURE: This will integrate with @multiversx/sdk-dapp context providers]
+ * Phase 2: wallet address/egld/isConnected come from @multiversx/sdk-dapp.
+ * Credits are fetched from the smart contract via useContractCredits.
+ * Canvas, color, toast, and zoom state remain local.
  */
 
 const AppContext = createContext();
@@ -24,102 +22,49 @@ export const useApp = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  // Wallet State
-  const [wallet, setWallet] = useState({
-    address: null,
-    isConnected: false,
-    egld: 0,
-    credits: 0,
-  });
+  // ── Real wallet state from sdk-dapp ───────────────────────────────────────
+  const { address, account } = useGetAccountInfo();
+  const isLoggedIn = useGetIsLoggedIn();
 
-  // Canvas State
-  const [gridState, setGridState] = useState(null); // 100x100 array
-  const [selectedColor, setSelectedColor] = useState('#FF0000'); // Default red
-  const [colorHistory, setColorHistory] = useState(['#FF0000']); // Recently used colors
-  const [brushSize, setBrushSize] = useState(1); // Brush size: 1-4 (default 1x1)
+  // Balance: string in smallest EGLD units → convert to float
+  const egld = parseFloat((Number(account?.balance ?? 0) / 1e18).toFixed(4));
 
-  // Canvas View State (shared between Canvas and Toolbar)
+  // ── On-chain credits from smart contract ──────────────────────────────────
+  const { credits, refetchCredits } = useContractCredits(address || null);
+
+  // Derived wallet object (same shape as Phase 1 so other components need no changes)
+  const wallet = {
+    address: address || null,
+    isConnected: isLoggedIn,
+    egld,
+    credits,
+  };
+
+  // ── Canvas state ──────────────────────────────────────────────────────────
+  const [gridState, setGridState] = useState(null);
+  const [selectedColor, setSelectedColor] = useState('#FF0000');
+  const [colorHistory, setColorHistory] = useState(['#FF0000']);
+  const [brushSize, setBrushSize] = useState(1);
+
+  // ── Canvas view state ─────────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [minZoom, setMinZoom] = useState(1); // Minimum zoom (set on initial center)
+  const [minZoom, setMinZoom] = useState(1);
 
-  // UI State
-  const [toast, setToast] = useState(null); // { message, type: 'success'|'error'|'info' }
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  /**
-   * Connect wallet (mock implementation)
-   * [FUTURE: Replace with real MultiversX wallet connection]
-   */
-  const connectWallet = (address, egld, credits, grid) => {
-    setWallet({
-      address,
-      isConnected: true,
-      egld,
-      credits,
-    });
-
-    if (grid) {
-      setGridState(grid);
-    }
-
-    showToast('Wallet connected successfully!', 'success');
-  };
-
-  /**
-   * Disconnect wallet
-   */
-  const disconnectWallet = () => {
-    setWallet({
-      address: null,
-      isConnected: false,
-      egld: 0,
-      credits: 0,
-    });
-    showToast('Wallet disconnected', 'info');
-  };
-
-  /**
-   * Update balances after purchase or paint
-   */
-  const updateBalances = (egld, credits) => {
-    setWallet((prev) => ({
-      ...prev,
-      egld: egld !== undefined ? egld : prev.egld,
-      credits: credits !== undefined ? credits : prev.credits,
-    }));
-  };
-
-  /**
-   * Update EGLD balance
-   */
-  const updateEgld = (egld) => {
-    setWallet((prev) => ({ ...prev, egld }));
-  };
-
-  /**
-   * Update credit balance
-   */
-  const updateCredits = (credits) => {
-    setWallet((prev) => ({ ...prev, credits }));
-  };
-
-  /**
-   * Change selected paint color
-   */
+  // ── Color helpers ─────────────────────────────────────────────────────────
   const changeColor = (color) => {
     setSelectedColor(color);
-
-    // Add to history (max 5 colors)
     setColorHistory((prev) => {
       const newHistory = [color, ...prev.filter((c) => c !== color)];
       return newHistory.slice(0, 5);
     });
   };
 
-  /**
-   * Update a single pixel in grid state
-   */
+  // ── Pixel helper ──────────────────────────────────────────────────────────
   const updatePixel = (x, y, color) => {
     setGridState((prev) => {
       if (!prev) return prev;
@@ -130,56 +75,34 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  /**
-   * Show toast notification
-   */
+  // ── Toast ─────────────────────────────────────────────────────────────────
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
-
-    // Auto-dismiss after 3 seconds
-    setTimeout(() => {
-      setToast(null);
-    }, 3000);
+    setTimeout(() => setToast(null), 3000);
   };
 
-  /**
-   * Dismiss toast manually
-   */
-  const dismissToast = () => {
-    setToast(null);
-  };
+  const dismissToast = () => setToast(null);
 
-  // Load color from localStorage on mount
+  // ── Persist color to localStorage ────────────────────────────────────────
   useEffect(() => {
     const savedColor = localStorage.getItem('selectedColor');
-    if (savedColor) {
-      setSelectedColor(savedColor);
-    }
+    if (savedColor) setSelectedColor(savedColor);
 
     const savedHistory = localStorage.getItem('colorHistory');
     if (savedHistory) {
-      try {
-        setColorHistory(JSON.parse(savedHistory));
-      } catch (e) {
-        console.error('Failed to load color history');
-      }
+      try { setColorHistory(JSON.parse(savedHistory)); } catch (_) {}
     }
   }, []);
 
-  // Save color to localStorage on change
   useEffect(() => {
     localStorage.setItem('selectedColor', selectedColor);
     localStorage.setItem('colorHistory', JSON.stringify(colorHistory));
   }, [selectedColor, colorHistory]);
 
   const value = {
-    // Wallet
+    // Wallet (real, from sdk-dapp + contract)
     wallet,
-    connectWallet,
-    disconnectWallet,
-    updateBalances,
-    updateEgld,
-    updateCredits,
+    refetchCredits,
 
     // Canvas
     gridState,
@@ -195,7 +118,7 @@ export const AppProvider = ({ children }) => {
     brushSize,
     setBrushSize,
 
-    // Canvas View (shared state)
+    // Canvas view
     zoom,
     setZoom,
     offset,

@@ -1,20 +1,22 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMockWallet } from '../hooks/useMockWallet';
+import { useWallet } from '../hooks/useWallet';
 import { useApp } from '../context/AppContext';
 import ShopCard from '../components/ShopCard';
 import Header from '../components/Header';
 
 /**
- * [FUTURE: Smart contract integration for purchases]
- * [FUTURE: Display transaction history]
+ * ShopPage — Credit purchase screen (Phase 2, devnet)
+ *
+ * Tier costs are real xEGLD amounts for MultiversX devnet.
+ * Purchases are sent as real EGLD transactions to the smart contract.
  */
 
-// Tier definitions (matching server constants)
+// Devnet tier definitions — match pixel-canvas-contract/src/pixel_canvas_contract.rs constants
 const TIERS = [
   {
     name: 'Novice',
-    cost: 10,
+    cost: 0.05,         // xEGLD
     basePixels: 1000,
     bonusPixels: 0,
     total: 1000,
@@ -23,7 +25,7 @@ const TIERS = [
   },
   {
     name: 'Apprentice',
-    cost: 50,
+    cost: 0.25,
     basePixels: 5000,
     bonusPixels: 500,
     total: 5500,
@@ -32,7 +34,7 @@ const TIERS = [
   },
   {
     name: 'Artisan',
-    cost: 100,
+    cost: 0.5,
     basePixels: 10000,
     bonusPixels: 2000,
     total: 12000,
@@ -41,19 +43,19 @@ const TIERS = [
   },
   {
     name: 'Master',
-    cost: 500,
-    basePixels: 50000,
-    bonusPixels: 15000,
-    total: 65000,
+    cost: 1.25,
+    basePixels: 25000,
+    bonusPixels: 7500,
+    total: 32500,
     bonusPercent: 30,
     color: '#fbbf24',
   },
   {
     name: 'Legend',
-    cost: 1000,
-    basePixels: 100000,
-    bonusPixels: 50000,
-    total: 150000,
+    cost: 2.5,
+    basePixels: 50000,
+    bonusPixels: 25000,
+    total: 75000,
     bonusPercent: 50,
     color: 'linear-gradient(to right, #ff00ff, #00ffff, #ffff00)',
     badge: 'Best Value',
@@ -61,9 +63,10 @@ const TIERS = [
 ];
 
 const ShopPage = () => {
-  const { isConnected, credits } = useMockWallet();
+  const { isConnected } = useWallet();
   const { wallet } = useApp();
   const navigate = useNavigate();
+  const credits = wallet.credits;
 
   // Redirect if not connected
   useEffect(() => {
@@ -150,8 +153,8 @@ const ShopPage = () => {
               ❤️ 50% to Charity
             </h3>
             <p className="text-sm text-textSecondary">
-              Every purchase automatically sends 50% to child welfare charities. Paint for a
-              cause!
+              Every purchase automatically sends 50% to child welfare charities via the
+              smart contract. Paint for a cause!
             </p>
           </div>
 

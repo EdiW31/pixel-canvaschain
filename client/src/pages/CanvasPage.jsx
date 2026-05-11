@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMockWallet } from '../hooks/useMockWallet';
+import { useWallet } from '../hooks/useWallet';
 import Header from '../components/Header';
 import ColorPicker from '../components/ColorPicker';
 import Canvas from '../components/Canvas';
@@ -21,7 +21,7 @@ import { useApp } from '../context/AppContext';
  */
 
 const CanvasPage = () => {
-  const { isConnected } = useMockWallet();
+  const { isConnected } = useWallet();
   const { toast, dismissToast } = useApp();
   const navigate = useNavigate();
 

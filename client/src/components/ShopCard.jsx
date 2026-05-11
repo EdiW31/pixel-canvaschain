@@ -1,36 +1,44 @@
 import { useState } from 'react';
+import { Transaction } from '@multiversx/sdk-core/out/core/transaction';
+import { Address } from '@multiversx/sdk-core/out/core/address';
+import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/TransactionManager/TransactionManager';
 import { useApp } from '../context/AppContext';
-import { useSocket } from '../hooks/useSocket';
+import { getDappProvider } from '../hooks/useWallet';
 
 /**
- * ShopCard - Individual tier card component
+ * ShopCard — Individual tier card component (Phase 2)
  *
  * Props:
- * - tier: { name, cost, basePixels, bonusPixels, total, bonusPercent, color, badge }
+ *   tier: { name, cost, basePixels, bonusPixels, total, bonusPercent, color, badge? }
  *
- * Features:
- * - Displays tier info with bonus percentage
- * - Shows "Best Value" badge for Legend tier
- * - Purchase button with loading state
- * - Disabled state if insufficient EGLD
- * - Tier-specific colors and hover effects
- *
- * [FUTURE: Show gas estimation before purchase]
- * [FUTURE: Display transaction hash after purchase]
+ * On purchase:
+ *  1. Fetch sender nonce from devnet API
+ *  2. Build sdk-core Transaction (value in smallest EGLD units, data = "buyPixels")
+ *  3. Sign with the dapp provider (triggers wallet UI)
+ *  4. Broadcast via TransactionManager.send
+ *  5. After 15 s, refetch on-chain credits
  */
 
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
+const API_URL = import.meta.env.VITE_API_URL;
+const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
+
+// Devnet tier values in smallest EGLD units (1 EGLD = 10^18)
+const TIER_VALUES_WEI = {
+  Novice:      50_000_000_000_000_000n,   // 0.05 EGLD
+  Apprentice: 250_000_000_000_000_000n,   // 0.25 EGLD
+  Artisan:    500_000_000_000_000_000n,   // 0.50 EGLD
+  Master:   1_250_000_000_000_000_000n,   // 1.25 EGLD
+  Legend:   2_500_000_000_000_000_000n,   // 2.50 EGLD
+};
+
 const ShopCard = ({ tier }) => {
-  const { wallet, showToast } = useApp();
-  const { purchaseCredits } = useSocket();
+  const { wallet, showToast, refetchCredits } = useApp();
   const [isPurchasing, setIsPurchasing] = useState(false);
 
   const canAfford = wallet.egld >= tier.cost;
   const isLegend = tier.name === 'Legend';
 
-  /**
-   * Handle purchase click
-   * [FUTURE: Sign transaction with wallet before submitting]
-   */
   const handlePurchase = async () => {
     if (!wallet.isConnected) {
       showToast('Please connect your wallet first', 'error');
@@ -42,15 +50,58 @@ const ShopCard = ({ tier }) => {
       return;
     }
 
+    const provider = getDappProvider();
+    if (!provider) {
+      showToast('Wallet provider not ready. Please reconnect.', 'error');
+      return;
+    }
+
+    if (!CONTRACT_ADDRESS) {
+      showToast('Contract address not configured.', 'error');
+      return;
+    }
+
     setIsPurchasing(true);
 
-    // Emit purchase request (server will simulate 2s delay)
-    purchaseCredits(tier.name);
+    try {
+      // 1. Fetch sender account nonce from devnet API
+      const accountRes = await fetch(`${API_URL}/accounts/${wallet.address}`);
+      if (!accountRes.ok) throw new Error(`Account fetch failed: ${accountRes.status}`);
+      const accountJson = await accountRes.json();
+      // MultiversX API v1: { data: { account: { nonce, ... } } }
+      const nonce = BigInt(
+        accountJson?.data?.account?.nonce ?? accountJson?.nonce ?? 0,
+      );
 
-    // Keep loading state for 2.5 seconds (2s transaction + 0.5s buffer)
-    setTimeout(() => {
+      // 2. Build transaction
+      const tx = new Transaction({
+        nonce,
+        value: TIER_VALUES_WEI[tier.name],
+        sender: Address.newFromBech32(wallet.address),
+        receiver: Address.newFromBech32(CONTRACT_ADDRESS),
+        gasLimit: 10_000_000n,
+        data: new TextEncoder().encode('buyPixels'),
+        chainID: CHAIN_ID,
+      });
+
+      // 3. Sign — wallet extension or xPortal shows approval UI
+      const signedTxs = await provider.signTransactions([tx]);
+
+      // 4. Broadcast
+      await TransactionManager.getInstance().send(signedTxs);
+
+      showToast(`Buying ${tier.total.toLocaleString()} credits… check your wallet!`, 'info');
+
+      // 5. Refetch credits after the tx is likely processed (devnet ~6 s block time)
+      setTimeout(() => {
+        refetchCredits();
+      }, 15_000);
+    } catch (err) {
+      console.error('[ShopCard] Purchase error:', err);
+      showToast(err?.message ?? 'Transaction failed. Please try again.', 'error');
+    } finally {
       setIsPurchasing(false);
-    }, 2500);
+    }
   };
 
   return (
@@ -125,7 +176,7 @@ const ShopCard = ({ tier }) => {
       {/* Value per Credit */}
       <div className="mb-4 p-3 bg-background/50 rounded border border-primary/10">
         <p className="text-xs text-textSecondary text-center">
-          {(tier.cost / tier.total).toFixed(4)} EGLD per credit
+          {(tier.cost / tier.total).toFixed(6)} EGLD per credit
         </p>
       </div>
 
