@@ -1,58 +1,67 @@
-import { INITIAL_EGLD, INITIAL_CREDITS, COST_PER_PIXEL, MAX_PIXELS_PER_SECOND } from './constants.js';
+import { MAX_PIXELS_PER_SECOND, COST_PER_PIXEL } from './constants.js';
 
 /**
- * UserManager - Manages user wallet balances and rate limiting
+ * UserManager — Session-level wallet and credit tracking (Phase 2)
  *
- * In Phase 1, balances are stored in memory (volatile).
- * [FUTURE: Phase 2 will query real balances from MultiversX blockchain]
- * [FUTURE: Credits will be tracked on-chain via Smart Contract]
- * [FUTURE: Rate limiting will use Redis for distributed systems]
+ * Credits are seeded from the on-chain balance when the user joins.
+ * Decrements are local (fast, no gas).  The frontend polls the chain
+ * independently via useContractCredits to show the real on-chain balance.
+ *
+ * The server does NOT call consumeCredits on-chain — no gas is spent
+ * server-side.  The on-chain balance decreases only when new purchases
+ * are made (buyPixels endpoint called by the user's own wallet).
  */
 
 class UserManager {
   constructor() {
-    // Map of wallet address to user data
-    // Structure: { address: { egld, credits, paintHistory: [] } }
+    // Map<address, { address, credits, paintHistory, joinedAt }>
     this.users = new Map();
     console.log('✅ User manager initialized');
   }
 
   /**
-   * Create a new user with initial balances
-   * @param {string} address - Wallet address (erd1...)
-   * @returns {Object} User data
+   * Register or refresh a wallet for the current socket session.
+   * Called on wallet:join with credits fetched from the chain.
+   *
+   * @param {string} address  - bech32 wallet address (erd1...)
+   * @param {number} onChainCredits - credit balance read from smart contract
+   * @returns {Object} session user data
    */
-  createUser(address) {
-    if (this.users.has(address)) {
-      console.warn(`⚠️  User ${address} already exists`);
-      return this.users.get(address);
+  joinUser(address, onChainCredits) {
+    const existing = this.users.get(address);
+
+    if (existing) {
+      // Refresh credit balance from chain (in case they bought more since last session)
+      existing.credits = onChainCredits;
+      existing.joinedAt = new Date();
+      console.log(`🔄 User rejoined: ${address.slice(0, 10)}... | ${onChainCredits} credits`);
+      return existing;
     }
 
     const userData = {
       address,
-      egld: INITIAL_EGLD,
-      credits: INITIAL_CREDITS,
-      paintHistory: [], // Array of { timestamp, x, y, color }
-      createdAt: new Date(),
+      credits: onChainCredits,
+      paintHistory: [],
+      joinedAt: new Date(),
     };
 
     this.users.set(address, userData);
-    console.log(`✅ Created user: ${address} | ${INITIAL_EGLD} EGLD | ${INITIAL_CREDITS} Credits`);
+    console.log(`✅ User joined: ${address.slice(0, 10)}... | ${onChainCredits} credits`);
     return userData;
   }
 
   /**
-   * Get user data by address
-   * @param {string} address - Wallet address
-   * @returns {Object|null} User data or null if not found
+   * Get session data for a wallet address.
+   * @param {string} address
+   * @returns {Object|null}
    */
   getUser(address) {
     return this.users.get(address) || null;
   }
 
   /**
-   * Check if user exists
-   * @param {string} address - Wallet address
+   * Check if user has an active session.
+   * @param {string} address
    * @returns {boolean}
    */
   hasUser(address) {
@@ -60,76 +69,25 @@ class UserManager {
   }
 
   /**
-   * Get user's EGLD balance
-   * [FUTURE: Query from MultiversX blockchain via API]
-   * @param {string} address - Wallet address
-   * @returns {number} EGLD balance
-   */
-  getEgldBalance(address) {
-    const user = this.users.get(address);
-    return user ? user.egld : 0;
-  }
-
-  /**
-   * Get user's credit balance
-   * [FUTURE: Query from Smart Contract]
-   * @param {string} address - Wallet address
-   * @returns {number} Credit balance
+   * Get current session credit balance.
+   * @param {string} address
+   * @returns {number}
    */
   getCreditBalance(address) {
-    const user = this.users.get(address);
-    return user ? user.credits : 0;
+    return this.users.get(address)?.credits ?? 0;
   }
 
   /**
-   * Purchase credits (deduct EGLD, add credits)
-   * [FUTURE: This will trigger a Smart Contract transaction]
-   * [FUTURE: Transaction will be signed by user's wallet]
-   * [FUTURE: Smart Contract will handle the 25/25/50 revenue split]
-   * @param {string} address - Wallet address
-   * @param {number} cost - Cost in EGLD
-   * @param {number} credits - Credits to add
-   * @returns {Object} { success, egld, credits, message }
-   */
-  purchaseCredits(address, cost, credits) {
-    const user = this.users.get(address);
-
-    if (!user) {
-      return { success: false, message: 'User not found' };
-    }
-
-    if (user.egld < cost) {
-      return {
-        success: false,
-        message: `Insufficient EGLD. Have: ${user.egld}, Need: ${cost}`,
-      };
-    }
-
-    // Deduct EGLD and add credits
-    user.egld -= cost;
-    user.credits += credits;
-
-    console.log(`💳 Purchase: ${address} | -${cost} EGLD | +${credits} Credits`);
-
-    return {
-      success: true,
-      egld: user.egld,
-      credits: user.credits,
-      message: `Successfully purchased ${credits} credits!`,
-    };
-  }
-
-  /**
-   * Deduct credits for pixel painting
-   * @param {string} address - Wallet address
-   * @param {number} amount - Credits to deduct (default: 1)
-   * @returns {Object} { success, credits, message }
+   * Deduct credits from the session balance.
+   * @param {string} address
+   * @param {number} amount - defaults to COST_PER_PIXEL (1)
+   * @returns {{ success: boolean, credits?: number, message?: string }}
    */
   deductCredits(address, amount = COST_PER_PIXEL) {
     const user = this.users.get(address);
 
     if (!user) {
-      return { success: false, message: 'User not found' };
+      return { success: false, message: 'User not found. Please rejoin.' };
     }
 
     if (user.credits < amount) {
@@ -145,58 +103,46 @@ class UserManager {
     return {
       success: true,
       credits: user.credits,
-      message: `Deducted ${amount} credit(s)`,
     };
   }
 
   /**
-   * Record pixel paint action (for rate limiting and history)
-   * @param {string} address - Wallet address
-   * @param {number} x - X coordinate
-   * @param {number} y - Y coordinate
-   * @param {string} color - Hex color
+   * Record a paint action (for rate-limiting and history).
+   * @param {string} address
+   * @param {number} x
+   * @param {number} y
+   * @param {string} color
    */
   recordPaint(address, x, y, color) {
     const user = this.users.get(address);
     if (!user) return;
 
-    user.paintHistory.push({
-      timestamp: Date.now(),
-      x,
-      y,
-      color,
-    });
+    user.paintHistory.push({ timestamp: Date.now(), x, y, color });
 
-    // Keep only last 100 paint actions per user (memory optimization)
+    // Keep only the last 100 actions
     if (user.paintHistory.length > 100) {
       user.paintHistory.shift();
     }
   }
 
   /**
-   * Check if user is rate limited
-   * @param {string} address - Wallet address
-   * @returns {boolean} True if rate limited, false if allowed
+   * Returns true if the user has exceeded the rate limit.
+   * @param {string} address
+   * @returns {boolean}
    */
   isRateLimited(address) {
     const user = this.users.get(address);
     if (!user || !user.paintHistory.length) return false;
 
     const now = Date.now();
-    const oneSecondAgo = now - 1000;
-
-    // Count paints in last second
-    const recentPaints = user.paintHistory.filter(
-      (paint) => paint.timestamp > oneSecondAgo
-    );
-
+    const recentPaints = user.paintHistory.filter((p) => p.timestamp > now - 1000);
     return recentPaints.length >= MAX_PIXELS_PER_SECOND;
   }
 
   /**
-   * Get user statistics
-   * @param {string} address - Wallet address
-   * @returns {Object|null} User stats
+   * Get summary stats for a user.
+   * @param {string} address
+   * @returns {Object|null}
    */
   getUserStats(address) {
     const user = this.users.get(address);
@@ -204,23 +150,22 @@ class UserManager {
 
     return {
       address: user.address,
-      egld: user.egld,
       credits: user.credits,
       totalPainted: user.paintHistory.length,
-      createdAt: user.createdAt,
+      joinedAt: user.joinedAt,
     };
   }
 
   /**
-   * Get all users (for admin/debug)
-   * @returns {Array<Object>} Array of user data
+   * Get all active session users.
+   * @returns {Array<Object>}
    */
   getAllUsers() {
     return Array.from(this.users.values());
   }
 
   /**
-   * Get total number of users
+   * Total number of active sessions.
    * @returns {number}
    */
   getUserCount() {
@@ -228,19 +173,16 @@ class UserManager {
   }
 
   /**
-   * Remove user (for cleanup)
-   * @param {string} address - Wallet address
+   * Remove a user session (e.g. on disconnect / cleanup).
+   * @param {string} address
+   * @returns {boolean}
    */
   removeUser(address) {
     const deleted = this.users.delete(address);
-    if (deleted) {
-      console.log(`🗑️  Removed user: ${address}`);
-    }
+    if (deleted) console.log(`🗑️  Removed session: ${address.slice(0, 10)}...`);
     return deleted;
   }
 }
 
-// Create singleton instance
 const userManager = new UserManager();
-
 export default userManager;
