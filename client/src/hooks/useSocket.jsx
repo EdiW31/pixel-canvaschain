@@ -1,15 +1,14 @@
 import { useEffect, useState, createContext, useContext } from 'react';
 import { io } from 'socket.io-client';
 import { useApp } from '../context/AppContext';
+import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
 
 /**
- * Socket Context for providing socket instance throughout the app
+ * Socket Context for providing socket instance throughout the app.
  */
 const SocketContext = createContext();
 
-/**
- * useSocket - Hook to access socket instance and connection state
- */
 export const useSocket = () => {
   const context = useContext(SocketContext);
   if (!context) {
@@ -19,22 +18,25 @@ export const useSocket = () => {
 };
 
 /**
- * SocketProvider - Manages Socket.io connection lifecycle
+ * SocketProvider — Manages Socket.io connection lifecycle (Phase 2)
  *
- * Establishes connection on mount, handles reconnection, and provides
- * socket instance to all child components via context.
+ * After the socket connects, it waits for the user to be logged in via
+ * sdk-dapp, then emits wallet:join so the server can seed session credits
+ * from the on-chain balance.
  *
- * [FUTURE: Add authentication token for WebSocket connection]
- * [FUTURE: Sign messages with wallet before emitting]
+ * Credits displayed in the UI come from useContractCredits (chain polling).
+ * The server's credits:updated event is ignored — the polling handles updates.
  */
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const { updatePixel, updateCredits, showToast, setGridState } = useApp();
 
+  const { updatePixel, showToast, setGridState, refetchCredits } = useApp();
+  const isLoggedIn = useGetIsLoggedIn();
+  const { address } = useGetAccountInfo();
+
+  // 1. Create socket once on mount
   useEffect(() => {
-    // Connect to server
-    // In development, Vite proxy handles /socket.io -> localhost:5001
     const socketInstance = io('http://localhost:5001', {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -42,7 +44,6 @@ export const SocketProvider = ({ children }) => {
       reconnectionAttempts: 5,
     });
 
-    // Connection events
     socketInstance.on('connect', () => {
       console.log('✅ Socket connected:', socketInstance.id);
       setIsConnected(true);
@@ -58,36 +59,34 @@ export const SocketProvider = ({ children }) => {
       setIsConnected(false);
     });
 
-    // Game events
-    socketInstance.on('pixel:update', ({ x, y, color, address }) => {
-      // Update local grid state for real-time collaboration
+    // Canvas events
+    socketInstance.on('pixel:update', ({ x, y, color }) => {
       updatePixel(x, y, color);
-      console.log(`🎨 Pixel update: (${x}, ${y}) ${color}`);
     });
 
-    socketInstance.on('pixels:update', ({ pixels, address }) => {
-      // Update multiple pixels for brush painting
-      pixels.forEach(({ x, y, color }) => {
-        updatePixel(x, y, color);
-      });
-      console.log(`🎨 Batch pixel update: ${pixels.length} pixels`);
+    socketInstance.on('pixels:update', ({ pixels }) => {
+      pixels.forEach(({ x, y, color }) => updatePixel(x, y, color));
     });
 
     socketInstance.on('canvas:init', ({ gridState }) => {
-      // Load initial canvas state
       setGridState(gridState);
-      console.log('🖼️  Canvas initialized');
+      console.log('🖼️  Canvas initialized from server');
     });
 
-    socketInstance.on('credits:updated', ({ credits }) => {
-      // Update credit balance after painting
-      updateCredits(credits);
+    // wallet:joined — server confirmed session, canvas state included
+    socketInstance.on('wallet:joined', ({ address: addr, credits, gridState }) => {
+      console.log(`💼 Session started: ${addr?.slice(0, 10)}... | ${credits} session credits`);
+      setGridState(gridState);
+      // Trigger a fresh chain poll so the UI shows on-chain balance immediately
+      refetchCredits();
     });
 
-    socketInstance.on('credits:purchased', ({ tier, cost, credits, newEgld, newCredits }) => {
-      // Update balances after purchase
-      updateCredits(newCredits);
-      showToast(`Successfully purchased ${tier}! +${credits} credits`, 'success');
+    // credits:updated — session-local count after each paint; trigger chain poll
+    socketInstance.on('credits:updated', () => {
+      // Don't update local state with the server's session count —
+      // useContractCredits polls the real on-chain balance every 15s.
+      // Uncomment below if you want an immediate refetch after every pixel:
+      // refetchCredits();
     });
 
     // Error handling
@@ -98,77 +97,62 @@ export const SocketProvider = ({ children }) => {
 
     setSocket(socketInstance);
 
-    // Cleanup on unmount
     return () => {
       socketInstance.disconnect();
     };
-  }, []); // Empty dependency - connect once on mount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * Purchase credits from a tier
-   * [FUTURE: Sign transaction with wallet before emitting]
-   */
-  const purchaseCredits = (tierName) => {
-    if (!socket || !isConnected) {
-      showToast('Not connected to server', 'error');
-      return;
+  // 2. Emit wallet:join whenever socket connects and user is logged in
+  useEffect(() => {
+    if (socket && isConnected && isLoggedIn && address) {
+      console.log('📡 Emitting wallet:join for', address.slice(0, 10), '...');
+      socket.emit('wallet:join', { address });
     }
-
-    socket.emit('credits:purchase', { tierName });
-  };
+  }, [socket, isConnected, isLoggedIn, address]);
 
   /**
-   * Paint a pixel
-   * [FUTURE: Sign paint action with wallet for verification]
+   * Paint a single pixel.
    */
   const paintPixel = (x, y, color) => {
     if (!socket || !isConnected) {
       showToast('Not connected to server', 'error');
       return false;
     }
-
     socket.emit('pixel:paint', { x, y, color });
     return true;
   };
 
   /**
-   * Paint multiple pixels (brush mode)
-   * @param {Array<{x: number, y: number, color: string}>} pixels - Array of pixels to paint
+   * Paint multiple pixels (brush mode).
+   * @param {Array<{x: number, y: number, color: string}>} pixels
    */
   const paintPixels = (pixels) => {
     if (!socket || !isConnected) {
       showToast('Not connected to server', 'error');
       return false;
     }
-
-    if (!Array.isArray(pixels) || pixels.length === 0) {
-      return false;
-    }
-
+    if (!Array.isArray(pixels) || pixels.length === 0) return false;
     socket.emit('pixels:paint', { pixels });
     return true;
   };
 
   /**
-   * Request canvas state (for reconnection)
+   * Request canvas state (for reconnection).
    */
   const requestCanvas = () => {
-    if (!socket || !isConnected) return;
-    socket.emit('canvas:request');
+    if (socket && isConnected) socket.emit('canvas:request');
   };
 
   /**
-   * Request stats
+   * Request stats.
    */
   const requestStats = () => {
-    if (!socket || !isConnected) return;
-    socket.emit('stats:request');
+    if (socket && isConnected) socket.emit('stats:request');
   };
 
   const value = {
     socket,
     isConnected,
-    purchaseCredits,
     paintPixel,
     paintPixels,
     requestCanvas,
