@@ -2,19 +2,26 @@ import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGet
 import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
 import { UnlockPanelManager } from '@multiversx/sdk-dapp/out/managers/UnlockPanelManager/UnlockPanelManager';
 import { ProviderFactory } from '@multiversx/sdk-dapp/out/providers/ProviderFactory';
+import { DappProvider } from '@multiversx/sdk-dapp/out/providers/DappProvider/DappProvider';
+import {
+  getAccountProvider,
+  setAccountProvider,
+} from '@multiversx/sdk-dapp/out/providers/helpers/accountProvider';
 
 /**
- * Module-level provider singleton.
- * Lives outside React so it survives re-renders and page navigations.
- * Access it via getDappProvider() when you need to sign transactions.
+ * Get the active DappProvider for signing transactions.
+ *
+ * Always returns a DappProvider — sdk-dapp's helper falls back to an
+ * EmptyProvider stub if no real provider has been registered yet, so
+ * callers can safely check `provider.getType()` before using it.
+ *
+ * The provider is registered via setAccountProvider() inside loginHandler
+ * (and rehydrated by restoreProvider() in main.jsx after page reloads).
  */
-let _dappProvider = null;
-export const getDappProvider = () => _dappProvider;
+export const getDappProvider = () => getAccountProvider();
 
 /**
  * useWallet — Real MultiversX wallet integration via sdk-dapp v5
- *
- * Replaces the old useMockWallet hook.
  *
  * Returns:
  *  - address       — bech32 wallet address (null if not logged in)
@@ -40,9 +47,16 @@ export const useWallet = () => {
   const openLogin = (onSuccess, onClose) => {
     UnlockPanelManager.init({
       loginHandler: async ({ type, anchor }) => {
-        // Create the concrete provider (Extension, WalletConnect, WebWallet, Ledger)
-        _dappProvider = await ProviderFactory.create({ type, anchor });
-        await _dappProvider.login();
+        // Build the concrete provider (Extension, WalletConnect, WebWallet, Ledger)
+        const raw = await ProviderFactory.create({ type, anchor });
+        await raw.login();
+
+        // Wrap in DappProvider — handles all redirect flows + WalletConnect sessions
+        const dappProvider = new DappProvider(raw);
+
+        // Register globally so sdk-dapp's internals can find it
+        setAccountProvider(dappProvider);
+
         if (onSuccess) onSuccess();
       },
       onClose: async () => {
@@ -55,9 +69,14 @@ export const useWallet = () => {
    * Disconnect the wallet.
    */
   const logout = async () => {
-    if (_dappProvider) {
-      await _dappProvider.logout({ shouldBroadcastLogoutAcrossTabs: true });
-      _dappProvider = null;
+    const provider = getAccountProvider();
+    if (provider) {
+      try {
+        await provider.logout({ shouldBroadcastLogoutAcrossTabs: true });
+      } catch (err) {
+        console.warn('[useWallet] logout error:', err);
+      }
+      setAccountProvider(null);
     }
   };
 
