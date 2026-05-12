@@ -18,8 +18,9 @@ async function bootstrap() {
       environment: EnvironmentsEnum.devnet,
       nativeAuth: false,
       // Web Wallet redirects back here after signing.
-      // Without this, the wallet has nowhere to return → 404.
-      callbackUrl: window.location.origin,
+      // Use the full current URL so the CrossWindowProvider can
+      // resume the pending session from the query params it appended.
+      callbackUrl: `${window.location.origin}/shop`,
     },
     storage: {
       // Persist login across page refreshes

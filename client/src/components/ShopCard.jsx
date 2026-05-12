@@ -87,12 +87,13 @@ const ShopCard = ({ tier }) => {
       // Broadcast
       await TransactionManager.getInstance().send(signedTxs);
 
-      showToast(`Buying ${tier.total.toLocaleString()} credits… check your wallet!`, 'info');
+      showToast(`Transaction sent! Credits will appear in ~15s…`, 'info');
 
-      // Refetch credits after the tx is likely processed (devnet ~6 s block time)
-      setTimeout(() => {
-        refetchCredits();
-      }, 15_000);
+      // Poll aggressively — devnet blocks in ~6s but can be slow under load.
+      // Check at 8s, 15s, 25s, 40s, 60s after broadcast.
+      [8_000, 15_000, 25_000, 40_000, 60_000].forEach((delay) => {
+        setTimeout(refetchCredits, delay);
+      });
     } catch (err) {
       console.error('[ShopCard] Purchase error:', err);
       showToast(err?.message ?? 'Transaction failed. Please try again.', 'error');

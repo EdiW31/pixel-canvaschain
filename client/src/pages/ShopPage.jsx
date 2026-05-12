@@ -64,7 +64,7 @@ const TIERS = [
 
 const ShopPage = () => {
   const { isConnected } = useWallet();
-  const { wallet } = useApp();
+  const { wallet, refetchCredits } = useApp();
   const navigate = useNavigate();
   const credits = wallet.credits;
 
@@ -125,6 +125,13 @@ const ShopPage = () => {
               <span className="text-xl font-bold text-primary">
                 {credits.toLocaleString()}
               </span>
+              <button
+                onClick={refetchCredits}
+                title="Refresh credits from chain"
+                className="ml-1 text-textSecondary hover:text-primary transition-colors text-sm"
+              >
+                ↻
+              </button>
             </div>
           </div>
         </div>
