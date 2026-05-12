@@ -19,9 +19,11 @@ async function bootstrap() {
       nativeAuth: false,
       // Web Wallet redirects back here after signing.
       callbackUrl: `${window.location.origin}/shop`,
-      // xPortal WalletConnect v2
-      walletConnect: {
-        walletConnectV2ProjectId: import.meta.env.VITE_WALLET_CONNECT_ID ?? '',
+      // Provider-specific config (xPortal needs WalletConnect v2 project ID)
+      providers: {
+        walletConnect: {
+          walletConnectV2ProjectId: import.meta.env.VITE_WALLET_CONNECT_ID ?? '',
+        },
       },
     },
     storage: {
