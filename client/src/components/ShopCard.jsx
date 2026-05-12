@@ -12,15 +12,14 @@ import { getDappProvider } from '../hooks/useWallet';
  *   tier: { name, cost, basePixels, bonusPixels, total, bonusPercent, color, badge? }
  *
  * On purchase:
- *  1. Fetch sender nonce from devnet API
- *  2. Build sdk-core Transaction (value in smallest EGLD units, data = "buyPixels")
- *  3. Sign with the dapp provider (triggers wallet UI)
- *  4. Broadcast via TransactionManager.send
- *  5. After 15 s, refetch on-chain credits
+ *  1. Build sdk-core Transaction (value in smallest EGLD units, data = "buyPixels")
+ *  2. Sign via DappProvider — handles all provider types (Extension/xPortal/Web Wallet/Ledger)
+ *     and refreshes the account nonce internally
+ *  3. Broadcast via TransactionManager.send
+ *  4. After 15 s, refetch on-chain credits
  */
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
-const API_URL = import.meta.env.VITE_API_URL;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
 
 // Devnet tier values in smallest EGLD units (1 EGLD = 10^18)
@@ -50,32 +49,26 @@ const ShopCard = ({ tier }) => {
       return;
     }
 
-    const provider = getDappProvider();
-    if (!provider) {
-      showToast('Wallet provider not ready. Please reconnect.', 'error');
+    if (!CONTRACT_ADDRESS) {
+      showToast('Contract address not configured.', 'error');
       return;
     }
 
-    if (!CONTRACT_ADDRESS) {
-      showToast('Contract address not configured.', 'error');
+    // Always returns a DappProvider (falls back to EmptyProvider if not logged in).
+    const dappProvider = getDappProvider();
+    if (!dappProvider || dappProvider.getType?.() === 'empty') {
+      showToast('Wallet provider not ready. Please reconnect.', 'error');
       return;
     }
 
     setIsPurchasing(true);
 
     try {
-      // 1. Fetch sender account nonce from devnet API
-      const accountRes = await fetch(`${API_URL}/accounts/${wallet.address}`);
-      if (!accountRes.ok) throw new Error(`Account fetch failed: ${accountRes.status}`);
-      const accountJson = await accountRes.json();
-      // MultiversX API v1: { data: { account: { nonce, ... } } }
-      const nonce = BigInt(
-        accountJson?.data?.account?.nonce ?? accountJson?.nonce ?? 0,
-      );
-
-      // 2. Build transaction
+      // Build the transaction. DappProvider.signTransactions() refreshes the
+      // account nonce internally via signTransactionsWithProvider() — we don't
+      // need to fetch /accounts/<addr> ourselves. nonce: 0n is a placeholder.
       const tx = new Transaction({
-        nonce,
+        nonce: 0n,
         value: TIER_VALUES_WEI[tier.name],
         sender: Address.newFromBech32(wallet.address),
         receiver: Address.newFromBech32(CONTRACT_ADDRESS),
@@ -84,15 +77,19 @@ const ShopCard = ({ tier }) => {
         chainID: CHAIN_ID,
       });
 
-      // 3. Sign — wallet extension or xPortal shows approval UI
-      const signedTxs = await provider.signTransactions([tx]);
+      // Sign — DappProvider routes correctly per provider type:
+      //   Extension  → in-page popup
+      //   xPortal    → WalletConnect notification on phone
+      //   Web Wallet → redirect to wallet.multiversx.com/sign and back
+      //   Ledger     → USB prompt
+      const signedTxs = await dappProvider.signTransactions([tx]);
 
-      // 4. Broadcast
+      // Broadcast
       await TransactionManager.getInstance().send(signedTxs);
 
       showToast(`Buying ${tier.total.toLocaleString()} credits… check your wallet!`, 'info');
 
-      // 5. Refetch credits after the tx is likely processed (devnet ~6 s block time)
+      // Refetch credits after the tx is likely processed (devnet ~6 s block time)
       setTimeout(() => {
         refetchCredits();
       }, 15_000);
