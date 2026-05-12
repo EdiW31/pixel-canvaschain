@@ -18,9 +18,11 @@ async function bootstrap() {
       environment: EnvironmentsEnum.devnet,
       nativeAuth: false,
       // Web Wallet redirects back here after signing.
-      // Use the full current URL so the CrossWindowProvider can
-      // resume the pending session from the query params it appended.
       callbackUrl: `${window.location.origin}/shop`,
+      // xPortal WalletConnect v2
+      walletConnect: {
+        walletConnectV2ProjectId: import.meta.env.VITE_WALLET_CONNECT_ID ?? '',
+      },
     },
     storage: {
       // Persist login across page refreshes
