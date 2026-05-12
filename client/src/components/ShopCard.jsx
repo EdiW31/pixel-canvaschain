@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Transaction } from '@multiversx/sdk-core/out/core/transaction';
 import { Address } from '@multiversx/sdk-core/out/core/address';
 import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/TransactionManager/TransactionManager';
@@ -31,9 +31,34 @@ const TIER_VALUES_WEI = {
   Legend:   2_500_000_000_000_000_000n,   // 2.50 EGLD
 };
 
+const WAIT_SECONDS = 15;
+
 const ShopCard = ({ tier }) => {
   const { wallet, showToast, refetchCredits } = useApp();
   const [isPurchasing, setIsPurchasing] = useState(false);
+  // 'idle' | 'waiting' | 'hint'
+  const [confirmState, setConfirmState] = useState('idle');
+  const [countdown, setCountdown] = useState(WAIT_SECONDS);
+  const timerRef = useRef(null);
+
+  // Countdown tick
+  useEffect(() => {
+    if (confirmState !== 'waiting') return;
+    setCountdown(WAIT_SECONDS);
+
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          setConfirmState('hint');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerRef.current);
+  }, [confirmState]);
 
   const canAfford = wallet.egld >= tier.cost;
   const isLegend = tier.name === 'Legend';
@@ -87,7 +112,8 @@ const ShopCard = ({ tier }) => {
       // Broadcast
       await TransactionManager.getInstance().send(signedTxs);
 
-      showToast(`Transaction sent! Credits will appear in ~15s…`, 'info');
+      // Start the waiting countdown UI
+      setConfirmState('waiting');
 
       // Poll aggressively — devnet blocks in ~6s but can be slow under load.
       // Check at 8s, 15s, 25s, 40s, 60s after broadcast.
@@ -203,6 +229,56 @@ const ShopCard = ({ tier }) => {
           'Insufficient EGLD'
         )}
       </button>
+
+      {/* Waiting overlay — shown after tx is broadcast */}
+      {confirmState !== 'idle' && (
+        <div className="absolute inset-0 rounded-lg bg-background/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-10">
+          {confirmState === 'waiting' ? (
+            <>
+              {/* Spinner */}
+              <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
+              <p className="text-primary font-bold text-lg mb-1">
+                Waiting for blockchain…
+              </p>
+              <p className="text-textSecondary text-sm mb-4">
+                Your credits will appear shortly
+              </p>
+              {/* Countdown bar */}
+              <div className="w-full bg-surface rounded-full h-2 mb-2">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-1000"
+                  style={{ width: `${(countdown / WAIT_SECONDS) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-textSecondary">{countdown}s remaining</p>
+            </>
+          ) : (
+            <>
+              {/* Done */}
+              <div className="text-4xl mb-3">✅</div>
+              <p className="text-success font-bold text-lg mb-2">Transaction confirmed!</p>
+              <p className="text-textSecondary text-sm mb-4">
+                Don't see your credits yet?
+              </p>
+              <button
+                onClick={() => {
+                  refetchCredits();
+                  setConfirmState('idle');
+                }}
+                className="px-5 py-2 bg-primary/10 border-2 border-primary text-primary rounded-lg font-bold text-sm hover:bg-primary hover:text-background transition-all duration-300"
+              >
+                ↻ Refresh Credits
+              </button>
+              <button
+                onClick={() => setConfirmState('idle')}
+                className="mt-2 text-xs text-textSecondary hover:text-primary transition-colors"
+              >
+                Dismiss
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
