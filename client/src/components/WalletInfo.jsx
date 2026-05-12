@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useApp } from '../context/AppContext';
 
@@ -13,9 +13,15 @@ import { useApp } from '../context/AppContext';
  */
 
 const WalletInfo = () => {
-  const { isConnected, getTruncatedAddress, egld } = useWallet();
+  const { isConnected, getTruncatedAddress, egld, logout } = useWallet();
   const { wallet } = useApp();
+  const navigate = useNavigate();
   const credits = wallet.credits;
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
 
   if (!isConnected) {
     return (
@@ -58,6 +64,15 @@ const WalletInfo = () => {
       >
         Shop
       </Link>
+
+      {/* Disconnect */}
+      <button
+        onClick={handleLogout}
+        title="Disconnect wallet"
+        className="px-3 py-2 bg-error/10 border border-error/40 rounded-lg text-error/70 hover:bg-error hover:text-background hover:border-error transition-all duration-300 text-sm font-bold"
+      >
+        ✕ Disconnect
+      </button>
     </div>
   );
 };
