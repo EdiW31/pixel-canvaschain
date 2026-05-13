@@ -3,7 +3,10 @@
   "chainId": "D",
   "apiUrl": "https://devnet-api.multiversx.com",
   "explorerUrl": "https://devnet-explorer.multiversx.com",
-  "contractAddress": "erd1qqqqqqqqqqqqqpgqrctnusa5m8kjfrm5xyf4x0nshz2vmdaxe52qj22xcu",
-  "deployedAt": "2026-05-11",
+  "contractAddress": "erd1qqqqqqqqqqqqqpgqyph4tw7jclm7wqnkzg3yve6z7gur6wl0e52qy5y7ta",
+  "deployedAt": "2026-05-13",
+  "previousDeployments": [
+    "erd1qqqqqqqqqqqqqpgqrctnusa5m8kjfrm5xyf4x0nshz2vmdaxe52qj22xcu (2026-05-11, deprecated — old WASM missing payable annotation)"
+  ],
   "notes": "Devnet demo deployment. Tier prices are scaled down (÷200 from production). To switch to production: update tier constants in src/pixel_canvas_contract.rs and redeploy."
 }
