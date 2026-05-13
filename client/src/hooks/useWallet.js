@@ -49,8 +49,14 @@ export const useWallet = () => {
       // All providers enabled (Extension, xPortal/WalletConnect, Web Wallet, Ledger).
       // xPortal works because main.jsx omits React.StrictMode — see comment there.
       loginHandler: async ({ type, anchor }) => {
-        // Build the concrete provider (Extension, WalletConnect, WebWallet, Ledger)
-        const raw = await ProviderFactory.create({ type, anchor });
+        // IMPORTANT: do NOT forward `anchor` to ProviderFactory.create.
+        // The `anchor` here is the <mvx-unlock-panel> host element. Forwarding
+        // it makes WalletConnect's QR panel mount inside the unlock panel —
+        // when the unlock panel closes/transitions, the QR vanishes with it
+        // ("hides in the corner" bug). Letting it default = mounts on
+        // document.body, which is what the official template-dapp does.
+        void anchor;
+        const raw = await ProviderFactory.create({ type });
         await raw.login();
 
         // Wrap in DappProvider — handles all redirect flows + WalletConnect sessions

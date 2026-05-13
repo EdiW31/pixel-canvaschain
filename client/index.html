@@ -10,8 +10,9 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Mount anchor for sdk-dapp v5 web components (UnlockPanel, SignTransactions) -->
-    <div id="dapp-modal-anchor"></div>
+    <!-- sdk-dapp web components mount themselves on document.body — no anchor div needed.
+         Adding one caused WalletConnect's QR panel to mount inside the unlock panel
+         and disappear when the unlock panel transitioned views. -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
