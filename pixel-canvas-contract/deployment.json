@@ -3,10 +3,13 @@
   "chainId": "D",
   "apiUrl": "https://devnet-api.multiversx.com",
   "explorerUrl": "https://devnet-explorer.multiversx.com",
-  "contractAddress": "erd1qqqqqqqqqqqqqpgqyph4tw7jclm7wqnkzg3yve6z7gur6wl0e52qy5y7ta",
+  "contractAddress": "erd1qqqqqqqqqqqqqpgq70x3fy575cwkr9gate3trrxc5mj22yj0e52q4vexp2",
   "deployedAt": "2026-05-13",
+  "deployTxHash": "0be0ac8269d4ad7d410d3e09f387e006a60bb8e20f9ca0433bd034e2f9c94e76",
+  "codeMetadata": "0506 (Upgradeable + Readable + Payable + PayableBySC)",
   "previousDeployments": [
-    "erd1qqqqqqqqqqqqqpgqrctnusa5m8kjfrm5xyf4x0nshz2vmdaxe52qj22xcu (2026-05-11, deprecated — old WASM missing payable annotation)"
+    "erd1qqqqqqqqqqqqqpgqrctnusa5m8kjfrm5xyf4x0nshz2vmdaxe52qj22xcu (2026-05-11, deprecated — old WASM, no payable flag)",
+    "erd1qqqqqqqqqqqqqpgqftaxhmjpt9eysqf7ntt8jfqa3g2srtzve52q60zd7z (2026-05-13, deprecated — deployed via wallet UI without payable flag)"
   ],
   "notes": "Devnet demo deployment. Tier prices are scaled down (÷200 from production). To switch to production: update tier constants in src/pixel_canvas_contract.rs and redeploy."
 }
