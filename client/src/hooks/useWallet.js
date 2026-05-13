@@ -46,6 +46,11 @@ export const useWallet = () => {
    */
   const openLogin = (onSuccess, onClose) => {
     UnlockPanelManager.init({
+      // xPortal QR is hidden — its panel has a CSS/animation bug specific to
+      // this Vite + Tailwind setup that swallows the QR view. Web Wallet,
+      // DeFi Browser Extension, and Ledger all work fine.
+      // TODO: re-enable xPortal once sdk-dapp-ui fixes / we find the workaround.
+      allowedProviders: ['extension', 'crossWindow', 'ledger'],
       loginHandler: async ({ type, anchor }) => {
         // Build the concrete provider (Extension, WalletConnect, WebWallet, Ledger)
         const raw = await ProviderFactory.create({ type, anchor });
