@@ -41,11 +41,13 @@ async function bootstrap() {
     console.warn('[bootstrap] restoreProvider failed (expected on first load):', err);
   }
 
-  ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
-  );
+  // NOTE: <React.StrictMode> intentionally omitted.
+  // StrictMode's dev-only double-mount triggers Stencil web components
+  // (sdk-dapp-ui side panels — xPortal QR, etc.) to fire closeWithAnimation()
+  // prematurely, making the QR panel "hide in the corner" right after opening.
+  // Production builds never run StrictMode anyway, so removing it has no
+  // runtime impact — just less dev-time double-render checks.
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 }
 
 bootstrap();
