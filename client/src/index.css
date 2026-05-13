@@ -18,6 +18,30 @@
   }
 }
 
+/* sdk-dapp-ui web components mount on document.body. Force fixed positioning
+   so the browser doesn't auto-scroll to them (default they're in normal flow
+   at the bottom of body, which extends the page and triggers a scroll-into-view).
+   Fixed positioning takes them out of flow → no scroll. The component's own
+   inner styles control the actual position/animation. */
+mvx-unlock-panel,
+mvx-wallet-connect,
+mvx-sign-transactions-panel,
+mvx-pending-transactions-panel,
+mvx-notifications-feed,
+mvx-toast-list {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+/* Re-enable pointer events on the actual rendered panel content inside */
+mvx-unlock-panel *,
+mvx-wallet-connect *,
+mvx-sign-transactions-panel *,
+mvx-pending-transactions-panel * {
+  pointer-events: auto;
+}
+
 /* Custom utilities */
 @layer utilities {
   /* Neon glow text effects */
