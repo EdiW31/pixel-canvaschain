@@ -59,7 +59,12 @@ export async function queryCredits(bech32Address) {
     }
 
     const json = await response.json();
-    const returnData = json?.data?.returnData?.[0] ?? json?.returnData?.[0];
+    // The API wraps the VM response in two levels of `data`:
+    //   { data: { blockInfo, data: { returnData: [...], returnCode } }, code }
+    const returnData =
+      json?.data?.data?.returnData?.[0] ??
+      json?.data?.returnData?.[0] ??
+      json?.returnData?.[0];
     return decodeBase64BigUint(returnData);
   } catch (err) {
     console.error('[contractClient] queryCredits error:', err.message);

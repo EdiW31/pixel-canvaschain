@@ -59,8 +59,13 @@ export const useContractCredits = (address, pollIntervalMs = 15_000) => {
 
       const json = await response.json();
 
-      // MultiversX API wraps response: { data: { returnData: [...], returnCode: "ok" }, ... }
-      const returnData = json?.data?.returnData?.[0] ?? json?.returnData?.[0];
+      // MultiversX API wraps the VM response inside two levels of `data`:
+      //   { data: { blockInfo: ..., data: { returnData: [...], returnCode: "ok" } }, code: "successful" }
+      // The one-level lookup we had before always returned 0 even when credits existed.
+      const returnData =
+        json?.data?.data?.returnData?.[0] ??
+        json?.data?.returnData?.[0] ??
+        json?.returnData?.[0];
       setCredits(decodeBase64BigUint(returnData));
     } catch (err) {
       console.error('[useContractCredits] Failed to fetch:', err);
