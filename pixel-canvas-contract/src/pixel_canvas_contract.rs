@@ -42,11 +42,12 @@ pub trait PixelCanvasContract {
     fn init(&self) {
         // charity_address defaults to the deployer (owner).
         // Call set_charity_address() to point at a real NGO later.
-        let owner = self.blockchain().get_caller();
-        self.charity_address().set(&owner);
+        let deployer = self.blockchain().get_caller();
+        self.charity_address().set(&deployer);
 
-        let burn_addr = self.decode_burn_address();
-        self.burn_address().set(&burn_addr);
+        // For the devnet demo, route the "burn" share back to the deployer too.
+        // True burn addresses are non-payable and would crash buyPixels mid-tx.
+        self.burn_address().set(&deployer);
 
         self.total_donated().set(BigUint::zero());
     }
@@ -201,7 +202,10 @@ pub trait PixelCanvasContract {
     }
 
     fn decode_burn_address(&self) -> ManagedAddress {
-        // Use the standard MultiversX zero/burn address
-        ManagedAddress::zero()
+        // For the devnet demo, send the "burn" share back to the owner.
+        // True burn addresses on MultiversX are non-payable system addresses
+        // and reject incoming EGLD transfers (which would crash buyPixels mid-tx).
+        // Production version: replace with a proper ESDT burn mechanism.
+        self.blockchain().get_owner_address()
     }
 }
