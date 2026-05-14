@@ -3,42 +3,43 @@ import { useEffect, useState } from 'react';
 /**
  * useTheme — global light/dark mode hook.
  *
- * Applies `data-theme="dark" | "light"` on <html>, which the CSS variables in
- * index.css listen to. Persists choice in localStorage; falls back to the OS
- * preference on first visit.
+ * Applies BOTH `data-theme="dark|light"` AND a `dark` class on <html>.
+ *   - data-theme drives the CSS custom-property switch in index.css
+ *   - the `dark` class activates Tailwind's `dark:` variants
+ *
+ * Initial theme is applied via an inline script in index.html (FOUC-safe).
+ * This hook keeps React state in sync with that initial value and writes back
+ * to localStorage on changes.
  */
 
 const STORAGE_KEY = 'canvaschain-theme';
 
-const getInitialTheme = () => {
+const readSavedTheme = () => {
   if (typeof window === 'undefined') return 'light';
+  // Trust whatever the inline script in index.html already applied.
+  const fromDom = document.documentElement.getAttribute('data-theme');
+  if (fromDom === 'light' || fromDom === 'dark') return fromDom;
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (saved === 'light' || saved === 'dark') return saved;
-  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-  return prefersDark ? 'dark' : 'light';
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
 
 const applyTheme = (theme) => {
   if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', theme);
+  const root = document.documentElement;
+  root.setAttribute('data-theme', theme);
+  if (theme === 'dark') root.classList.add('dark');
+  else root.classList.remove('dark');
 };
 
-// Apply the initial theme as early as possible to avoid a flash of light
-// content on dark-preference visitors.
-if (typeof window !== 'undefined') {
-  applyTheme(getInitialTheme());
-}
-
 export const useTheme = () => {
-  const [theme, setTheme] = useState(getInitialTheme);
+  const [theme, setTheme] = useState(readSavedTheme);
 
   useEffect(() => {
     applyTheme(theme);
     try {
       window.localStorage.setItem(STORAGE_KEY, theme);
-    } catch (_) {
-      // ignore (private mode, quota, etc.)
-    }
+    } catch (_) { /* ignore */ }
   }, [theme]);
 
   const toggle = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));

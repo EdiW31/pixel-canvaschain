@@ -7,6 +7,21 @@
     <meta name="description" content="Pixel CanvasChain - A massively multiplayer collaborative canvas on MultiversX blockchain with 50% philanthropic giving" />
     <meta name="theme-color" content="#FBFAF6" />
     <title>Pixel CanvasChain | Decentralized Philanthropic Art</title>
+    <!-- Apply theme BEFORE React renders to avoid a light-mode flash on dark visitors. -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('canvaschain-theme');
+          var theme = (saved === 'light' || saved === 'dark')
+            ? saved
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var root = document.documentElement;
+          root.setAttribute('data-theme', theme);
+          if (theme === 'dark') root.classList.add('dark');
+          else root.classList.remove('dark');
+        } catch (_) { /* private mode etc. */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

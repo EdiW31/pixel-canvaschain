@@ -69,16 +69,16 @@
     color-scheme: light dark;
   }
 
-  /* Force-apply page background via CSS variables. Belt and braces — Tailwind
-     `bg-background` resolves to the same thing, but if any cached CSS still
-     references the old neon palette, these declarations win. */
-  html, body {
-    background-color: rgb(var(--bg)) !important;
+  /* Explicit non-Tailwind painting of the root surfaces. This guarantees the
+     page background and text colours change with the theme variables even
+     before Tailwind's processed classes have a chance to apply. */
+  html, body, #root {
+    background-color: rgb(var(--bg));
     color: rgb(var(--text));
+    min-height: 100%;
   }
 
   body {
-    @apply bg-background text-textPrimary;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: 'ss01', 'cv11';
     transition: background-color 200ms ease, color 200ms ease;

@@ -5,6 +5,7 @@ import Header from '../components/Header';
 import ColorPicker from '../components/ColorPicker';
 import Canvas from '../components/Canvas';
 import Toolbar from '../components/Toolbar';
+import ReferenceImage from '../components/ReferenceImage';
 import { useApp } from '../context/AppContext';
 
 /**
@@ -44,9 +45,10 @@ const CanvasPage = () => {
           <ColorPicker />
         </div>
 
-        {/* Center: Canvas */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden min-w-0">
+        {/* Center: Canvas (relative so ReferenceImage can position over it) */}
+        <div className="flex-1 relative flex items-center justify-center overflow-hidden min-w-0">
           <Canvas />
+          <ReferenceImage />
         </div>
 
         {/* Right Sidebar: Toolbar */}

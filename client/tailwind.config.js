@@ -4,6 +4,9 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Activate `dark:` variants when EITHER class="dark" OR data-theme="dark"
+  // exists on a parent. Belt-and-braces alongside our CSS-variable theming.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
