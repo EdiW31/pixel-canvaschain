@@ -85,36 +85,32 @@ const ColorPicker = () => {
   };
 
   return (
-    <div className="w-64 bg-surface p-4 rounded-lg border border-primary/20">
-      <h3 className="text-lg font-heading font-bold text-primary mb-4">Color Picker</h3>
+    <div className="w-64 card p-4">
+      <h3 className="font-heading text-base font-semibold mb-4">Color</h3>
 
-      {/* Current Color Display */}
-      <div className="mb-4">
-        <p className="text-xs text-textSecondary mb-2">Selected Color</p>
-        <div className="flex items-center space-x-3">
+      {/* Current Color */}
+      <div className="mb-5">
+        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Selected</p>
+        <div className="flex items-center gap-3">
           <div
-            className="w-16 h-16 rounded-lg border-2 border-primary shadow-neon-cyan"
+            className="w-14 h-14 rounded-lg border border-borderStrong shadow-soft"
             style={{ backgroundColor: selectedColor }}
           />
-          <div>
-            <p className="text-sm font-mono text-textPrimary">{selectedColor}</p>
-          </div>
+          <p className="text-sm font-mono text-textPrimary">{selectedColor}</p>
         </div>
       </div>
 
       {/* Color History */}
       {colorHistory.length > 0 && (
-        <div className="mb-4">
-          <p className="text-xs text-textSecondary mb-2">Recent Colors</p>
-          <div className="flex space-x-2">
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Recent</p>
+          <div className="flex gap-2">
             {colorHistory.map((color, index) => (
               <button
                 key={index}
                 onClick={() => handleColorClick(color)}
-                className={`w-8 h-8 rounded border-2 transition-all hover:scale-110 ${
-                  selectedColor === color
-                    ? 'border-primary shadow-neon-cyan'
-                    : 'border-surface hover:border-primary'
+                className={`w-7 h-7 rounded border transition-all hover:scale-110 ${
+                  selectedColor === color ? 'border-primary ring-2 ring-primary/40' : 'border-border'
                 }`}
                 style={{ backgroundColor: color }}
                 title={color}
@@ -125,17 +121,17 @@ const ColorPicker = () => {
       )}
 
       {/* Preset Colors Grid */}
-      <div className="mb-4">
-        <p className="text-xs text-textSecondary mb-2">Preset Colors</p>
-        <div className="grid grid-cols-5 gap-2">
+      <div className="mb-5">
+        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Palette</p>
+        <div className="grid grid-cols-5 gap-1.5">
           {PRESET_COLORS.map((color) => (
             <button
               key={color}
               onClick={() => handleColorClick(color)}
-              className={`w-10 h-10 rounded border-2 transition-all hover:scale-110 ${
+              className={`w-9 h-9 rounded border transition-all hover:scale-110 ${
                 selectedColor === color
-                  ? 'border-primary shadow-neon-cyan ring-2 ring-primary'
-                  : 'border-surface hover:border-primary'
+                  ? 'border-primary ring-2 ring-primary/40'
+                  : 'border-border hover:border-borderStrong'
               }`}
               style={{ backgroundColor: color }}
               title={color}
@@ -144,21 +140,21 @@ const ColorPicker = () => {
         </div>
       </div>
 
-      {/* Custom Color Input */}
+      {/* Custom Color */}
       <div>
-        <p className="text-xs text-textSecondary mb-2">Custom Hex Color</p>
-        <form onSubmit={handleCustomColorSubmit} className="flex space-x-2">
+        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Custom hex</p>
+        <form onSubmit={handleCustomColorSubmit} className="flex gap-2">
           <input
             type="text"
             value={customColor}
             onChange={(e) => setCustomColor(e.target.value)}
             placeholder="#FF0000"
-            className="flex-1 px-3 py-2 bg-background border border-primary/30 rounded text-sm font-mono text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="flex-1 px-3 py-2 bg-surface border border-border rounded-md text-sm font-mono text-textPrimary focus:outline-none focus:border-primary focus:shadow-focus"
             maxLength={7}
           />
           <button
             type="submit"
-            className="px-4 py-2 bg-primary/10 border border-primary rounded text-primary hover:bg-primary hover:text-background transition-all duration-300 text-sm font-bold"
+            className="btn-secondary text-sm"
           >
             Add
           </button>

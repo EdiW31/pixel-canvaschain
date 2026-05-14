@@ -203,35 +203,35 @@ const Canvas = () => {
         style={{ imageRendering: 'pixelated' }}
       />
 
-      {/* Hover Coordinates Overlay */}
+      {/* Hover coordinates */}
       {hoverPixel && (
-        <div className="absolute top-4 left-4 bg-surface/90 border border-primary rounded-lg px-3 py-2 pointer-events-none">
-          <p className="text-xs font-mono text-primary">
+        <div className="absolute top-4 left-4 card px-3 py-1.5 pointer-events-none">
+          <p className="text-xs font-mono text-textSecondary">
             ({hoverPixel.x}, {hoverPixel.y})
           </p>
         </div>
       )}
 
-      {/* Zoom Level Indicator */}
-      <div className="absolute top-4 right-4 bg-surface/90 border border-primary rounded-lg px-3 py-2 pointer-events-none">
-        <p className="text-xs font-mono text-primary">Zoom: {zoom.toFixed(1)}x</p>
+      {/* Zoom level */}
+      <div className="absolute top-4 right-4 card px-3 py-1.5 pointer-events-none">
+        <p className="text-xs font-mono text-textSecondary">{zoom.toFixed(1)}×</p>
       </div>
 
       {/* Loading State */}
       {!gridState && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="text-center">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-textSecondary">Loading canvas...</p>
+            <div className="w-10 h-10 border-[3px] border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-textSecondary text-sm">Loading canvas…</p>
           </div>
         </div>
       )}
 
-      {/* Instructions Overlay */}
-      <div className="absolute bottom-4 left-4 bg-surface/90 border border-primary/30 rounded-lg px-4 py-3 text-xs text-textSecondary space-y-1">
-        <p>🖱️ <span className="text-primary">Left Click + Drag:</span> Paint</p>
-        <p>🖱️ <span className="text-primary">Right/Middle + Drag:</span> Pan</p>
-        <p>🖱️ <span className="text-primary">Scroll:</span> Zoom in/out</p>
+      {/* Instructions */}
+      <div className="absolute bottom-4 left-4 card px-4 py-3 text-xs text-textSecondary space-y-1.5">
+        <p><span className="text-textPrimary font-semibold">Left + drag</span> &mdash; paint</p>
+        <p><span className="text-textPrimary font-semibold">Right + drag</span> &mdash; pan</p>
+        <p><span className="text-textPrimary font-semibold">Scroll</span> &mdash; zoom</p>
       </div>
     </div>
   );

@@ -6,17 +6,13 @@ import { useApp } from '../context/AppContext';
 import { getDappProvider } from '../hooks/useWallet';
 
 /**
- * ShopCard — Individual tier card component (Phase 2)
+ * ShopCard — single tier card.
  *
- * Props:
- *   tier: { name, cost, basePixels, bonusPixels, total, bonusPercent, color, badge? }
- *
- * On purchase:
- *  1. Build sdk-core Transaction (value in smallest EGLD units, data = "buyPixels")
- *  2. Sign via DappProvider — handles all provider types (Extension/xPortal/Web Wallet/Ledger)
- *     and refreshes the account nonce internally
- *  3. Broadcast via TransactionManager.send
- *  4. After 15 s, refetch on-chain credits
+ * Sequence on purchase:
+ *   1. Build sdk-core Transaction (value = tier price, data = "buyPixels")
+ *   2. Sign via the DappProvider wrapper
+ *   3. Broadcast via TransactionManager
+ *   4. Overlay 15s countdown; poll credits aggressively after broadcast
  */
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
@@ -24,11 +20,11 @@ const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
 
 // Devnet tier values in smallest EGLD units (1 EGLD = 10^18)
 const TIER_VALUES_WEI = {
-  Novice:      50_000_000_000_000_000n,   // 0.05 EGLD
-  Apprentice: 250_000_000_000_000_000n,   // 0.25 EGLD
-  Artisan:    500_000_000_000_000_000n,   // 0.50 EGLD
-  Master:   1_250_000_000_000_000_000n,   // 1.25 EGLD
-  Legend:   2_500_000_000_000_000_000n,   // 2.50 EGLD
+  Novice:      50_000_000_000_000_000n,
+  Apprentice: 250_000_000_000_000_000n,
+  Artisan:    500_000_000_000_000_000n,
+  Master:   1_250_000_000_000_000_000n,
+  Legend:   2_500_000_000_000_000_000n,
 };
 
 const WAIT_SECONDS = 15;
@@ -45,7 +41,6 @@ const ShopCard = ({ tier }) => {
   useEffect(() => {
     if (confirmState !== 'waiting') return;
     setCountdown(WAIT_SECONDS);
-
     timerRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -56,30 +51,26 @@ const ShopCard = ({ tier }) => {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timerRef.current);
   }, [confirmState]);
 
   const canAfford = wallet.egld >= tier.cost;
-  const isLegend = tier.name === 'Legend';
+  const isFeatured = !!tier.badge;
+  const charityShare = (tier.cost * 0.5).toFixed(4); // 50% to charity
 
   const handlePurchase = async () => {
     if (!wallet.isConnected) {
       showToast('Please connect your wallet first', 'error');
       return;
     }
-
     if (!canAfford) {
       showToast(`Insufficient EGLD. Need ${tier.cost}, have ${wallet.egld}`, 'error');
       return;
     }
-
     if (!CONTRACT_ADDRESS) {
       showToast('Contract address not configured.', 'error');
       return;
     }
-
-    // Always returns a DappProvider (falls back to EmptyProvider if not logged in).
     const dappProvider = getDappProvider();
     if (!dappProvider || dappProvider.getType?.() === 'empty') {
       showToast('Wallet provider not ready. Please reconnect.', 'error');
@@ -87,11 +78,7 @@ const ShopCard = ({ tier }) => {
     }
 
     setIsPurchasing(true);
-
     try {
-      // Build the transaction. DappProvider.signTransactions() refreshes the
-      // account nonce internally via signTransactionsWithProvider() — we don't
-      // need to fetch /accounts/<addr> ourselves. nonce: 0n is a placeholder.
       const tx = new Transaction({
         nonce: 0n,
         value: TIER_VALUES_WEI[tier.name],
@@ -102,21 +89,12 @@ const ShopCard = ({ tier }) => {
         chainID: CHAIN_ID,
       });
 
-      // Sign — DappProvider routes correctly per provider type:
-      //   Extension  → in-page popup
-      //   xPortal    → WalletConnect notification on phone
-      //   Web Wallet → redirect to wallet.multiversx.com/sign and back
-      //   Ledger     → USB prompt
       const signedTxs = await dappProvider.signTransactions([tx]);
-
-      // Broadcast
       await TransactionManager.getInstance().send(signedTxs);
 
-      // Start the waiting countdown UI
       setConfirmState('waiting');
 
-      // Poll aggressively — devnet blocks in ~6s but can be slow under load.
-      // Check at 8s, 15s, 25s, 40s, 60s after broadcast.
+      // Aggressive credit polling after broadcast (devnet block ~6s)
       [8_000, 15_000, 25_000, 40_000, 60_000].forEach((delay) => {
         setTimeout(refetchCredits, delay);
       });
@@ -130,148 +108,106 @@ const ShopCard = ({ tier }) => {
 
   return (
     <div
-      className={`relative bg-surface rounded-lg border-2 p-6 transition-all duration-300 hover:scale-105 ${
-        isLegend
-          ? 'border-secondary shadow-neon-magenta'
-          : 'border-primary/30 hover:border-primary hover:shadow-neon-cyan'
-      }`}
-      style={{
-        backgroundColor: isLegend ? 'rgba(255, 0, 255, 0.05)' : undefined,
-      }}
+      className={`relative card p-6 flex flex-col transition-all duration-200
+        ${isFeatured ? 'ring-2 ring-primary shadow-card' : 'hover:shadow-card'}
+      `}
     >
-      {/* Best Value Badge */}
-      {tier.badge && (
-        <div className="absolute -top-3 -right-3 bg-secondary border-2 border-secondary rounded-full px-3 py-1 shadow-neon-magenta">
-          <p className="text-xs font-bold text-background">{tier.badge}</p>
+      {/* Badge */}
+      {isFeatured && (
+        <div className="absolute -top-3 left-6 pill">
+          {tier.badge}
         </div>
       )}
 
-      {/* Tier Name */}
-      <h3
-        className={`text-2xl font-heading font-bold mb-4 ${
-          isLegend ? 'text-secondary' : 'text-primary'
-        }`}
-      >
-        {tier.name}
-      </h3>
-
-      {/* Cost */}
-      <div className="mb-4">
-        <div className="flex items-baseline space-x-2">
-          <span className="text-4xl font-bold text-accent">{tier.cost}</span>
-          <span className="text-textSecondary">EGLD</span>
+      {/* Tier name + cost */}
+      <div className="mb-5">
+        <h3 className="font-heading text-2xl font-semibold mb-3">{tier.name}</h3>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-4xl font-semibold text-primaryDark tracking-tight">{tier.cost}</span>
+          <span className="text-sm text-textMuted">EGLD</span>
         </div>
       </div>
 
-      {/* Credits Breakdown */}
-      <div className="space-y-2 mb-6">
-        <div className="flex justify-between text-sm">
-          <span className="text-textSecondary">Base Credits:</span>
-          <span className="text-textPrimary font-bold">
-            {tier.basePixels.toLocaleString()}
-          </span>
-        </div>
-
+      {/* Pixels */}
+      <div className="space-y-2 mb-5 pb-5 border-b border-border">
+        <Row label="Base pixels" value={tier.basePixels.toLocaleString()} />
         {tier.bonusPixels > 0 && (
-          <div className="flex justify-between text-sm">
-            <span className="text-success">
-              Bonus (+{tier.bonusPercent}%):
-            </span>
-            <span className="text-success font-bold">
-              +{tier.bonusPixels.toLocaleString()}
-            </span>
-          </div>
+          <Row
+            label={`Bonus (+${tier.bonusPercent}%)`}
+            value={`+${tier.bonusPixels.toLocaleString()}`}
+            highlight
+          />
         )}
-
-        <div className="pt-2 border-t border-primary/20">
-          <div className="flex justify-between">
-            <span className="text-textPrimary font-bold">Total Credits:</span>
-            <span
-              className={`text-xl font-bold ${
-                isLegend ? 'text-secondary' : 'text-primary'
-              }`}
-            >
-              {tier.total.toLocaleString()}
-            </span>
-          </div>
-        </div>
+        <Row label="Total" value={tier.total.toLocaleString()} bold />
       </div>
 
-      {/* Value per Credit */}
-      <div className="mb-4 p-3 bg-background/50 rounded border border-primary/10">
-        <p className="text-xs text-textSecondary text-center">
-          {(tier.cost / tier.total).toFixed(6)} EGLD per credit
-        </p>
+      {/* Charity hint */}
+      <div className="flex items-center gap-2 text-xs text-charityDark bg-charityLight rounded-md px-3 py-2 mb-5">
+        <span>♥</span>
+        <span><strong>{charityShare}</strong> EGLD will go to charity.</span>
       </div>
 
-      {/* Purchase Button */}
+      {/* CTA */}
       <button
         onClick={handlePurchase}
         disabled={!canAfford || isPurchasing}
-        className={`w-full py-3 rounded-lg font-bold text-sm transition-all duration-300 ${
-          isPurchasing
-            ? 'bg-accent/20 text-accent cursor-wait'
-            : canAfford
-            ? isLegend
-              ? 'bg-secondary/10 border-2 border-secondary text-secondary hover:bg-secondary hover:text-background'
-              : 'bg-primary/10 border-2 border-primary text-primary hover:bg-primary hover:text-background'
-            : 'bg-surface border-2 border-error/30 text-error/50 cursor-not-allowed'
-        }`}
+        className={`mt-auto w-full py-3 rounded-lg font-semibold text-sm transition-all duration-200
+          ${
+            isPurchasing
+              ? 'bg-primaryLight text-primaryDark cursor-wait'
+              : !canAfford
+                ? 'bg-backgroundAlt text-textMuted cursor-not-allowed'
+                : isFeatured
+                  ? 'bg-primary hover:bg-primaryDark text-textPrimary shadow-soft hover:shadow-card border border-primaryDark/40'
+                  : 'bg-surface text-textPrimary border border-borderStrong hover:bg-backgroundAlt'
+          }`}
       >
         {isPurchasing ? (
-          <span className="flex items-center justify-center space-x-2">
-            <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-            <span>Processing...</span>
+          <span className="inline-flex items-center justify-center gap-2">
+            <span className="w-3.5 h-3.5 border-2 border-primaryDark/40 border-t-primaryDark rounded-full animate-spin" />
+            Processing…
           </span>
-        ) : canAfford ? (
-          'Purchase'
-        ) : (
-          'Insufficient EGLD'
-        )}
+        ) : !canAfford ? 'Insufficient EGLD' : 'Buy credits'}
       </button>
 
-      {/* Waiting overlay — shown after tx is broadcast */}
+      {/* ─── Waiting / confirmed overlay ─────────────────────────────── */}
       {confirmState !== 'idle' && (
-        <div className="absolute inset-0 rounded-lg bg-background/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-10">
+        <div className="absolute inset-0 rounded-xl bg-surface/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-10 animate-fade-in">
           {confirmState === 'waiting' ? (
             <>
-              {/* Spinner */}
-              <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
-              <p className="text-primary font-bold text-lg mb-1">
-                Waiting for blockchain…
+              <div className="w-12 h-12 border-[3px] border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
+              <p className="font-heading text-lg font-semibold mb-1">
+                Confirming on chain…
               </p>
-              <p className="text-textSecondary text-sm mb-4">
-                Your credits will appear shortly
+              <p className="text-sm text-textSecondary mb-5">
+                Your credits will appear shortly.
               </p>
-              {/* Countdown bar */}
-              <div className="w-full bg-surface rounded-full h-2 mb-2">
+              <div className="w-full bg-backgroundAlt rounded-full h-1.5 mb-2 overflow-hidden">
                 <div
-                  className="bg-primary h-2 rounded-full transition-all duration-1000"
+                  className="bg-primary h-full transition-all duration-1000"
                   style={{ width: `${(countdown / WAIT_SECONDS) * 100}%` }}
                 />
               </div>
-              <p className="text-xs text-textSecondary">{countdown}s remaining</p>
+              <p className="text-xs text-textMuted">{countdown}s remaining</p>
             </>
           ) : (
             <>
-              {/* Done */}
-              <div className="text-4xl mb-3">✅</div>
-              <p className="text-success font-bold text-lg mb-2">Transaction confirmed!</p>
-              <p className="text-textSecondary text-sm mb-4">
-                Don't see your credits yet?
+              <div className="text-4xl mb-3">✓</div>
+              <p className="font-heading text-lg font-semibold text-charityDark mb-1">
+                Transaction sent
+              </p>
+              <p className="text-sm text-textSecondary mb-5">
+                Credits not showing? Refresh from the chain.
               </p>
               <button
-                onClick={() => {
-                  refetchCredits();
-                  setConfirmState('idle');
-                }}
-                className="px-5 py-2 bg-primary/10 border-2 border-primary text-primary rounded-lg font-bold text-sm hover:bg-primary hover:text-background transition-all duration-300"
+                onClick={() => { refetchCredits(); setConfirmState('idle'); }}
+                className="btn-primary mb-1"
               >
-                ↻ Refresh Credits
+                ↻ Refresh credits
               </button>
               <button
                 onClick={() => setConfirmState('idle')}
-                className="mt-2 text-xs text-textSecondary hover:text-primary transition-colors"
+                className="text-xs text-textMuted hover:text-textPrimary transition-colors mt-2"
               >
                 Dismiss
               </button>
@@ -282,5 +218,16 @@ const ShopCard = ({ tier }) => {
     </div>
   );
 };
+
+const Row = ({ label, value, highlight, bold }) => (
+  <div className="flex justify-between text-sm">
+    <span className={highlight ? 'text-charityDark' : 'text-textSecondary'}>{label}</span>
+    <span
+      className={`${highlight ? 'text-charityDark' : 'text-textPrimary'} ${bold ? 'font-semibold text-base' : 'font-medium'}`}
+    >
+      {value}
+    </span>
+  </div>
+);
 
 export default ShopCard;

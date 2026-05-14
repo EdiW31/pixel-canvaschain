@@ -31,113 +31,98 @@ const Toolbar = () => {
   const brushCost = brushSize * brushSize;
 
   return (
-    <div className="w-48 bg-surface p-4 rounded-lg border border-primary/20 space-y-4">
-      <h3 className="text-lg font-heading font-bold text-primary mb-4">Controls</h3>
+    <div className="w-52 card p-4 space-y-5">
+      <h3 className="font-heading text-base font-semibold">Controls</h3>
 
-      {/* Zoom Controls */}
+      {/* Zoom */}
       <div>
-        <p className="text-xs text-textSecondary mb-2">Zoom Level</p>
-        <div className="flex items-center space-x-2 mb-2">
+        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Zoom</p>
+        <div className="flex items-center gap-2 mb-2">
           <button
             onClick={zoomOut}
             disabled={zoom <= minZoom}
-            className="w-10 h-10 bg-primary/10 border border-primary rounded text-primary hover:bg-primary hover:text-background disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-300 font-bold text-xl"
+            className="w-9 h-9 rounded-md border border-border text-textPrimary hover:bg-backgroundAlt disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-medium text-lg"
           >
             −
           </button>
           <div className="flex-1 text-center">
-            <p className="text-lg font-bold text-primary">{zoom.toFixed(1)}x</p>
+            <p className="text-base font-semibold text-textPrimary">{zoom.toFixed(1)}×</p>
           </div>
           <button
             onClick={zoomIn}
             disabled={zoom >= MAX_ZOOM}
-            className="w-10 h-10 bg-primary/10 border border-primary rounded text-primary hover:bg-primary hover:text-background disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-300 font-bold text-xl"
+            className="w-9 h-9 rounded-md border border-border text-textPrimary hover:bg-backgroundAlt disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-medium text-lg"
           >
             +
           </button>
         </div>
-
-        {/* Zoom Range Indicator */}
-        <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-backgroundAlt rounded-full h-1.5 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-300"
-            style={{
-              width: `${((zoom - minZoom) / (MAX_ZOOM - minZoom)) * 100}%`,
-            }}
+            className="h-full bg-primary transition-all duration-300"
+            style={{ width: `${((zoom - minZoom) / (MAX_ZOOM - minZoom)) * 100}%` }}
           />
         </div>
-        <div className="flex justify-between text-xs text-textSecondary mt-1">
-          <span>{minZoom.toFixed(1)}x</span>
-          <span>{MAX_ZOOM}x</span>
+        <div className="flex justify-between text-xs text-textMuted mt-1">
+          <span>{minZoom.toFixed(1)}×</span>
+          <span>{MAX_ZOOM}×</span>
         </div>
       </div>
 
-      {/* Brush Size Controls */}
+      {/* Brush */}
       <div>
-        <p className="text-xs text-textSecondary mb-2">Brush Size</p>
-        <div className="space-y-2">
-          <input
-            type="range"
-            min={MIN_BRUSH}
-            max={MAX_BRUSH}
-            value={brushSize}
-            onChange={(e) => setBrushSize(Number(e.target.value))}
-            className="w-full h-2 bg-background rounded-lg appearance-none cursor-pointer accent-secondary"
-          />
-          <div className="flex justify-between text-xs text-textSecondary">
-            <span>{MIN_BRUSH}×{MIN_BRUSH}</span>
-            <span>{MAX_BRUSH}×{MAX_BRUSH}</span>
-          </div>
-          <div className="bg-background border border-secondary/30 rounded p-2 text-center">
-            <p className="text-sm font-bold text-secondary">
-              Brush: {brushSize}×{brushSize}
-            </p>
-            <p className="text-xs text-textSecondary mt-1">
-              Cost: <span className="text-primary font-bold">{brushCost}</span> credits
-            </p>
-          </div>
+        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Brush</p>
+        <input
+          type="range"
+          min={MIN_BRUSH}
+          max={MAX_BRUSH}
+          value={brushSize}
+          onChange={(e) => setBrushSize(Number(e.target.value))}
+          className="w-full h-1.5 bg-backgroundAlt rounded-lg appearance-none cursor-pointer accent-primary"
+        />
+        <div className="flex justify-between text-xs text-textMuted mt-1 mb-2">
+          <span>{MIN_BRUSH}×{MIN_BRUSH}</span>
+          <span>{MAX_BRUSH}×{MAX_BRUSH}</span>
+        </div>
+        <div className="bg-backgroundAlt rounded-md p-2 text-center">
+          <p className="text-sm font-semibold text-textPrimary">
+            {brushSize}×{brushSize}
+          </p>
+          <p className="text-xs text-textMuted mt-0.5">
+            <span className="text-charityDark font-semibold">{brushCost}</span> credit{brushCost !== 1 ? 's' : ''} per stroke
+          </p>
         </div>
       </div>
 
       {/* Reset View */}
-      <button
-        onClick={resetView}
-        className="w-full px-4 py-2 bg-secondary/10 border border-secondary rounded text-secondary hover:bg-secondary hover:text-background transition-all duration-300 text-sm font-bold"
-      >
-        Reset View
+      <button onClick={resetView} className="btn-secondary w-full text-sm">
+        Reset view
       </button>
 
-      {/* Coordinates Display */}
+      {/* Coordinates */}
       <div>
-        <p className="text-xs text-textSecondary mb-2">Cursor Position</p>
-        <div className="bg-background border border-primary/30 rounded p-3">
+        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Cursor</p>
+        <div className="bg-backgroundAlt rounded-md p-3">
           {hoverPixel ? (
             <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="text-xs text-textSecondary">X:</span>
-                <span className="text-sm font-mono font-bold text-primary">
-                  {hoverPixel.x}
-                </span>
+              <div className="flex justify-between text-sm">
+                <span className="text-textMuted">X</span>
+                <span className="font-mono font-semibold text-textPrimary">{hoverPixel.x}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-xs text-textSecondary">Y:</span>
-                <span className="text-sm font-mono font-bold text-primary">
-                  {hoverPixel.y}
-                </span>
+              <div className="flex justify-between text-sm">
+                <span className="text-textMuted">Y</span>
+                <span className="font-mono font-semibold text-textPrimary">{hoverPixel.y}</span>
               </div>
             </div>
           ) : (
-            <p className="text-xs text-textSecondary text-center">
-              Hover over canvas
-            </p>
+            <p className="text-xs text-textMuted text-center">Hover over canvas</p>
           )}
         </div>
       </div>
 
-      {/* Info */}
-      <div className="pt-4 border-t border-primary/20">
-        <p className="text-xs text-textSecondary leading-relaxed">
-          💡 <span className="text-primary font-bold">Tip:</span> Use mouse wheel to zoom faster!
+      {/* Tip */}
+      <div className="pt-4 border-t border-border">
+        <p className="text-xs text-textMuted leading-relaxed">
+          Scroll to zoom. Right-click drag to pan.
         </p>
       </div>
     </div>

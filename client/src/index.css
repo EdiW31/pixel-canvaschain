@@ -1,28 +1,93 @@
-/* Google Fonts - Inter & Orbitron */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@700;900&display=swap');
+/* Google Fonts — Inter (UI) + Fraunces (display serif) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap');
 
-/* Tailwind CSS imports */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Base styles */
+/* ─── Base ─────────────────────────────────────────────────────────────── */
 @layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
     @apply bg-background text-textPrimary;
     font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: 'ss01', 'cv11';
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Orbitron', 'Inter', sans-serif;
+    font-family: 'Fraunces', 'Inter', serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: theme('colors.textPrimary');
+  }
+
+  ::selection {
+    background: theme('colors.primary');
+    color: theme('colors.textPrimary');
   }
 }
 
-/* sdk-dapp-ui web components mount on document.body. Force fixed positioning
-   so the browser doesn't auto-scroll to them (default they're in normal flow
-   at the bottom of body, which extends the page and triggers a scroll-into-view).
-   Fixed positioning takes them out of flow → no scroll. The component's own
-   inner styles control the actual position/animation. */
+/* ─── Components ───────────────────────────────────────────────────────── */
+@layer components {
+  /* Primary button — solid gold */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           px-5 py-2.5 rounded-lg
+           bg-primary text-textPrimary font-semibold
+           border border-primaryDark/40
+           shadow-soft hover:shadow-card
+           hover:bg-primaryDark
+           focus:outline-none focus:shadow-focus
+           transition-all duration-200;
+  }
+  .btn-primary-lg {
+    @apply btn-primary px-7 py-3.5 text-base;
+  }
+
+  /* Secondary button — bordered, white */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           px-5 py-2.5 rounded-lg
+           bg-surface text-textPrimary font-medium
+           border border-borderStrong
+           hover:bg-backgroundAlt
+           focus:outline-none focus:shadow-focus
+           transition-all duration-200;
+  }
+
+  /* Ghost button — text only, hover bg */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2 rounded-md
+           text-textSecondary hover:text-textPrimary
+           hover:bg-backgroundAlt
+           transition-colors duration-200;
+  }
+
+  /* Card */
+  .card {
+    @apply bg-surface border border-border rounded-xl shadow-soft;
+  }
+
+  /* Hero/feature pill */
+  .pill {
+    @apply inline-flex items-center gap-1.5
+           px-3 py-1 rounded-full text-xs font-medium
+           bg-primaryLight text-primaryDark;
+  }
+  .pill-charity {
+    @apply inline-flex items-center gap-1.5
+           px-3 py-1 rounded-full text-xs font-medium
+           bg-charityLight text-charityDark;
+  }
+}
+
+/* ─── sdk-dapp-ui panels: force fixed positioning so they don't push layout ── */
 mvx-unlock-panel,
 mvx-wallet-connect,
 mvx-sign-transactions-panel,
@@ -34,207 +99,9 @@ mvx-toast-list {
   pointer-events: none;
   z-index: 9999;
 }
-/* Re-enable pointer events on the actual rendered panel content inside */
 mvx-unlock-panel *,
 mvx-wallet-connect *,
 mvx-sign-transactions-panel *,
 mvx-pending-transactions-panel * {
   pointer-events: auto;
-}
-
-/* Custom utilities */
-@layer utilities {
-  /* Neon glow text effects */
-  .text-neon-cyan {
-    color: #00ffff;
-    text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff;
-  }
-
-  .text-neon-magenta {
-    color: #ff00ff;
-    text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff, 0 0 30px #ff00ff;
-  }
-
-  .text-neon-yellow {
-    color: #ffff00;
-    text-shadow: 0 0 10px #ffff00, 0 0 20px #ffff00, 0 0 30px #ffff00;
-  }
-
-  .text-neon-green {
-    color: #00ff00;
-    text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00, 0 0 30px #00ff00;
-  }
-
-  /* Box shadow neon glow (already defined in Tailwind config) */
-  /* But adding variations for completeness */
-  .shadow-neon-soft {
-    box-shadow: 0 0 5px rgba(0, 255, 255, 0.5), 0 0 10px rgba(0, 255, 255, 0.3);
-  }
-
-  .shadow-neon-hard {
-    box-shadow: 0 0 20px rgba(0, 255, 255, 0.8), 0 0 40px rgba(0, 255, 255, 0.5);
-  }
-}
-
-/* Custom animations */
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
-@keyframes slide-in {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-.animate-slide-in {
-  animation: slide-in 0.3s ease-out;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #0a0a0f;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #00ffff;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #ff00ff;
-}
-
-/* Canvas pixel-perfect rendering */
-canvas {
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-  image-rendering: crisp-edges;
-}
-
-/* Disable text selection on UI elements (for better UX) */
-button, .no-select {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-/* Smooth transitions for interactive elements */
-button, a, input {
-  transition: all 0.3s ease;
-}
-
-/* Focus styles for accessibility */
-button:focus-visible,
-input:focus-visible,
-a:focus-visible {
-  outline: 2px solid #00ffff;
-  outline-offset: 2px;
-}
-
-/* Loading spinner */
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-/* Gradient backgrounds */
-.bg-gradient-cyber {
-  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%);
-}
-
-.bg-gradient-neon {
-  background: linear-gradient(135deg, #00ffff 0%, #ff00ff 50%, #ffff00 100%);
-}
-
-/* Card hover effects */
-.card-hover {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.card-hover:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
-}
-
-/* Bounce animation for loading dots */
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-.animate-bounce {
-  animation: bounce 1s ease-in-out infinite;
-}
-
-/* Fade in animation */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.5s ease-in;
-}
-
-/* Glow button effect */
-.btn-glow {
-  position: relative;
-  overflow: hidden;
-}
-
-.btn-glow::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  background: rgba(0, 255, 255, 0.3);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
-}
-
-.btn-glow:hover::before {
-  width: 300px;
-  height: 300px;
-}
-
-/* Prevent body scroll when modal is open (future use) */
-body.modal-open {
-  overflow: hidden;
 }
