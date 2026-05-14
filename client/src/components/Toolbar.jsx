@@ -45,6 +45,15 @@ const Toolbar = () => {
     <div className="w-56 card p-4 space-y-5">
       <h3 className="font-heading text-base font-semibold">Tools</h3>
 
+      {/* ─── Shortcuts (moved to top so users see them) ────────── */}
+      <Section label="Shortcuts">
+        <div className="space-y-1.5 text-xs text-textSecondary bg-backgroundAlt rounded-md p-3">
+          <Shortcut keys={['[', ']']} desc="Brush size" />
+          <Shortcut keys={['+', '−']} desc="Zoom" />
+          <Shortcut keys={['R']}      desc="Reset view" />
+        </div>
+      </Section>
+
       {/* ─── Zoom ──────────────────────────────────────────────── */}
       <Section label="Zoom">
         <div className="flex items-center gap-2 mb-2">
@@ -118,15 +127,6 @@ const Toolbar = () => {
         </div>
       </Section>
 
-      {/* ─── Shortcuts ─────────────────────────────────────────── */}
-      <div className="pt-4 border-t border-border">
-        <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Shortcuts</p>
-        <div className="space-y-1 text-xs text-textSecondary">
-          <Shortcut keys={['[', ']']} desc="Brush size" />
-          <Shortcut keys={['+', '−']} desc="Zoom" />
-          <Shortcut keys={['R']}      desc="Reset view" />
-        </div>
-      </div>
     </div>
   );
 };

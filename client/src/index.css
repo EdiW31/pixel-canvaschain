@@ -69,6 +69,14 @@
     color-scheme: light dark;
   }
 
+  /* Force-apply page background via CSS variables. Belt and braces — Tailwind
+     `bg-background` resolves to the same thing, but if any cached CSS still
+     references the old neon palette, these declarations win. */
+  html, body {
+    background-color: rgb(var(--bg)) !important;
+    color: rgb(var(--text));
+  }
+
   body {
     @apply bg-background text-textPrimary;
     font-family: 'Inter', system-ui, sans-serif;
@@ -153,9 +161,25 @@
 }
 
 /* ─── sdk-dapp-ui panel positioning ────────────────────────────────────── */
+/* Pinned to viewport with a tinted backdrop so the QR / unlock / sign panels
+   read as proper modals (not "floating in transparent space"). The host element
+   becomes a click-through-able dim layer behind the actual panel content. */
+
 mvx-unlock-panel,
 mvx-wallet-connect,
-mvx-sign-transactions-panel,
+mvx-sign-transactions-panel {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+  z-index: 9999;
+  background: rgb(var(--bg) / 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* These ones (toast list + notifications + pending) shouldn't dim the whole
+   page — they're passive surfaces. Keep them visually transparent and click-
+   through except for their actual content. */
 mvx-pending-transactions-panel,
 mvx-notifications-feed,
 mvx-toast-list {
@@ -164,9 +188,8 @@ mvx-toast-list {
   pointer-events: none;
   z-index: 9999;
 }
-mvx-unlock-panel *,
-mvx-wallet-connect *,
-mvx-sign-transactions-panel *,
-mvx-pending-transactions-panel * {
+mvx-pending-transactions-panel *,
+mvx-notifications-feed *,
+mvx-toast-list * {
   pointer-events: auto;
 }

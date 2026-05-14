@@ -233,8 +233,54 @@ const Canvas = () => {
         <p><span className="text-textPrimary font-semibold">Right + drag</span> &mdash; pan</p>
         <p><span className="text-textPrimary font-semibold">Scroll</span> &mdash; zoom</p>
       </div>
+
+      {/* First-visit keyboard shortcuts hint (dismissable, remembered) */}
+      <KeyboardHint />
     </div>
   );
 };
+
+const HINT_DISMISS_KEY = 'canvaschain-kbd-hint-dismissed';
+
+const KeyboardHint = () => {
+  const [show, setShow] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(HINT_DISMISS_KEY) !== '1';
+  });
+
+  if (!show) return null;
+
+  const dismiss = () => {
+    try { window.localStorage.setItem(HINT_DISMISS_KEY, '1'); } catch (_) {}
+    setShow(false);
+  };
+
+  return (
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 max-w-md w-[90%] sm:w-auto animate-slide-up">
+      <div className="card px-4 py-3 shadow-elevate flex items-center gap-3">
+        <div className="text-lg flex-shrink-0">⌨️</div>
+        <div className="flex-1 text-xs sm:text-sm text-textSecondary leading-snug">
+          <span className="text-textPrimary font-semibold">Keyboard shortcuts:</span>{' '}
+          <Kbd>[</Kbd> <Kbd>]</Kbd> brush ·{' '}
+          <Kbd>+</Kbd> <Kbd>−</Kbd> zoom ·{' '}
+          <Kbd>R</Kbd> reset view
+        </div>
+        <button
+          onClick={dismiss}
+          className="text-textMuted hover:text-textPrimary text-lg leading-none px-1"
+          title="Dismiss"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const Kbd = ({ children }) => (
+  <kbd className="inline-block px-1.5 py-0.5 bg-backgroundAlt border border-border rounded text-[10px] font-mono text-textPrimary">
+    {children}
+  </kbd>
+);
 
 export default Canvas;
