@@ -7,37 +7,33 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Warm, light palette — Claude-inspired with yellow accents.
-        // Slightly whiter than Claude's cream so the brands don't collide.
-        background:    '#FBFAF6',  // page background (warm off-white)
-        backgroundAlt: '#F4F1E8',  // section dividers, soft sand
-        surface:       '#FFFFFF',  // card surfaces, pure white
-        border:        '#EBE7DD',  // subtle warm border
-        borderStrong:  '#D9D4C5',  // stronger divider
+        // All colours are CSS variables defined in `src/index.css` —
+        // values are space-separated RGB triplets (e.g. "251 250 246")
+        // so Tailwind can apply alpha modifiers like `bg-primary/40`.
+        background:    'rgb(var(--bg) / <alpha-value>)',
+        backgroundAlt: 'rgb(var(--bg-alt) / <alpha-value>)',
+        surface:       'rgb(var(--surface) / <alpha-value>)',
+        border:        'rgb(var(--border) / <alpha-value>)',
+        borderStrong:  'rgb(var(--border-strong) / <alpha-value>)',
 
-        // Primary: warm gold-yellow (replaces Claude's coral/orange)
-        primary:       '#E5B547',
-        primaryDark:   '#C49628',
-        primaryLight:  '#FCF4D9',  // pale tint for soft backgrounds
+        primary:       'rgb(var(--primary) / <alpha-value>)',
+        primaryDark:   'rgb(var(--primary-dark) / <alpha-value>)',
+        primaryLight:  'rgb(var(--primary-light) / <alpha-value>)',
 
-        // Charity: sage green that emphasizes the mission
-        charity:       '#7B9E5D',
-        charityDark:   '#5E7C46',
-        charityLight:  '#E8F0DE',
+        charity:       'rgb(var(--charity) / <alpha-value>)',
+        charityDark:   'rgb(var(--charity-dark) / <alpha-value>)',
+        charityLight:  'rgb(var(--charity-light) / <alpha-value>)',
 
-        // Semantic colors (muted, in the same warm family)
-        success:       '#5B8A5B',
-        error:         '#C2563F',
+        success:       'rgb(var(--success) / <alpha-value>)',
+        error:         'rgb(var(--error) / <alpha-value>)',
 
-        // Text
-        textPrimary:   '#1B1A17',  // warm near-black
-        textSecondary: '#5A574F',  // body
-        textMuted:     '#9B978F',  // muted captions
+        textPrimary:   'rgb(var(--text) / <alpha-value>)',
+        textSecondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+        textMuted:     'rgb(var(--text-muted) / <alpha-value>)',
 
-        // Back-compat aliases so existing components don't crash.
-        // These can be removed once every component is migrated.
-        secondary:     '#7B9E5D',  // (was magenta) → reuse charity green
-        accent:        '#E5B547',  // (was neon yellow) → primary gold
+        // Back-compat aliases
+        secondary:     'rgb(var(--charity) / <alpha-value>)',
+        accent:        'rgb(var(--primary) / <alpha-value>)',
       },
       fontFamily: {
         sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
@@ -45,15 +41,15 @@ export default {
         mono:    ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       boxShadow: {
-        soft:    '0 1px 2px rgba(27, 26, 23, 0.04), 0 1px 4px rgba(27, 26, 23, 0.04)',
-        card:    '0 2px 8px rgba(27, 26, 23, 0.06), 0 1px 2px rgba(27, 26, 23, 0.04)',
-        elevate: '0 8px 24px rgba(27, 26, 23, 0.08), 0 2px 6px rgba(27, 26, 23, 0.04)',
-        focus:   '0 0 0 4px rgba(229, 181, 71, 0.18)',
+        soft:    '0 1px 2px rgb(var(--shadow) / 0.06), 0 1px 4px rgb(var(--shadow) / 0.06)',
+        card:    '0 2px 8px rgb(var(--shadow) / 0.08), 0 1px 2px rgb(var(--shadow) / 0.06)',
+        elevate: '0 8px 24px rgb(var(--shadow) / 0.12), 0 2px 6px rgb(var(--shadow) / 0.06)',
+        focus:   '0 0 0 4px rgb(var(--primary) / 0.22)',
       },
       animation: {
-        'fade-in':  'fadeIn 0.4s ease-out',
-        'slide-up': 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-        'subtle-pulse': 'subtlePulse 3s ease-in-out infinite',
+        'fade-in':     'fadeIn 0.4s ease-out',
+        'slide-up':    'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+        'subtle-pulse':'subtlePulse 3s ease-in-out infinite',
       },
       keyframes: {
         fadeIn:  { '0%': { opacity: 0 }, '100%': { opacity: 1 } },

@@ -5,51 +5,116 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Theme tokens (CSS variables) ──────────────────────────────────────────
+   All values are space-separated RGB triplets so Tailwind alpha modifiers
+   like `bg-primary/40` work. Override per theme via `[data-theme="dark"]`.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root, [data-theme="light"] {
+  --bg:            251 250 246;  /* #FBFAF6  warm off-white */
+  --bg-alt:        244 241 232;  /* #F4F1E8  soft sand */
+  --surface:       255 255 255;  /* #FFFFFF  pure white cards */
+  --border:        235 231 221;  /* #EBE7DD */
+  --border-strong: 217 212 197;  /* #D9D4C5 */
+
+  --primary:       229 181  71;  /* #E5B547  gold-yellow */
+  --primary-dark:  196 150  40;  /* #C49628 */
+  --primary-light: 252 244 217;  /* #FCF4D9 */
+
+  --charity:       123 158  93;  /* #7B9E5D  sage */
+  --charity-dark:   94 124  70;  /* #5E7C46 */
+  --charity-light: 232 240 222;  /* #E8F0DE */
+
+  --success:        91 138  91;  /* #5B8A5B */
+  --error:         194  86  63;  /* #C2563F */
+
+  --text:           27  26  23;  /* #1B1A17 */
+  --text-secondary: 90  87  79;  /* #5A574F */
+  --text-muted:    155 151 143;  /* #9B978F */
+
+  --shadow:         27  26  23;  /* shadow base colour (light: warm black) */
+}
+
+[data-theme="dark"] {
+  --bg:             26  24  23;  /* #1A1817  warm near-black */
+  --bg-alt:         37  34  32;  /* #252220 */
+  --surface:        45  42  39;  /* #2D2A27  warm dark card */
+  --border:         58  54  49;  /* #3A3631 */
+  --border-strong:  82  77  70;  /* #524D46 */
+
+  --primary:       229 181  71;  /* #E5B547  same gold — pops in both themes */
+  --primary-dark:  255 200  82;  /* lighter gold in dark for hover */
+  --primary-light:  72  60  34;  /* dark gold tint for subtle bg */
+
+  --charity:       143 180 117;  /* #8FB475  slightly brighter sage for dark */
+  --charity-dark:  168 200 138;  /* lighter for emphasis on dark */
+  --charity-light:  52  68  43;  /* dark sage tint */
+
+  --success:       134 175 113;
+  --error:         224 122 100;
+
+  --text:          242 239 232;  /* #F2EFE8  warm off-white */
+  --text-secondary:168 163 155;  /* #A8A39B */
+  --text-muted:    118 113 106;  /* #76716A */
+
+  --shadow:          0   0   0;  /* darker shadow base for dark mode */
+}
+
 /* ─── Base ─────────────────────────────────────────────────────────────── */
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    color-scheme: light dark;
   }
 
   body {
     @apply bg-background text-textPrimary;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: 'ss01', 'cv11';
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Fraunces', 'Inter', serif;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: theme('colors.textPrimary');
+    color: rgb(var(--text));
   }
 
   ::selection {
-    background: theme('colors.primary');
-    color: theme('colors.textPrimary');
+    background: rgb(var(--primary));
+    color: rgb(var(--text));
+  }
+
+  input, textarea, select {
+    color: rgb(var(--text));
+    background: rgb(var(--surface));
   }
 }
 
 /* ─── Components ───────────────────────────────────────────────────────── */
 @layer components {
-  /* Primary button — solid gold */
+  /* Primary button — solid gold (always readable on both themes) */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2
-           px-5 py-2.5 rounded-lg
-           bg-primary text-textPrimary font-semibold
-           border border-primaryDark/40
+           px-5 py-2.5 rounded-lg font-semibold
+           bg-primary border border-primaryDark/40
            shadow-soft hover:shadow-card
            hover:bg-primaryDark
            focus:outline-none focus:shadow-focus
            transition-all duration-200;
+    color: #1B1A17;  /* dark text on gold, fixed regardless of theme */
+  }
+  .btn-primary:hover {
+    color: #1B1A17;
   }
   .btn-primary-lg {
     @apply btn-primary px-7 py-3.5 text-base;
   }
 
-  /* Secondary button — bordered, white */
+  /* Secondary button — bordered, surface bg */
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2
            px-5 py-2.5 rounded-lg
@@ -74,7 +139,7 @@
     @apply bg-surface border border-border rounded-xl shadow-soft;
   }
 
-  /* Hero/feature pill */
+  /* Pills */
   .pill {
     @apply inline-flex items-center gap-1.5
            px-3 py-1 rounded-full text-xs font-medium
@@ -87,7 +152,7 @@
   }
 }
 
-/* ─── sdk-dapp-ui panels: force fixed positioning so they don't push layout ── */
+/* ─── sdk-dapp-ui panel positioning ────────────────────────────────────── */
 mvx-unlock-panel,
 mvx-wallet-connect,
 mvx-sign-transactions-panel,

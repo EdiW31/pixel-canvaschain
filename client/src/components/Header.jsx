@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import WalletInfo from './WalletInfo';
+import ThemeToggle from './ThemeToggle';
 import { useSocket } from '../hooks/useSocket';
 
 /**
@@ -40,6 +41,7 @@ const Header = () => {
           </div>
 
           <WalletInfo />
+          <ThemeToggle />
         </div>
       </div>
     </header>

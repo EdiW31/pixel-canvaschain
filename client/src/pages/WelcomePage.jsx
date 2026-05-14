@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import ThemeToggle from '../components/ThemeToggle';
 
 /**
  * WelcomePage — Landing page
@@ -33,6 +34,7 @@ const WelcomePage = () => {
           <div className="flex items-center gap-2">
             <a href="#mission"     className="btn-ghost hidden sm:inline-flex">Mission</a>
             <a href="#how-it-works" className="btn-ghost hidden sm:inline-flex">How it works</a>
+            <ThemeToggle />
             <Link to="/login" className="btn-primary">Open the app</Link>
           </div>
         </div>
