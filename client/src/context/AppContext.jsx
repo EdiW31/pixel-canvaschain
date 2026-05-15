@@ -1,57 +1,55 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
 import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
-import { useContractCredits } from '../hooks/useContractCredits';
-
-/**
- * AppContext — Global state management for Pixel CanvasChain
- *
- * Phase 2: wallet address/egld/isConnected come from @multiversx/sdk-dapp.
- * Credits are fetched from the smart contract via useContractCredits.
- * Canvas, color, toast, and zoom state remain local.
- */
+import { usePixelBalance } from '../hooks/usePixelBalance';
 
 const AppContext = createContext();
 
 export const useApp = () => {
   const context = useContext(AppContext);
-  if (!context) {
-    throw new Error('useApp must be used within AppProvider');
-  }
+  if (!context) throw new Error('useApp must be used within AppProvider');
   return context;
 };
 
 export const AppProvider = ({ children }) => {
-  // ── Real wallet state from sdk-dapp ───────────────────────────────────────
+  // ── Wallet (sdk-dapp) ─────────────────────────────────────────────────────
   const { address, account } = useGetAccountInfo();
   const isLoggedIn = useGetIsLoggedIn();
-
-  // Balance: string in smallest EGLD units → convert to float
   const egld = parseFloat((Number(account?.balance ?? 0) / 1e18).toFixed(4));
 
-  // ── On-chain credits from smart contract ──────────────────────────────────
-  const { credits: chainCredits, refetchCredits } = useContractCredits(address || null);
+  // ── PIXEL token balance ───────────────────────────────────────────────────
+  const { pixelBalance, refetchPixelBalance } = usePixelBalance(address || null);
 
-  // Session credits — updated instantly via credits:updated socket event.
-  // null means "not yet received from server"; fall back to chain value.
-  const [sessionCredits, setSessionCredits] = useState(null);
-
-  // When the chain poll returns a higher value (e.g. user topped up), sync it in.
-  useEffect(() => {
-    if (chainCredits > 0 && (sessionCredits === null || chainCredits > sessionCredits)) {
-      setSessionCredits(chainCredits);
-    }
-  }, [chainCredits]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const credits = sessionCredits !== null ? sessionCredits : chainCredits;
-
-  // Derived wallet object (same shape as Phase 1 so other components need no changes)
   const wallet = {
     address: address || null,
     isConnected: isLoggedIn,
     egld,
-    credits,
+    pixelBalance,
   };
+
+  // ── Pending pixels (painted but not yet paid for) ─────────────────────────
+  // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.
+  const [pendingPixels, setPendingPixels] = useState(new Map());
+  const pendingCount = pendingPixels.size;
+
+  const addPendingPixels = useCallback((pixels) => {
+    setPendingPixels((prev) => {
+      const next = new Map(prev);
+      for (const p of pixels) {
+        next.set(`${p.x}_${p.y}`, { x: p.x, y: p.y, color: p.color });
+      }
+      return next;
+    });
+  }, []);
+
+  const clearPendingPixels = useCallback(() => {
+    setPendingPixels(new Map());
+  }, []);
+
+  // Clear pending when wallet disconnects
+  useEffect(() => {
+    if (!isLoggedIn) clearPendingPixels();
+  }, [isLoggedIn, clearPendingPixels]);
 
   // ── Canvas state ──────────────────────────────────────────────────────────
   const [gridState, setGridState] = useState(null);
@@ -67,9 +65,7 @@ export const AppProvider = ({ children }) => {
   // ── Reference image overlay ───────────────────────────────────────────────
   const [refImageSrc, setRefImageSrc] = useState(null);
   const [refImageOpacity, setRefImageOpacity] = useState(0.7);
-  // Position/size in canvas-pixel coordinates (0–100 space).
   const [refImageRect, setRefImageRect] = useState({ x: 0, y: 0, w: 100, h: 100 });
-  // When locked, pointer events are disabled on the handle so the canvas works normally.
   const [refImageLocked, setRefImageLocked] = useState(false);
 
   // ── UI state ──────────────────────────────────────────────────────────────
@@ -99,7 +95,7 @@ export const AppProvider = ({ children }) => {
   // ── Toast ─────────────────────────────────────────────────────────────────
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3500);
   };
 
   const dismissToast = () => setToast(null);
@@ -108,7 +104,6 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const savedColor = localStorage.getItem('selectedColor');
     if (savedColor) setSelectedColor(savedColor);
-
     const savedHistory = localStorage.getItem('colorHistory');
     if (savedHistory) {
       try { setColorHistory(JSON.parse(savedHistory)); } catch (_) {}
@@ -121,10 +116,15 @@ export const AppProvider = ({ children }) => {
   }, [selectedColor, colorHistory]);
 
   const value = {
-    // Wallet (real, from sdk-dapp + contract)
+    // Wallet
     wallet,
-    refetchCredits,
-    setSessionCredits,
+    refetchPixelBalance,
+
+    // Pending pixels (paint-then-pay)
+    pendingPixels,
+    pendingCount,
+    addPendingPixels,
+    clearPendingPixels,
 
     // Canvas
     gridState,

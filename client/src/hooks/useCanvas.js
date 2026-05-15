@@ -83,12 +83,6 @@ export const useCanvas = () => {
       return;
     }
 
-    const requiredCredits = brushSize * brushSize;
-    if (wallet.credits < requiredCredits) {
-      showToast(`Insufficient credits. Need ${requiredCredits}, have ${wallet.credits}.`, 'error');
-      return;
-    }
-
     const pixels = getBrushPixels(coords.x, coords.y, brushSize, selectedColor);
     if (pixels.length === 0) return;
 

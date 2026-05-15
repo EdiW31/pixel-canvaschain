@@ -10,6 +10,7 @@
   "bigIntSub",
   "bigIntTDiv",
   "checkNoPayment",
+  "finish",
   "getNumArguments",
   "mBufferAppend",
   "mBufferAppendBytes",
@@ -26,9 +27,12 @@
   "mBufferToBigIntUnsigned",
   "managedCaller",
   "managedGetMultiESDTCallValue",
+  "managedMultiTransferESDTNFTExecute",
   "managedOwnerAddress",
   "managedSignalError",
   "managedTransferValueExecute",
   "managedWriteLog",
-  "signalError"
+  "signalError",
+  "smallIntGetUnsignedArgument",
+  "validateTokenIdentifier"
 ]

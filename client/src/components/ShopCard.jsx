@@ -30,7 +30,7 @@ const TIER_VALUES_WEI = {
 const WAIT_SECONDS = 15;
 
 const ShopCard = ({ tier }) => {
-  const { wallet, showToast, refetchCredits } = useApp();
+  const { wallet, showToast, refetchPixelBalance } = useApp();
   const [isPurchasing, setIsPurchasing] = useState(false);
   // 'idle' | 'waiting' | 'hint'
   const [confirmState, setConfirmState] = useState('idle');
@@ -94,9 +94,9 @@ const ShopCard = ({ tier }) => {
 
       setConfirmState('waiting');
 
-      // Aggressive credit polling after broadcast (devnet block ~6s)
+      // Poll PIXEL balance after broadcast (devnet block ~6s)
       [8_000, 15_000, 25_000, 40_000, 60_000].forEach((delay) => {
-        setTimeout(refetchCredits, delay);
+        setTimeout(refetchPixelBalance, delay);
       });
     } catch (err) {
       console.error('[ShopCard] Purchase error:', err);
@@ -167,7 +167,7 @@ const ShopCard = ({ tier }) => {
             <span className="w-3.5 h-3.5 border-2 border-primaryDark/40 border-t-primaryDark rounded-full animate-spin" />
             Processing…
           </span>
-        ) : !canAfford ? 'Insufficient EGLD' : 'Buy credits'}
+        ) : !canAfford ? 'Insufficient EGLD' : 'Buy PIXEL tokens'}
       </button>
 
       {/* ─── Waiting / confirmed overlay ─────────────────────────────── */}
@@ -197,13 +197,13 @@ const ShopCard = ({ tier }) => {
                 Transaction sent
               </p>
               <p className="text-sm text-textSecondary mb-5">
-                Credits not showing? Refresh from the chain.
+                PIXEL tokens not showing? Refresh from the chain.
               </p>
               <button
-                onClick={() => { refetchCredits(); setConfirmState('idle'); }}
+                onClick={() => { refetchPixelBalance(); setConfirmState('idle'); }}
                 className="btn-primary mb-1"
               >
-                ↻ Refresh credits
+                ↻ Refresh balance
               </button>
               <button
                 onClick={() => setConfirmState('idle')}

@@ -11,7 +11,7 @@ const WalletInfo = () => {
   const { isConnected, getTruncatedAddress, egld, logout } = useWallet();
   const { wallet } = useApp();
   const navigate = useNavigate();
-  const credits = wallet.credits;
+  const pixelBalance = wallet.pixelBalance;
 
   const handleLogout = async () => {
     await logout();
@@ -40,10 +40,10 @@ const WalletInfo = () => {
         <span className="text-textMuted text-xs">EGLD</span>
       </div>
 
-      {/* Credits */}
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-charityLight border border-charity/30 text-sm">
-        <span className="font-semibold text-textPrimary">{credits.toLocaleString()}</span>
-        <span className="text-textMuted text-xs">credits</span>
+      {/* PIXEL balance */}
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primaryLight border border-primary/30 text-sm">
+        <span className="font-semibold text-textPrimary">{pixelBalance.toLocaleString()}</span>
+        <span className="text-textMuted text-xs">PIXEL</span>
       </div>
 
       {/* Shop */}

@@ -1,28 +1,36 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Transaction } from '@multiversx/sdk-core/out/core/transaction';
+import { Address } from '@multiversx/sdk-core/out/core/address';
+import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/TransactionManager/TransactionManager';
 import { useCanvas } from '../hooks/useCanvas';
 import { useApp } from '../context/AppContext';
+import { useSocket } from '../hooks/useSocket';
+import { getDappProvider } from '../hooks/useWallet';
 
-/**
- * Toolbar — right-side controls for the canvas.
- *
- * Sections:
- *   1. Zoom (in/out + slider + numeric)
- *   2. Brush (size slider + visual preview + cost-per-stroke)
- *   3. Reset view button
- *   4. Live cursor coordinates
- *   5. Keyboard shortcuts hint card
- */
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
+const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
+const PIXEL_TOKEN_ID = import.meta.env.VITE_PIXEL_TOKEN_ID ?? 'PIXEL-a7cad6';
 
 const MIN_BRUSH = 1;
 const MAX_BRUSH = 4;
 
-const Toolbar = () => {
-  const {
-    zoom, hoverPixel, zoomIn, zoomOut, resetView, minZoom, MAX_ZOOM,
-  } = useCanvas();
+// Encode a string as hex
+const toHex = (str) => Array.from(new TextEncoder().encode(str))
+  .map((b) => b.toString(16).padStart(2, '0')).join('');
 
-  const { brushSize, setBrushSize, selectedColor } = useApp();
-  const brushCost = brushSize * brushSize;
+// Ensure hex string has even length
+const evenHex = (hex) => (hex.length % 2 === 0 ? hex : '0' + hex);
+
+const Toolbar = () => {
+  const { zoom, hoverPixel, zoomIn, zoomOut, resetView, minZoom, MAX_ZOOM } = useCanvas();
+  const {
+    brushSize, setBrushSize, selectedColor,
+    pendingPixels, pendingCount, clearPendingPixels,
+    wallet, showToast, refetchPixelBalance,
+  } = useApp();
+  const { notifyPixelsSubmitted } = useSocket();
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Keyboard shortcuts: [/] cycle brush, R reset view, +/- zoom
   useEffect(() => {
@@ -41,11 +49,116 @@ const Toolbar = () => {
     return () => window.removeEventListener('keydown', handler);
   }, [setBrushSize, resetView, zoomIn, zoomOut]);
 
+  const handleSubmit = async () => {
+    if (pendingCount === 0 || isSubmitting) return;
+
+    const dappProvider = getDappProvider();
+    if (!dappProvider || dappProvider.getType?.() === 'empty') {
+      showToast('Wallet provider not ready. Please reconnect.', 'error');
+      return;
+    }
+    if (!wallet.address) {
+      showToast('Wallet not connected.', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const pixels = Array.from(pendingPixels.values());
+
+      // Worst-case amount: assume every pixel is an overpaint (costs 2 PIXEL each).
+      // The contract refunds any excess automatically.
+      const amount = BigInt(pixels.length * 2);
+      const amountHex = evenHex(amount.toString(16));
+
+      // Encode ManagedVec<PixelData>: concatenation of (x u32 BE)(y u32 BE)(color u32 BE) per pixel
+      const pixelDataHex = pixels.map((p) => {
+        const x = p.x.toString(16).padStart(8, '0');
+        const y = p.y.toString(16).padStart(8, '0');
+        // color is '#RRGGBB' → uint32 (upper byte = 0)
+        const colorHex = p.color.replace('#', '').padStart(8, '0');
+        return x + y + colorHex;
+      }).join('');
+
+      // ESDTTransfer@tokenId@amount@paintPixels@pixelData
+      const data =
+        `ESDTTransfer@${toHex(PIXEL_TOKEN_ID)}@${amountHex}@${toHex('paintPixels')}@${pixelDataHex}`;
+
+      // Base cost covers ESDT validation + refund path; 3M per pixel covers two
+      // storage reads/writes + potential royalty ESDT send per pixel.
+      const gasLimit = BigInt(Math.max(30_000_000, 20_000_000 + pixels.length * 3_000_000));
+
+      const tx = new Transaction({
+        nonce: 0n,
+        value: 0n,
+        sender: Address.newFromBech32(wallet.address),
+        receiver: Address.newFromBech32(CONTRACT_ADDRESS),
+        gasLimit,
+        data: new TextEncoder().encode(data),
+        chainID: CHAIN_ID,
+      });
+
+      const signedTxs = await dappProvider.signTransactions([tx]);
+      await TransactionManager.getInstance().send(signedTxs);
+
+      const txHash = signedTxs[0].getHash?.().toString() ?? '';
+
+      // Optimistic clear — the canvas is already visually updated
+      clearPendingPixels();
+      showToast(`${pixels.length} pixel${pixels.length !== 1 ? 's' : ''} submitted!`, 'success');
+
+      // Notify server (optional — server can verify on-chain ownership)
+      if (txHash) notifyPixelsSubmitted(txHash);
+
+      // Refresh PIXEL balance after devnet confirms (~8s)
+      setTimeout(refetchPixelBalance, 8_000);
+      setTimeout(refetchPixelBalance, 20_000);
+    } catch (err) {
+      console.error('[Submit & Pay]', err);
+      showToast(err?.message ?? 'Transaction failed. Please try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="w-56 card p-4 space-y-5">
       <h3 className="font-heading text-base font-semibold">Tools</h3>
 
-      {/* ─── Shortcuts (moved to top so users see them) ────────── */}
+      {/* ─── Pending pixels / Submit & Pay ─────────────────────────── */}
+      {pendingCount > 0 && (
+        <Section label="Pending">
+          <div className="bg-primaryLight/50 border border-primary/30 rounded-lg p-3 space-y-2">
+            <p className="text-xs text-textSecondary">
+              <span className="font-semibold text-textPrimary">{pendingCount}</span>{' '}
+              pixel{pendingCount !== 1 ? 's' : ''} painted
+            </p>
+            <p className="text-xs text-textMuted">
+              Est. cost:{' '}
+              <span className="font-semibold text-primary">
+                ~{pendingCount}–{pendingCount * 2}
+              </span>{' '}
+              PIXEL
+            </p>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="btn-primary w-full text-xs py-2 justify-center"
+            >
+              {isSubmitting ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-3 h-3 border-2 border-[#1B1A17]/30 border-t-[#1B1A17] rounded-full animate-spin" />
+                  Signing…
+                </span>
+              ) : (
+                'Submit & Pay'
+              )}
+            </button>
+          </div>
+        </Section>
+      )}
+
+      {/* ─── Shortcuts ─────────────────────────────────────────────── */}
       <Section label="Shortcuts">
         <div className="space-y-1.5 text-xs text-textSecondary bg-backgroundAlt rounded-md p-3">
           <Shortcut keys={['[', ']']} desc="Brush size" />
@@ -54,7 +167,7 @@ const Toolbar = () => {
         </div>
       </Section>
 
-      {/* ─── Zoom ──────────────────────────────────────────────── */}
+      {/* ─── Zoom ──────────────────────────────────────────────────── */}
       <Section label="Zoom">
         <div className="flex items-center gap-2 mb-2">
           <IconBtn onClick={zoomOut} disabled={zoom <= minZoom} title="Zoom out (-)">−</IconBtn>
@@ -71,9 +184,8 @@ const Toolbar = () => {
         </div>
       </Section>
 
-      {/* ─── Brush ─────────────────────────────────────────────── */}
+      {/* ─── Brush ─────────────────────────────────────────────────── */}
       <Section label="Brush">
-        {/* Visual size preview */}
         <div className="flex items-center justify-center mb-3 h-12 bg-backgroundAlt rounded-md">
           <div
             className="rounded-sm border border-borderStrong"
@@ -85,7 +197,6 @@ const Toolbar = () => {
           />
         </div>
 
-        {/* Size buttons */}
         <div className="grid grid-cols-4 gap-1 mb-2">
           {[1, 2, 3, 4].map((size) => (
             <button
@@ -104,16 +215,17 @@ const Toolbar = () => {
         </div>
 
         <p className="text-xs text-textMuted text-center">
-          Cost: <span className="text-charityDark font-semibold">{brushCost}</span> credit{brushCost !== 1 ? 's' : ''} / stroke
+          <span className="font-semibold text-primary">{brushSize * brushSize}</span>{' '}
+          PIXEL / stroke
         </p>
       </Section>
 
-      {/* ─── View ──────────────────────────────────────────────── */}
+      {/* ─── View ──────────────────────────────────────────────────── */}
       <button onClick={resetView} className="btn-secondary w-full text-sm">
         <RecenterIcon /> Reset view
       </button>
 
-      {/* ─── Cursor ────────────────────────────────────────────── */}
+      {/* ─── Cursor ────────────────────────────────────────────────── */}
       <Section label="Cursor">
         <div className="bg-backgroundAlt rounded-md p-3">
           {hoverPixel ? (
@@ -126,7 +238,6 @@ const Toolbar = () => {
           )}
         </div>
       </Section>
-
     </div>
   );
 };

@@ -20,9 +20,9 @@ const INFO_COLORS = ['#4299E1', '#48BB78', '#9F7AEA'];
 
 const ShopPage = () => {
   const { isConnected } = useWallet();
-  const { wallet, refetchCredits } = useApp();
+  const { wallet, refetchPixelBalance } = useApp();
   const navigate = useNavigate();
-  const credits = wallet.credits;
+  const pixelBalance = wallet.pixelBalance;
 
   useEffect(() => {
     if (!isConnected) navigate('/login');
@@ -50,19 +50,19 @@ const ShopPage = () => {
                   <span>♥</span> 50% of every purchase → child welfare charity
                 </div>
                 <h1 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight mb-2">
-                  Buy painting credits
+                  Buy PIXEL tokens
                 </h1>
                 <Stroke />
                 <p className="text-textSecondary max-w-xl">
-                  Each credit lets you place one pixel on the canvas. Higher tiers come with
-                  bonus pixels — and a bigger contribution to charity.
+                  Each PIXEL token lets you place one pixel on the canvas. Paint freely,
+                  then sign a single transaction to commit your artwork on-chain.
                 </p>
                 <div className="mt-4">
                   <PaletteStrip size={12} />
                 </div>
               </div>
 
-              {credits > 0 && (
+              {pixelBalance > 0 && (
                 <button onClick={() => navigate('/canvas')} className="btn-primary-lg whitespace-nowrap flex-shrink-0">
                   Start painting →
                 </button>
@@ -74,8 +74,8 @@ const ShopPage = () => {
           <div className="card p-5 flex flex-wrap items-center gap-x-8 gap-y-3">
             <BalanceItem label="Wallet balance" value={wallet.egld} unit="EGLD" />
             <Divider />
-            <BalanceItem label="Credits" value={credits.toLocaleString()} unit="pixels" emphasis />
-            <button onClick={refetchCredits} title="Force a fresh on-chain query" className="ml-auto btn-ghost text-sm">
+            <BalanceItem label="PIXEL tokens" value={pixelBalance.toLocaleString()} unit="pixels" emphasis />
+            <button onClick={refetchPixelBalance} title="Force a fresh on-chain query" className="ml-auto btn-ghost text-sm">
               ↻ Refresh
             </button>
           </div>

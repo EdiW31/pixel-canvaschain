@@ -5,18 +5,15 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import pixelGrid from './pixelGrid.js';
 import userManager from './userManager.js';
-import { queryCredits } from './blockchain/contractClient.js';
 
 const app = express();
 const httpServer = createServer(app);
 
-// Configure CORS
 app.use(cors({
-  origin: 'http://localhost:5173', // Vite dev server
+  origin: 'http://localhost:5173',
   credentials: true,
 }));
 
-// Socket.io setup with CORS
 const io = new Server(httpServer, {
   cors: {
     origin: 'http://localhost:5173',
@@ -27,17 +24,12 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 5001;
 
-// Socket.io event handlers
 io.on('connection', (socket) => {
   console.log(`🔗 Client connected: ${socket.id}`);
 
   /**
-   * Event: wallet:join
-   * Called by the frontend after sdk-dapp login.
-   * Fetches on-chain credits, registers the wallet for this socket session.
-   *
-   * Payload: { address: "erd1..." }
-   * Response: wallet:joined { address, credits, gridState }
+   * wallet:join — register socket session and send canvas state.
+   * No longer fetches on-chain credits; painting is free (pay later via PIXEL tx).
    */
   socket.on('wallet:join', async ({ address } = {}) => {
     try {
@@ -46,23 +38,15 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Query on-chain credits (free read, no gas)
-      const onChainCredits = await queryCredits(address);
-
-      // Register / refresh user in session manager
-      userManager.joinUser(address, onChainCredits);
+      userManager.joinUser(address);
       socket.walletAddress = address;
-
-      // Send current canvas state
-      const gridState = pixelGrid.getGrid();
 
       socket.emit('wallet:joined', {
         address,
-        credits: onChainCredits,
-        gridState,
+        gridState: pixelGrid.getGrid(),
       });
 
-      console.log(`💼 Wallet joined: ${address.slice(0, 10)}... | ${onChainCredits} credits`);
+      console.log(`💼 Wallet joined: ${address.slice(0, 10)}...`);
     } catch (error) {
       console.error('❌ wallet:join error:', error);
       socket.emit('error', { message: 'Failed to join with wallet' });
@@ -70,25 +54,21 @@ io.on('connection', (socket) => {
   });
 
   /**
-   * Event: pixel:paint
-   * Validates session credits, updates grid, broadcasts to all clients.
+   * pixel:paint — validate and broadcast (no credit gate).
    */
   socket.on('pixel:paint', ({ x, y, color }) => {
     try {
       const address = socket.walletAddress;
-
       if (!address) {
         socket.emit('error', { message: 'Wallet not joined. Emit wallet:join first.' });
         return;
       }
 
-      // Rate limiting
       if (userManager.isRateLimited(address)) {
         socket.emit('error', { message: 'Rate limit exceeded. Max 10 pixels per second.' });
         return;
       }
 
-      // Validate coordinates and color
       if (!pixelGrid.isValidCoordinate(x, y)) {
         socket.emit('error', { message: 'Invalid coordinates' });
         return;
@@ -98,26 +78,13 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Deduct session credit
-      const deductResult = userManager.deductCredits(address, 1);
-      if (!deductResult.success) {
-        socket.emit('error', { message: deductResult.message });
-        return;
-      }
-
-      // Update pixel grid
       if (!pixelGrid.setPixel(x, y, color)) {
         socket.emit('error', { message: 'Failed to update pixel' });
         return;
       }
 
       userManager.recordPaint(address, x, y, color);
-
-      // Broadcast to all clients
       io.emit('pixel:update', { x, y, color, address });
-
-      // Notify painter of remaining session credits
-      socket.emit('credits:updated', { credits: deductResult.credits });
 
       console.log(`🎨 Pixel painted: (${x}, ${y}) ${color} by ${address.slice(0, 10)}...`);
     } catch (error) {
@@ -127,13 +94,11 @@ io.on('connection', (socket) => {
   });
 
   /**
-   * Event: pixels:paint
-   * Batch pixel painting (brush mode).
+   * pixels:paint — batch paint (brush mode), no credit gate.
    */
   socket.on('pixels:paint', ({ pixels }) => {
     try {
       const address = socket.walletAddress;
-
       if (!address) {
         socket.emit('error', { message: 'Wallet not joined. Emit wallet:join first.' });
         return;
@@ -154,7 +119,6 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Validate all pixels
       for (const pixel of pixels) {
         if (!pixelGrid.isValidCoordinate(pixel.x, pixel.y)) {
           socket.emit('error', { message: `Invalid coordinates: (${pixel.x}, ${pixel.y})` });
@@ -166,23 +130,6 @@ io.on('connection', (socket) => {
         }
       }
 
-      // Check session credits
-      const user = userManager.getUser(address);
-      if (!user || user.credits < pixels.length) {
-        socket.emit('error', {
-          message: `Insufficient credits. Need ${pixels.length}, have ${user?.credits ?? 0}`,
-        });
-        return;
-      }
-
-      // Deduct atomically
-      const deductResult = userManager.deductCredits(address, pixels.length);
-      if (!deductResult.success) {
-        socket.emit('error', { message: deductResult.message });
-        return;
-      }
-
-      // Update grid
       const paintedPixels = [];
       for (const pixel of pixels) {
         if (pixelGrid.setPixel(pixel.x, pixel.y, pixel.color)) {
@@ -192,7 +139,6 @@ io.on('connection', (socket) => {
       }
 
       io.emit('pixels:update', { pixels: paintedPixels, address });
-      socket.emit('credits:updated', { credits: deductResult.credits });
 
       console.log(`🎨 Batch painted: ${paintedPixels.length} pixels by ${address.slice(0, 10)}...`);
     } catch (error) {
@@ -202,8 +148,19 @@ io.on('connection', (socket) => {
   });
 
   /**
-   * Event: canvas:request
-   * Send current canvas state (used for reconnection).
+   * pixels:submit — client notifies us that a paintPixels ESDT tx was signed.
+   * Acknowledges with pixels:committed so the client can clear its pending list.
+   */
+  socket.on('pixels:submit', ({ txHash } = {}) => {
+    const address = socket.walletAddress;
+    if (!address) return;
+    console.log(`💰 PIXEL tx submitted by ${address.slice(0, 10)}...: ${txHash}`);
+    // Optimistic acknowledgement — the contract handles actual ownership enforcement.
+    socket.emit('pixels:committed', { txHash });
+  });
+
+  /**
+   * canvas:request — send current canvas state (reconnection).
    */
   socket.on('canvas:request', () => {
     try {
@@ -215,7 +172,7 @@ io.on('connection', (socket) => {
   });
 
   /**
-   * Event: stats:request
+   * stats:request
    */
   socket.on('stats:request', () => {
     try {
@@ -230,15 +187,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  /**
-   * Event: disconnect
-   */
   socket.on('disconnect', () => {
     console.log(`🔌 Client disconnected: ${socket.id}`);
   });
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -248,17 +201,16 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Start server
 httpServer.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║       🎨 Pixel CanvasChain Server - Phase 2 🎨          ║
+║       🎨 Pixel CanvasChain Server - Phase 3 🎨          ║
 ║                                                          ║
 ║  Server running on: http://localhost:${PORT}              ║
 ║  Socket.io: Ready for connections                       ║
 ║  Canvas: ${String(pixelGrid.getStats().width).padEnd(3)}x${String(pixelGrid.getStats().height).padEnd(3)} pixels initialized         ║
-║  Blockchain: MultiversX devnet (read-only)              ║
+║  Blockchain: PIXEL ESDT token (paint-then-pay)          ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
   `);

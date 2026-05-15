@@ -4,34 +4,19 @@ import { useApp } from '../context/AppContext';
 import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
 
-/**
- * Socket Context for providing socket instance throughout the app.
- */
 const SocketContext = createContext();
 
 export const useSocket = () => {
   const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error('useSocket must be used within SocketProvider');
-  }
+  if (!context) throw new Error('useSocket must be used within SocketProvider');
   return context;
 };
 
-/**
- * SocketProvider — Manages Socket.io connection lifecycle (Phase 2)
- *
- * After the socket connects, it waits for the user to be logged in via
- * sdk-dapp, then emits wallet:join so the server can seed session credits
- * from the on-chain balance.
- *
- * Credits displayed in the UI come from useContractCredits (chain polling).
- * The server's credits:updated event is ignored — the polling handles updates.
- */
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  const { updatePixel, showToast, setGridState, refetchCredits, setSessionCredits } = useApp();
+  const { updatePixel, showToast, setGridState, addPendingPixels, clearPendingPixels } = useApp();
   const isLoggedIn = useGetIsLoggedIn();
   const { address } = useGetAccountInfo();
 
@@ -73,20 +58,16 @@ export const SocketProvider = ({ children }) => {
       console.log('🖼️  Canvas initialized from server');
     });
 
-    // wallet:joined — server confirmed session, seed local credits immediately
-    socketInstance.on('wallet:joined', ({ address: addr, credits, gridState }) => {
-      console.log(`💼 Session started: ${addr?.slice(0, 10)}... | ${credits} session credits`);
+    // wallet:joined — server confirmed session, load grid
+    socketInstance.on('wallet:joined', ({ gridState }) => {
       setGridState(gridState);
-      setSessionCredits(credits); // show correct count right away
-      refetchCredits();
     });
 
-    // credits:updated — server sends remaining credits after every paint; apply instantly
-    socketInstance.on('credits:updated', ({ credits }) => {
-      setSessionCredits(credits);
+    // pixels:committed — server acknowledged PIXEL tx, clear pending
+    socketInstance.on('pixels:committed', () => {
+      clearPendingPixels();
     });
 
-    // Error handling
     socketInstance.on('error', ({ message }) => {
       console.error('Socket error:', message);
       showToast(message, 'error');
@@ -108,7 +89,7 @@ export const SocketProvider = ({ children }) => {
   }, [socket, isConnected, isLoggedIn, address]);
 
   /**
-   * Paint a single pixel.
+   * Paint a single pixel — updates canvas visually AND adds to pending.
    */
   const paintPixel = (x, y, color) => {
     if (!socket || !isConnected) {
@@ -116,12 +97,12 @@ export const SocketProvider = ({ children }) => {
       return false;
     }
     socket.emit('pixel:paint', { x, y, color });
+    addPendingPixels([{ x, y, color }]);
     return true;
   };
 
   /**
-   * Paint multiple pixels (brush mode).
-   * @param {Array<{x: number, y: number, color: string}>} pixels
+   * Paint multiple pixels (brush mode) — updates canvas AND adds to pending.
    */
   const paintPixels = (pixels) => {
     if (!socket || !isConnected) {
@@ -130,19 +111,23 @@ export const SocketProvider = ({ children }) => {
     }
     if (!Array.isArray(pixels) || pixels.length === 0) return false;
     socket.emit('pixels:paint', { pixels });
+    addPendingPixels(pixels);
     return true;
   };
 
   /**
-   * Request canvas state (for reconnection).
+   * Notify server that a paintPixels ESDT tx was confirmed on-chain.
    */
+  const notifyPixelsSubmitted = (txHash) => {
+    if (socket && isConnected) {
+      socket.emit('pixels:submit', { txHash });
+    }
+  };
+
   const requestCanvas = () => {
     if (socket && isConnected) socket.emit('canvas:request');
   };
 
-  /**
-   * Request stats.
-   */
   const requestStats = () => {
     if (socket && isConnected) socket.emit('stats:request');
   };
@@ -152,6 +137,7 @@ export const SocketProvider = ({ children }) => {
     isConnected,
     paintPixel,
     paintPixels,
+    notifyPixelsSubmitted,
     requestCanvas,
     requestStats,
   };
