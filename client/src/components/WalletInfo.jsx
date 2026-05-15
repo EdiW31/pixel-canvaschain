@@ -3,15 +3,10 @@ import { useWallet } from '../hooks/useWallet';
 import { useApp } from '../context/AppContext';
 
 /**
- * WalletInfo - Displays wallet connection status and balances
- *
- * Shows:
- * - Wallet address (truncated)
- * - EGLD balance
- * - Credit balance
- * - Link to shop (if connected)
+ * WalletInfo — header right-side widget.
+ * - Disconnected: shows a single "Connect wallet" CTA.
+ * - Connected:    shows address pill, EGLD, credits, Shop link, Disconnect.
  */
-
 const WalletInfo = () => {
   const { isConnected, getTruncatedAddress, egld, logout } = useWallet();
   const { wallet } = useApp();
@@ -25,43 +20,34 @@ const WalletInfo = () => {
 
   if (!isConnected) {
     return (
-      <Link
-        to="/login"
-        className="px-4 py-2 bg-primary/10 border border-primary rounded-lg text-primary hover:bg-primary hover:text-background transition-all duration-300"
-      >
-        Connect Wallet
+      <Link to="/login" className="btn-primary">
+        Connect wallet
       </Link>
     );
   }
 
   return (
-    <div className="flex items-center space-x-4">
-      {/* Wallet Address */}
-      <div className="hidden md:flex items-center space-x-2 px-3 py-2 bg-surface border border-primary/30 rounded-lg">
-        <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
-        <span className="text-sm font-mono text-textPrimary">{getTruncatedAddress()}</span>
+    <div className="flex items-center gap-2">
+      {/* Address pill */}
+      <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-backgroundAlt border border-border text-xs font-mono">
+        <span className="w-1.5 h-1.5 rounded-full bg-success animate-subtle-pulse" />
+        <span className="text-textSecondary">{getTruncatedAddress()}</span>
       </div>
 
-      {/* Balances */}
-      <div className="flex items-center space-x-3">
-        {/* EGLD Balance */}
-        <div className="flex items-center space-x-1 px-3 py-2 bg-accent/10 border border-accent rounded-lg">
-          <span className="text-sm font-bold text-accent">{egld}</span>
-          <span className="text-xs text-textSecondary">EGLD</span>
-        </div>
-
-        {/* Credits Balance */}
-        <div className="flex items-center space-x-1 px-3 py-2 bg-primary/10 border border-primary rounded-lg">
-          <span className="text-sm font-bold text-primary">{credits.toLocaleString()}</span>
-          <span className="text-xs text-textSecondary">Credits</span>
-        </div>
+      {/* EGLD */}
+      <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primaryLight border border-primary/30 text-sm">
+        <span className="font-semibold text-textPrimary">{egld}</span>
+        <span className="text-textMuted text-xs">EGLD</span>
       </div>
 
-      {/* Shop Link */}
-      <Link
-        to="/shop"
-        className="px-4 py-2 bg-secondary/10 border border-secondary rounded-lg text-secondary hover:bg-secondary hover:text-background transition-all duration-300 text-sm font-bold"
-      >
+      {/* Credits */}
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-charityLight border border-charity/30 text-sm">
+        <span className="font-semibold text-textPrimary">{credits.toLocaleString()}</span>
+        <span className="text-textMuted text-xs">credits</span>
+      </div>
+
+      {/* Shop */}
+      <Link to="/shop" className="btn-ghost text-sm">
         Shop
       </Link>
 
@@ -69,9 +55,9 @@ const WalletInfo = () => {
       <button
         onClick={handleLogout}
         title="Disconnect wallet"
-        className="px-3 py-2 bg-error/10 border border-error/40 rounded-lg text-error/70 hover:bg-error hover:text-background hover:border-error transition-all duration-300 text-sm font-bold"
+        className="px-3 py-1.5 text-sm text-textMuted hover:text-error hover:bg-error/5 rounded-md transition-colors"
       >
-        ✕ Disconnect
+        ✕
       </button>
     </div>
   );

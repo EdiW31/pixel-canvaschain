@@ -1,15 +1,16 @@
+import { useEffect } from 'react';
 import { useCanvas } from '../hooks/useCanvas';
 import { useApp } from '../context/AppContext';
 
 /**
- * Toolbar - Canvas controls sidebar
+ * Toolbar — right-side controls for the canvas.
  *
- * Features:
- * - Zoom in/out buttons
- * - Zoom level slider
- * - Brush size slider (1-4)
- * - Reset view button
- * - Current coordinates display
+ * Sections:
+ *   1. Zoom (in/out + slider + numeric)
+ *   2. Brush (size slider + visual preview + cost-per-stroke)
+ *   3. Reset view button
+ *   4. Live cursor coordinates
+ *   5. Keyboard shortcuts hint card
  */
 
 const MIN_BRUSH = 1;
@@ -17,131 +18,164 @@ const MAX_BRUSH = 4;
 
 const Toolbar = () => {
   const {
-    zoom,
-    hoverPixel,
-    zoomIn,
-    zoomOut,
-    resetView,
-    minZoom,
-    MAX_ZOOM,
+    zoom, hoverPixel, zoomIn, zoomOut, resetView, minZoom, MAX_ZOOM,
   } = useCanvas();
 
-  const { brushSize, setBrushSize } = useApp();
-
+  const { brushSize, setBrushSize, selectedColor } = useApp();
   const brushCost = brushSize * brushSize;
 
+  // Keyboard shortcuts: [/] cycle brush, R reset view, +/- zoom
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      switch (e.key) {
+        case '[': setBrushSize((b) => Math.max(MIN_BRUSH, b - 1)); break;
+        case ']': setBrushSize((b) => Math.min(MAX_BRUSH, b + 1)); break;
+        case 'r': case 'R': resetView(); break;
+        case '+': case '=': zoomIn(); break;
+        case '-': case '_': zoomOut(); break;
+        default: return;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [setBrushSize, resetView, zoomIn, zoomOut]);
+
   return (
-    <div className="w-48 bg-surface p-4 rounded-lg border border-primary/20 space-y-4">
-      <h3 className="text-lg font-heading font-bold text-primary mb-4">Controls</h3>
+    <div className="w-56 card p-4 space-y-5">
+      <h3 className="font-heading text-base font-semibold">Tools</h3>
 
-      {/* Zoom Controls */}
-      <div>
-        <p className="text-xs text-textSecondary mb-2">Zoom Level</p>
-        <div className="flex items-center space-x-2 mb-2">
-          <button
-            onClick={zoomOut}
-            disabled={zoom <= minZoom}
-            className="w-10 h-10 bg-primary/10 border border-primary rounded text-primary hover:bg-primary hover:text-background disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-300 font-bold text-xl"
-          >
-            −
-          </button>
-          <div className="flex-1 text-center">
-            <p className="text-lg font-bold text-primary">{zoom.toFixed(1)}x</p>
-          </div>
-          <button
-            onClick={zoomIn}
-            disabled={zoom >= MAX_ZOOM}
-            className="w-10 h-10 bg-primary/10 border border-primary rounded text-primary hover:bg-primary hover:text-background disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-300 font-bold text-xl"
-          >
-            +
-          </button>
+      {/* ─── Shortcuts (moved to top so users see them) ────────── */}
+      <Section label="Shortcuts">
+        <div className="space-y-1.5 text-xs text-textSecondary bg-backgroundAlt rounded-md p-3">
+          <Shortcut keys={['[', ']']} desc="Brush size" />
+          <Shortcut keys={['+', '−']} desc="Zoom" />
+          <Shortcut keys={['R']}      desc="Reset view" />
         </div>
+      </Section>
 
-        {/* Zoom Range Indicator */}
-        <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+      {/* ─── Zoom ──────────────────────────────────────────────── */}
+      <Section label="Zoom">
+        <div className="flex items-center gap-2 mb-2">
+          <IconBtn onClick={zoomOut} disabled={zoom <= minZoom} title="Zoom out (-)">−</IconBtn>
+          <div className="flex-1 text-center font-semibold tabular-nums">
+            {zoom.toFixed(1)}<span className="text-textMuted text-xs ml-0.5">×</span>
+          </div>
+          <IconBtn onClick={zoomIn} disabled={zoom >= MAX_ZOOM} title="Zoom in (+)">+</IconBtn>
+        </div>
+        <div className="w-full bg-backgroundAlt rounded-full h-1.5 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-300"
+            className="h-full bg-primary transition-all duration-300"
+            style={{ width: `${((zoom - minZoom) / (MAX_ZOOM - minZoom)) * 100}%` }}
+          />
+        </div>
+      </Section>
+
+      {/* ─── Brush ─────────────────────────────────────────────── */}
+      <Section label="Brush">
+        {/* Visual size preview */}
+        <div className="flex items-center justify-center mb-3 h-12 bg-backgroundAlt rounded-md">
+          <div
+            className="rounded-sm border border-borderStrong"
             style={{
-              width: `${((zoom - minZoom) / (MAX_ZOOM - minZoom)) * 100}%`,
+              width:  `${brushSize * 8}px`,
+              height: `${brushSize * 8}px`,
+              backgroundColor: selectedColor,
             }}
           />
         </div>
-        <div className="flex justify-between text-xs text-textSecondary mt-1">
-          <span>{minZoom.toFixed(1)}x</span>
-          <span>{MAX_ZOOM}x</span>
-        </div>
-      </div>
 
-      {/* Brush Size Controls */}
-      <div>
-        <p className="text-xs text-textSecondary mb-2">Brush Size</p>
-        <div className="space-y-2">
-          <input
-            type="range"
-            min={MIN_BRUSH}
-            max={MAX_BRUSH}
-            value={brushSize}
-            onChange={(e) => setBrushSize(Number(e.target.value))}
-            className="w-full h-2 bg-background rounded-lg appearance-none cursor-pointer accent-secondary"
-          />
-          <div className="flex justify-between text-xs text-textSecondary">
-            <span>{MIN_BRUSH}×{MIN_BRUSH}</span>
-            <span>{MAX_BRUSH}×{MAX_BRUSH}</span>
-          </div>
-          <div className="bg-background border border-secondary/30 rounded p-2 text-center">
-            <p className="text-sm font-bold text-secondary">
-              Brush: {brushSize}×{brushSize}
-            </p>
-            <p className="text-xs text-textSecondary mt-1">
-              Cost: <span className="text-primary font-bold">{brushCost}</span> credits
-            </p>
-          </div>
+        {/* Size buttons */}
+        <div className="grid grid-cols-4 gap-1 mb-2">
+          {[1, 2, 3, 4].map((size) => (
+            <button
+              key={size}
+              onClick={() => setBrushSize(size)}
+              className={`py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                brushSize === size
+                  ? 'bg-primary text-textPrimary border border-primaryDark/40'
+                  : 'bg-backgroundAlt text-textSecondary hover:bg-border'
+              }`}
+              style={brushSize === size ? { color: '#1B1A17' } : {}}
+            >
+              {size}×{size}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {/* Reset View */}
-      <button
-        onClick={resetView}
-        className="w-full px-4 py-2 bg-secondary/10 border border-secondary rounded text-secondary hover:bg-secondary hover:text-background transition-all duration-300 text-sm font-bold"
-      >
-        Reset View
+        <p className="text-xs text-textMuted text-center">
+          Cost: <span className="text-charityDark font-semibold">{brushCost}</span> credit{brushCost !== 1 ? 's' : ''} / stroke
+        </p>
+      </Section>
+
+      {/* ─── View ──────────────────────────────────────────────── */}
+      <button onClick={resetView} className="btn-secondary w-full text-sm">
+        <RecenterIcon /> Reset view
       </button>
 
-      {/* Coordinates Display */}
-      <div>
-        <p className="text-xs text-textSecondary mb-2">Cursor Position</p>
-        <div className="bg-background border border-primary/30 rounded p-3">
+      {/* ─── Cursor ────────────────────────────────────────────── */}
+      <Section label="Cursor">
+        <div className="bg-backgroundAlt rounded-md p-3">
           {hoverPixel ? (
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="text-xs text-textSecondary">X:</span>
-                <span className="text-sm font-mono font-bold text-primary">
-                  {hoverPixel.x}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-xs text-textSecondary">Y:</span>
-                <span className="text-sm font-mono font-bold text-primary">
-                  {hoverPixel.y}
-                </span>
-              </div>
+            <div className="space-y-1 font-mono text-sm">
+              <Row k="X" v={hoverPixel.x} />
+              <Row k="Y" v={hoverPixel.y} />
             </div>
           ) : (
-            <p className="text-xs text-textSecondary text-center">
-              Hover over canvas
-            </p>
+            <p className="text-xs text-textMuted text-center">Hover the canvas</p>
           )}
         </div>
-      </div>
+      </Section>
 
-      {/* Info */}
-      <div className="pt-4 border-t border-primary/20">
-        <p className="text-xs text-textSecondary leading-relaxed">
-          💡 <span className="text-primary font-bold">Tip:</span> Use mouse wheel to zoom faster!
-        </p>
-      </div>
     </div>
   );
 };
+
+/* ─── Sub-components ────────────────────────────────────────────────────── */
+
+const Section = ({ label, children }) => (
+  <div>
+    <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">{label}</p>
+    {children}
+  </div>
+);
+
+const IconBtn = ({ onClick, disabled, title, children }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    className="w-8 h-8 rounded-md border border-border text-textPrimary hover:bg-backgroundAlt disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-medium text-base flex items-center justify-center"
+  >
+    {children}
+  </button>
+);
+
+const Row = ({ k, v }) => (
+  <div className="flex justify-between">
+    <span className="text-textMuted">{k}</span>
+    <span className="text-textPrimary font-semibold tabular-nums">{v}</span>
+  </div>
+);
+
+const Shortcut = ({ keys, desc }) => (
+  <div className="flex items-center justify-between">
+    <span>{desc}</span>
+    <span className="flex items-center gap-1">
+      {keys.map((k, i) => (
+        <kbd key={i} className="px-1.5 py-0.5 bg-backgroundAlt border border-border rounded text-[10px] font-mono">
+          {k}
+        </kbd>
+      ))}
+    </span>
+  </div>
+);
+
+const RecenterIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
 
 export default Toolbar;

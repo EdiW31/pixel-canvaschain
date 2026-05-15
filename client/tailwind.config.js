@@ -4,32 +4,66 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Activate `dark:` variants when EITHER class="dark" OR data-theme="dark"
+  // exists on a parent. Belt-and-braces alongside our CSS-variable theming.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        // Custom dark mode color palette
-        background: '#0a0a0f',
-        surface: '#1a1a2e',
-        primary: '#00ffff',      // Cyan neon
-        secondary: '#ff00ff',    // Magenta neon
-        accent: '#ffff00',       // Yellow neon
-        success: '#00ff00',      // Green neon
-        error: '#ff0066',        // Red-pink neon
-        textPrimary: '#ffffff',
-        textSecondary: '#b0b0c0',
+        // All colours are CSS variables defined in `src/index.css` —
+        // values are space-separated RGB triplets (e.g. "251 250 246")
+        // so Tailwind can apply alpha modifiers like `bg-primary/40`.
+        background:    'rgb(var(--bg) / <alpha-value>)',
+        backgroundAlt: 'rgb(var(--bg-alt) / <alpha-value>)',
+        surface:       'rgb(var(--surface) / <alpha-value>)',
+        border:        'rgb(var(--border) / <alpha-value>)',
+        borderStrong:  'rgb(var(--border-strong) / <alpha-value>)',
+
+        primary:       'rgb(var(--primary) / <alpha-value>)',
+        primaryDark:   'rgb(var(--primary-dark) / <alpha-value>)',
+        primaryLight:  'rgb(var(--primary-light) / <alpha-value>)',
+
+        charity:       'rgb(var(--charity) / <alpha-value>)',
+        charityDark:   'rgb(var(--charity-dark) / <alpha-value>)',
+        charityLight:  'rgb(var(--charity-light) / <alpha-value>)',
+
+        success:       'rgb(var(--success) / <alpha-value>)',
+        error:         'rgb(var(--error) / <alpha-value>)',
+
+        textPrimary:   'rgb(var(--text) / <alpha-value>)',
+        textSecondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+        textMuted:     'rgb(var(--text-muted) / <alpha-value>)',
+
+        // Back-compat aliases
+        secondary:     'rgb(var(--charity) / <alpha-value>)',
+        accent:        'rgb(var(--primary) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        heading: ['Orbitron', 'Inter', 'sans-serif'],
+        sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ['Fraunces', 'Inter', 'serif'],
+        mono:    ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       boxShadow: {
-        'neon-cyan': '0 0 10px #00ffff, 0 0 20px #00ffff',
-        'neon-magenta': '0 0 10px #ff00ff, 0 0 20px #ff00ff',
-        'neon-yellow': '0 0 10px #ffff00, 0 0 20px #ffff00',
-        'neon-green': '0 0 10px #00ff00, 0 0 20px #00ff00',
+        soft:    '0 1px 2px rgb(var(--shadow) / 0.06), 0 1px 4px rgb(var(--shadow) / 0.06)',
+        card:    '0 2px 8px rgb(var(--shadow) / 0.08), 0 1px 2px rgb(var(--shadow) / 0.06)',
+        elevate: '0 8px 24px rgb(var(--shadow) / 0.12), 0 2px 6px rgb(var(--shadow) / 0.06)',
+        focus:   '0 0 0 4px rgb(var(--primary) / 0.22)',
       },
       animation: {
-        'pulse-glow': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'fade-in':     'fadeIn 0.4s ease-out',
+        'slide-up':    'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+        'subtle-pulse':'subtlePulse 3s ease-in-out infinite',
+      },
+      keyframes: {
+        fadeIn:  { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+        slideUp: {
+          '0%':   { opacity: 0, transform: 'translateY(12px)' },
+          '100%': { opacity: 1, transform: 'translateY(0)' },
+        },
+        subtlePulse: {
+          '0%, 100%': { opacity: 1 },
+          '50%':      { opacity: 0.7 },
+        },
       },
     },
   },

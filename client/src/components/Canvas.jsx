@@ -15,7 +15,7 @@ import { useCanvas } from '../hooks/useCanvas';
  */
 
 const Canvas = () => {
-  const { gridState, selectedColor } = useApp();
+  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect } = useApp();
   const {
     zoom,
     offset,
@@ -36,6 +36,15 @@ const Canvas = () => {
   const displayCanvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // Preloaded reference image — stored in state so canvas re-renders when it loads.
+  const [refImageObj, setRefImageObj] = useState(null);
+  useEffect(() => {
+    if (!refImageSrc) { setRefImageObj(null); return; }
+    const img = new Image();
+    img.onload = () => setRefImageObj(img);
+    img.src = refImageSrc;
+  }, [refImageSrc]);
 
   /**
    * Center canvas on initial load
@@ -84,6 +93,13 @@ const Canvas = () => {
       }
     }
 
+    // Draw reference image overlay at its canvas-pixel rect
+    if (refImageObj) {
+      ctx.globalAlpha = refImageOpacity;
+      ctx.drawImage(refImageObj, refImageRect.x, refImageRect.y, refImageRect.w, refImageRect.h);
+      ctx.globalAlpha = 1;
+    }
+
     // Restore context before drawing grid (draw grid in screen space)
     ctx.restore();
 
@@ -116,7 +132,7 @@ const Canvas = () => {
         ctx.stroke();
       }
     }
-  }, [gridState, zoom, offset, shouldShowGrid, getVisibleArea]);
+  }, [gridState, zoom, offset, shouldShowGrid, getVisibleArea, refImageObj, refImageOpacity, refImageRect]);
 
   /**
    * Render brush preview on separate overlay canvas (reduces full redraws)
@@ -203,38 +219,84 @@ const Canvas = () => {
         style={{ imageRendering: 'pixelated' }}
       />
 
-      {/* Hover Coordinates Overlay */}
+      {/* Hover coordinates */}
       {hoverPixel && (
-        <div className="absolute top-4 left-4 bg-surface/90 border border-primary rounded-lg px-3 py-2 pointer-events-none">
-          <p className="text-xs font-mono text-primary">
+        <div className="absolute top-4 left-4 card px-3 py-1.5 pointer-events-none">
+          <p className="text-xs font-mono text-textSecondary">
             ({hoverPixel.x}, {hoverPixel.y})
           </p>
         </div>
       )}
 
-      {/* Zoom Level Indicator */}
-      <div className="absolute top-4 right-4 bg-surface/90 border border-primary rounded-lg px-3 py-2 pointer-events-none">
-        <p className="text-xs font-mono text-primary">Zoom: {zoom.toFixed(1)}x</p>
+      {/* Zoom level */}
+      <div className="absolute top-4 right-4 card px-3 py-1.5 pointer-events-none">
+        <p className="text-xs font-mono text-textSecondary">{zoom.toFixed(1)}×</p>
       </div>
 
       {/* Loading State */}
       {!gridState && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="text-center">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-textSecondary">Loading canvas...</p>
+            <div className="w-10 h-10 border-[3px] border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-textSecondary text-sm">Loading canvas…</p>
           </div>
         </div>
       )}
 
-      {/* Instructions Overlay */}
-      <div className="absolute bottom-4 left-4 bg-surface/90 border border-primary/30 rounded-lg px-4 py-3 text-xs text-textSecondary space-y-1">
-        <p>🖱️ <span className="text-primary">Left Click + Drag:</span> Paint</p>
-        <p>🖱️ <span className="text-primary">Right/Middle + Drag:</span> Pan</p>
-        <p>🖱️ <span className="text-primary">Scroll:</span> Zoom in/out</p>
+      {/* Instructions */}
+      <div className="absolute bottom-4 left-4 card px-4 py-3 text-xs text-textSecondary space-y-1.5">
+        <p><span className="text-textPrimary font-semibold">Left + drag</span> &mdash; paint</p>
+        <p><span className="text-textPrimary font-semibold">Right + drag</span> &mdash; pan</p>
+        <p><span className="text-textPrimary font-semibold">Scroll</span> &mdash; zoom</p>
+      </div>
+
+      {/* First-visit keyboard shortcuts hint (dismissable, remembered) */}
+      <KeyboardHint />
+    </div>
+  );
+};
+
+const HINT_DISMISS_KEY = 'canvaschain-kbd-hint-dismissed';
+
+const KeyboardHint = () => {
+  const [show, setShow] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(HINT_DISMISS_KEY) !== '1';
+  });
+
+  if (!show) return null;
+
+  const dismiss = () => {
+    try { window.localStorage.setItem(HINT_DISMISS_KEY, '1'); } catch (_) {}
+    setShow(false);
+  };
+
+  return (
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 max-w-md w-[90%] sm:w-auto animate-slide-up">
+      <div className="card px-4 py-3 shadow-elevate flex items-center gap-3">
+        <div className="text-lg flex-shrink-0">⌨️</div>
+        <div className="flex-1 text-xs sm:text-sm text-textSecondary leading-snug">
+          <span className="text-textPrimary font-semibold">Keyboard shortcuts:</span>{' '}
+          <Kbd>[</Kbd> <Kbd>]</Kbd> brush ·{' '}
+          <Kbd>+</Kbd> <Kbd>−</Kbd> zoom ·{' '}
+          <Kbd>R</Kbd> reset view
+        </div>
+        <button
+          onClick={dismiss}
+          className="text-textMuted hover:text-textPrimary text-lg leading-none px-1"
+          title="Dismiss"
+        >
+          ×
+        </button>
       </div>
     </div>
   );
 };
+
+const Kbd = ({ children }) => (
+  <kbd className="inline-block px-1.5 py-0.5 bg-backgroundAlt border border-border rounded text-[10px] font-mono text-textPrimary">
+    {children}
+  </kbd>
+);
 
 export default Canvas;

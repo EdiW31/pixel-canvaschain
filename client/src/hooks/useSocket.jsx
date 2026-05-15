@@ -31,7 +31,7 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  const { updatePixel, showToast, setGridState, refetchCredits } = useApp();
+  const { updatePixel, showToast, setGridState, refetchCredits, setSessionCredits } = useApp();
   const isLoggedIn = useGetIsLoggedIn();
   const { address } = useGetAccountInfo();
 
@@ -73,20 +73,17 @@ export const SocketProvider = ({ children }) => {
       console.log('🖼️  Canvas initialized from server');
     });
 
-    // wallet:joined — server confirmed session, canvas state included
+    // wallet:joined — server confirmed session, seed local credits immediately
     socketInstance.on('wallet:joined', ({ address: addr, credits, gridState }) => {
       console.log(`💼 Session started: ${addr?.slice(0, 10)}... | ${credits} session credits`);
       setGridState(gridState);
-      // Trigger a fresh chain poll so the UI shows on-chain balance immediately
+      setSessionCredits(credits); // show correct count right away
       refetchCredits();
     });
 
-    // credits:updated — session-local count after each paint; trigger chain poll
-    socketInstance.on('credits:updated', () => {
-      // Don't update local state with the server's session count —
-      // useContractCredits polls the real on-chain balance every 15s.
-      // Uncomment below if you want an immediate refetch after every pixel:
-      // refetchCredits();
+    // credits:updated — server sends remaining credits after every paint; apply instantly
+    socketInstance.on('credits:updated', ({ credits }) => {
+      setSessionCredits(credits);
     });
 
     // Error handling

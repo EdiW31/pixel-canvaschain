@@ -1,123 +1,194 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-
-/**
- * LoginPage — MultiversX wallet connection screen (Phase 2)
- *
- * Uses sdk-dapp v5 UnlockPanelManager to open the wallet picker.
- * Supports: DeFi Browser Extension, xPortal (WalletConnect), Web Wallet, Ledger.
- * Auto-redirects to /shop after successful login.
- */
+import ThemeToggle from '../components/ThemeToggle';
+import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
 
 const LoginPage = () => {
   const { isConnected, openLogin } = useWallet();
   const navigate = useNavigate();
   const [isConnecting, setIsConnecting] = useState(false);
 
-  // Redirect if already connected
   useEffect(() => {
-    if (isConnected) {
-      navigate('/shop');
-    }
+    if (isConnected) navigate('/shop');
   }, [isConnected, navigate]);
 
   const handleConnect = () => {
     setIsConnecting(true);
     openLogin(
-      () => {
-        // onSuccess — sdk-dapp Zustand store updates; useEffect above will redirect
-        setIsConnecting(false);
-      },
-      () => {
-        // onClose — user dismissed the panel without logging in
-        setIsConnecting(false);
-      },
+      () => setIsConnecting(false),
+      () => setIsConnecting(false),
     );
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-surface flex items-center justify-center p-6">
-      <div className="max-w-md w-full">
-        {/* Card */}
-        <div className="bg-surface border-2 border-primary/30 rounded-lg p-8 shadow-neon-cyan">
+    <div className="min-h-screen bg-background flex flex-col">
+
+      {/* Top bar */}
+      <nav className="px-6 py-5 flex items-center justify-between">
+        <Link to="/" className="inline-flex items-center gap-2 text-sm text-textSecondary hover:text-textPrimary transition-colors">
+          <span>←</span>
+          <span>Back to home</span>
+        </Link>
+        <ThemeToggle />
+      </nav>
+
+      <div className="flex-1 grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto w-full px-6 pb-20 items-center">
+
+        {/* ─── LEFT: brand + mini canvas ──────────────────────────── */}
+        <div className="hidden lg:flex flex-col gap-8 animate-fade-in">
+
           {/* Header */}
-          <div className="text-center mb-8">
-            {/* Wallet Icon */}
-            <div className="flex justify-center mb-4">
-              <div className="w-20 h-20 bg-primary/10 border-2 border-primary rounded-full flex items-center justify-center">
-                <span className="text-4xl">💼</span>
-              </div>
+          <div className="relative">
+            <Dot color="#E53E3E" style={{ top: -10, left: '70%' }} />
+            <Dot color="#4299E1" style={{ top: 30,  left: '80%' }} />
+            <Dot color="#48BB78" style={{ top: 10,  left: '-2%' }} />
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-2xl shadow-card">🎨</div>
+              <PaletteStrip size={11} />
             </div>
 
-            <h2 className="text-3xl font-heading font-bold text-primary mb-2">
-              Connect Wallet
-            </h2>
-            <p className="text-sm text-textSecondary">
-              Connect your MultiversX wallet to start painting on the canvas
+            <h1 className="font-heading text-5xl font-semibold tracking-tight leading-tight mb-3">
+              Connect your<br />
+              <span className="italic text-primaryDark">MultiversX wallet</span><br />
+              to start painting.
+            </h1>
+            <Stroke color="#4299E1" />
+            <p className="text-lg text-textSecondary leading-relaxed">
+              Your wallet is your identity on Pixel CanvasChain. We never see
+              your private keys — every transaction is signed in your wallet
+              and broadcast straight to the chain.
             </p>
           </div>
 
-          {/* Connect Button */}
-          <button
-            onClick={handleConnect}
-            disabled={isConnecting}
-            className={`w-full py-4 rounded-lg font-bold text-lg transition-all duration-300 ${
-              isConnecting
-                ? 'bg-primary/20 text-primary cursor-wait'
-                : 'bg-primary border-2 border-primary text-background hover:bg-transparent hover:text-primary shadow-neon-cyan'
-            }`}
-          >
-            {isConnecting ? (
-              <span className="flex items-center justify-center space-x-3">
-                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span>Connecting...</span>
-              </span>
-            ) : (
-              'Connect Wallet'
-            )}
-          </button>
+          {/* Trust items */}
+          <ul className="space-y-3 text-sm text-textSecondary">
+            <TrustItem accent="#E53E3E">
+              <strong className="text-textPrimary font-semibold">Zero account creation.</strong>{' '}
+              No emails, no passwords, no KYC for testnet.
+            </TrustItem>
+            <TrustItem accent="#4299E1">
+              <strong className="text-textPrimary font-semibold">Open-source smart contract.</strong>{' '}
+              Every line is on devnet-explorer.
+            </TrustItem>
+            <TrustItem accent="#48BB78">
+              <strong className="text-textPrimary font-semibold">Charity enforced by code.</strong>{' '}
+              50% goes direct to the winning NGO each week.
+            </TrustItem>
+          </ul>
 
-          {/* Supported Wallets Info */}
-          <div className="mt-6 p-4 bg-background/50 rounded border border-primary/10">
-            <p className="text-xs text-textSecondary leading-relaxed font-bold mb-2">
-              Supported wallets:
-            </p>
-            <ul className="text-xs text-textSecondary space-y-1">
-              <li>🦊 <span className="text-primary">DeFi Browser Extension</span></li>
-              <li>📱 <span className="text-primary">xPortal Mobile App</span> (via QR)</li>
-              <li>🌐 <span className="text-primary">MultiversX Web Wallet</span></li>
-              <li>🔑 <span className="text-primary">Ledger Hardware Wallet</span></li>
-            </ul>
-          </div>
-
-          {/* Loading Animation */}
-          {isConnecting && (
-            <div className="mt-6 text-center">
-              <div className="inline-flex space-x-2">
-                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-secondary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <p className="text-xs text-textSecondary mt-2">
-                Opening wallet picker...
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Back Link */}
-        <div className="text-center mt-6">
-          <button
-            onClick={() => navigate('/')}
-            className="text-sm text-textSecondary hover:text-primary transition-colors"
-          >
-            ← Back to Home
-          </button>
+        {/* ─── RIGHT: action card ──────────────────────────────────── */}
+        <div className="w-full max-w-md mx-auto lg:mx-0 animate-slide-up">
+          <div className="card p-8 sm:p-10 relative overflow-hidden">
+            {/* Coloured top bar */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl"
+              style={{ background: 'linear-gradient(90deg,#E53E3E,#ED8936,#ECC94B,#48BB78,#4299E1,#9F7AEA,#ED64A6)' }} />
+
+            {/* Mobile-only mini-hero */}
+            <div className="lg:hidden text-center mb-6 mt-2">
+              <div className="w-14 h-14 rounded-2xl bg-primary mx-auto mb-4 flex items-center justify-center text-2xl shadow-soft">🎨</div>
+              <h1 className="font-heading text-3xl font-semibold tracking-tight">Connect wallet</h1>
+              <div className="flex justify-center mt-2"><PaletteStrip size={9} /></div>
+            </div>
+
+            <div className="hidden lg:block mb-6">
+              <h2 className="font-heading text-2xl font-semibold mb-1">Welcome</h2>
+              <p className="text-sm text-textSecondary">Pick a wallet to continue. We'll never ask for your seed phrase.</p>
+            </div>
+
+            {/* Connect button */}
+            <button
+              onClick={handleConnect}
+              disabled={isConnecting}
+              className={`w-full btn-primary-lg ${isConnecting ? 'opacity-70 cursor-wait' : ''}`}
+            >
+              {isConnecting ? (
+                <><Spinner /> Opening wallet picker…</>
+              ) : (
+                <><PlugIcon /> Connect MultiversX wallet</>
+              )}
+            </button>
+
+            {/* Supported wallets */}
+            <div className="mt-8 pt-6 border-t border-border">
+              <p className="text-xs uppercase tracking-wider text-textMuted font-semibold mb-4 text-center">
+                Supported wallets
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <WalletItem icon="🦊" name="DeFi Extension" hint="Chrome / Brave"  accent="#ED8936" />
+                <WalletItem icon="📱" name="xPortal"        hint="QR code"         accent="#4299E1" />
+                <WalletItem icon="🌐" name="Web Wallet"     hint="Browser-based"   accent="#48BB78" />
+                <WalletItem icon="🔑" name="Ledger"         hint="Hardware"        accent="#9F7AEA" />
+              </div>
+            </div>
+
+            <p className="mt-6 text-xs text-textMuted text-center leading-relaxed">
+              Running on <span className="font-mono text-textSecondary">MultiversX Devnet</span> — test xEGLD only, no real-world value.
+            </p>
+          </div>
+
+          {/* New to wallets? */}
+          <details className="mt-5 group">
+            <summary className="cursor-pointer text-sm text-textMuted hover:text-textSecondary text-center select-none transition-colors">
+              ▸ New to MultiversX wallets?
+            </summary>
+            <div className="mt-3 p-4 bg-backgroundAlt rounded-lg text-sm text-textSecondary leading-relaxed">
+              Easiest path: install the{' '}
+              <a href="https://chrome.google.com/webstore/detail/multiversx-defi-wallet/dngmlblcodfobpdpecaadgfbcggfjfnm"
+                target="_blank" rel="noopener noreferrer" className="text-primaryDark hover:underline font-medium">
+                MultiversX DeFi Wallet Chrome extension
+              </a>
+              , create a fresh wallet, switch the extension to <span className="font-mono">Devnet</span>, then{' '}
+              <a href="https://devnet-wallet.multiversx.com/dashboard"
+                target="_blank" rel="noopener noreferrer" className="text-primaryDark hover:underline font-medium">
+                grab free test xEGLD from the faucet
+              </a>.
+            </div>
+          </details>
         </div>
       </div>
     </div>
   );
 };
+
+/* ─── Sub-components ──────────────────────────────────────────────────────── */
+
+const Spinner = () => (
+  <span className="inline-block w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin" />
+);
+
+const PlugIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 2v6M15 2v6M5 8h14v2a7 7 0 0 1-7 7 7 7 0 0 1-7-7V8zM12 17v5" />
+  </svg>
+);
+
+const TrustItem = ({ children, accent }) => (
+  <li className="flex items-start gap-3">
+    <span
+      className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+      style={{ background: accent + '22', color: accent }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    </span>
+    <span className="leading-relaxed">{children}</span>
+  </li>
+);
+
+const WalletItem = ({ icon, name, hint, accent }) => (
+  <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-backgroundAlt border border-border hover:border-borderStrong transition-colors relative overflow-hidden group">
+    <div className="absolute bottom-0 left-0 right-0 h-0.5 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: accent }} />
+    <span className="text-xl">{icon}</span>
+    <div className="leading-tight min-w-0">
+      <div className="text-sm font-medium text-textPrimary truncate">{name}</div>
+      <div className="text-xs text-textMuted truncate">{hint}</div>
+    </div>
+  </div>
+);
 
 export default LoginPage;

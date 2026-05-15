@@ -5,6 +5,8 @@ import Header from '../components/Header';
 import ColorPicker from '../components/ColorPicker';
 import Canvas from '../components/Canvas';
 import Toolbar from '../components/Toolbar';
+import ReferenceImage from '../components/ReferenceImage';
+import RefImageHandle from '../components/RefImageHandle';
 import { useApp } from '../context/AppContext';
 
 /**
@@ -25,6 +27,12 @@ const CanvasPage = () => {
   const { toast, dismissToast } = useApp();
   const navigate = useNavigate();
 
+  // Lock page scroll while on the canvas route; restore on leave.
+  useEffect(() => {
+    document.body.classList.add('canvas-page-active');
+    return () => document.body.classList.remove('canvas-page-active');
+  }, []);
+
   // Redirect if not connected
   useEffect(() => {
     if (!isConnected) {
@@ -39,14 +47,16 @@ const CanvasPage = () => {
 
       {/* Main Content: ColorPicker | Canvas | Toolbar */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Left Sidebar: Color Picker */}
-        <div className="flex-shrink-0 p-4 flex items-center">
+        {/* Left Sidebar: Reference Image + Color Picker */}
+        <div className="flex-shrink-0 p-4 flex flex-col gap-3 items-start overflow-y-auto">
+          <ReferenceImage />
           <ColorPicker />
         </div>
 
         {/* Center: Canvas */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden min-w-0">
+        <div className="flex-1 relative flex items-center justify-center overflow-hidden min-w-0">
           <Canvas />
+          <RefImageHandle />
         </div>
 
         {/* Right Sidebar: Toolbar */}
@@ -57,26 +67,32 @@ const CanvasPage = () => {
 
       {/* Toast Notifications */}
       {toast && (
-        <div className="fixed top-20 right-6 z-50 animate-slide-in">
+        <div className="fixed top-20 right-6 z-50 animate-slide-up max-w-sm">
           <div
-            className={`px-6 py-4 rounded-lg border-2 shadow-lg ${
+            className={`px-4 py-3 rounded-lg border shadow-elevate bg-surface ${
               toast.type === 'success'
-                ? 'bg-success/10 border-success text-success'
+                ? 'border-success/40'
                 : toast.type === 'error'
-                ? 'bg-error/10 border-error text-error'
-                : 'bg-primary/10 border-primary text-primary'
+                  ? 'border-error/40'
+                  : 'border-primary/40'
             }`}
           >
-            <div className="flex items-center justify-between space-x-4">
-              <div className="flex items-center space-x-2">
-                <span className="text-xl">
-                  {toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2 min-w-0">
+                <span className="text-base mt-0.5">
+                  {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}
                 </span>
-                <p className="text-sm font-medium">{toast.message}</p>
+                <p className={`text-sm font-medium ${
+                  toast.type === 'success' ? 'text-success'
+                  : toast.type === 'error' ? 'text-error'
+                  : 'text-textPrimary'
+                }`}>
+                  {toast.message}
+                </p>
               </div>
               <button
                 onClick={dismissToast}
-                className="text-lg hover:opacity-70 transition-opacity"
+                className="text-textMuted hover:text-textPrimary transition-colors text-lg leading-none"
               >
                 ×
               </button>
