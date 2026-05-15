@@ -7,6 +7,7 @@ import WelcomePage from './pages/WelcomePage';
 import LoginPage from './pages/LoginPage';
 import ShopPage from './pages/ShopPage';
 import CanvasPage from './pages/CanvasPage';
+import AdminPage from './pages/AdminPage';
 
 /**
  * App - Main application component
@@ -43,6 +44,9 @@ function App() {
 
             {/* Main Gameplay */}
             <Route path="/canvas" element={<CanvasPage />} />
+
+            {/* Contract Admin */}
+            <Route path="/admin" element={<AdminPage />} />
 
             {/* 404 - Redirect to home */}
             <Route path="*" element={<WelcomePage />} />
