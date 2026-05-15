@@ -41,6 +41,7 @@ const Header = () => {
           </div>
 
           <WalletInfo />
+          <div className="w-px h-5 bg-border flex-shrink-0" />
           <ThemeToggle />
         </div>
       </div>

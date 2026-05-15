@@ -30,7 +30,20 @@ export const AppProvider = ({ children }) => {
   const egld = parseFloat((Number(account?.balance ?? 0) / 1e18).toFixed(4));
 
   // ── On-chain credits from smart contract ──────────────────────────────────
-  const { credits, refetchCredits } = useContractCredits(address || null);
+  const { credits: chainCredits, refetchCredits } = useContractCredits(address || null);
+
+  // Session credits — updated instantly via credits:updated socket event.
+  // null means "not yet received from server"; fall back to chain value.
+  const [sessionCredits, setSessionCredits] = useState(null);
+
+  // When the chain poll returns a higher value (e.g. user topped up), sync it in.
+  useEffect(() => {
+    if (chainCredits > 0 && (sessionCredits === null || chainCredits > sessionCredits)) {
+      setSessionCredits(chainCredits);
+    }
+  }, [chainCredits]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const credits = sessionCredits !== null ? sessionCredits : chainCredits;
 
   // Derived wallet object (same shape as Phase 1 so other components need no changes)
   const wallet = {
@@ -50,6 +63,14 @@ export const AppProvider = ({ children }) => {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [minZoom, setMinZoom] = useState(1);
+
+  // ── Reference image overlay ───────────────────────────────────────────────
+  const [refImageSrc, setRefImageSrc] = useState(null);
+  const [refImageOpacity, setRefImageOpacity] = useState(0.7);
+  // Position/size in canvas-pixel coordinates (0–100 space).
+  const [refImageRect, setRefImageRect] = useState({ x: 0, y: 0, w: 100, h: 100 });
+  // When locked, pointer events are disabled on the handle so the canvas works normally.
+  const [refImageLocked, setRefImageLocked] = useState(false);
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [toast, setToast] = useState(null);
@@ -103,6 +124,7 @@ export const AppProvider = ({ children }) => {
     // Wallet (real, from sdk-dapp + contract)
     wallet,
     refetchCredits,
+    setSessionCredits,
 
     // Canvas
     gridState,
@@ -125,6 +147,16 @@ export const AppProvider = ({ children }) => {
     setOffset,
     minZoom,
     setMinZoom,
+
+    // Reference image overlay
+    refImageSrc,
+    setRefImageSrc,
+    refImageOpacity,
+    setRefImageOpacity,
+    refImageRect,
+    setRefImageRect,
+    refImageLocked,
+    setRefImageLocked,
 
     // UI
     toast,

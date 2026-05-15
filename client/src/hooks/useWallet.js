@@ -59,6 +59,10 @@ export const useWallet = () => {
         const raw = await ProviderFactory.create({ type });
         await raw.login();
 
+        // QR panel stays mounted on body after a successful xPortal scan —
+        // remove it now that login is complete.
+        document.querySelector('mvx-wallet-connect')?.remove();
+
         // Wrap in DappProvider — handles all redirect flows + WalletConnect sessions
         const dappProvider = new DappProvider(raw);
 

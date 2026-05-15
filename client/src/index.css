@@ -69,13 +69,22 @@
     color-scheme: light dark;
   }
 
-  /* Explicit non-Tailwind painting of the root surfaces. This guarantees the
-     page background and text colours change with the theme variables even
-     before Tailwind's processed classes have a chance to apply. */
   html, body, #root {
     background-color: rgb(var(--bg));
     color: rgb(var(--text));
     min-height: 100%;
+  }
+
+  /* Applied dynamically by CanvasPage only — keeps other routes scrollable. */
+  body.canvas-page-active {
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100%;
+  }
+  body.canvas-page-active #root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
   body {
@@ -158,6 +167,17 @@
            px-3 py-1 rounded-full text-xs font-medium
            bg-charityLight text-charityDark;
   }
+}
+
+/* ─── Scroll indicator mouse-dot animation ──────────────────────────────── */
+@keyframes scroll-dot {
+  0%   { transform: translateY(0);    opacity: 1;   }
+  60%  { transform: translateY(18px); opacity: 0;   }
+  61%  { transform: translateY(0);    opacity: 0;   }
+  100% { transform: translateY(0);    opacity: 1;   }
+}
+.scroll-dot-anim {
+  animation: scroll-dot 1.8s ease-in-out infinite;
 }
 
 /* ─── sdk-dapp-ui panel positioning ────────────────────────────────────── */

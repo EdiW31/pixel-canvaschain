@@ -15,7 +15,7 @@ import { useCanvas } from '../hooks/useCanvas';
  */
 
 const Canvas = () => {
-  const { gridState, selectedColor } = useApp();
+  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect } = useApp();
   const {
     zoom,
     offset,
@@ -36,6 +36,15 @@ const Canvas = () => {
   const displayCanvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // Preloaded reference image — stored in state so canvas re-renders when it loads.
+  const [refImageObj, setRefImageObj] = useState(null);
+  useEffect(() => {
+    if (!refImageSrc) { setRefImageObj(null); return; }
+    const img = new Image();
+    img.onload = () => setRefImageObj(img);
+    img.src = refImageSrc;
+  }, [refImageSrc]);
 
   /**
    * Center canvas on initial load
@@ -84,6 +93,13 @@ const Canvas = () => {
       }
     }
 
+    // Draw reference image overlay at its canvas-pixel rect
+    if (refImageObj) {
+      ctx.globalAlpha = refImageOpacity;
+      ctx.drawImage(refImageObj, refImageRect.x, refImageRect.y, refImageRect.w, refImageRect.h);
+      ctx.globalAlpha = 1;
+    }
+
     // Restore context before drawing grid (draw grid in screen space)
     ctx.restore();
 
@@ -116,7 +132,7 @@ const Canvas = () => {
         ctx.stroke();
       }
     }
-  }, [gridState, zoom, offset, shouldShowGrid, getVisibleArea]);
+  }, [gridState, zoom, offset, shouldShowGrid, getVisibleArea, refImageObj, refImageOpacity, refImageRect]);
 
   /**
    * Render brush preview on separate overlay canvas (reduces full redraws)

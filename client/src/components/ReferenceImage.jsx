@@ -1,194 +1,123 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef } from 'react';
+import { useApp } from '../context/AppContext';
 
 /**
- * ReferenceImage — drop in an inspiration photo while painting.
+ * ReferenceImage — left-sidebar panel for the canvas reference overlay.
  *
- * - Stored ONLY in component state → cleared on refresh (by design)
- * - Draggable floating window over the canvas
- * - Adjustable opacity slider so the image can be ghosted as a stencil
- * - Click ✕ to remove
- *
- * Render this inside any positioned (relative/absolute) parent — the overlay
- * positions itself with `position: absolute`.
+ * Renders as a card above ColorPicker. When no image is loaded shows an
+ * upload button; when loaded shows opacity, lock, reset, replace, remove.
  */
-
-const DEFAULT_SIZE = { w: 260, h: 260 };
-const DEFAULT_POS  = { x: 24,  y: 64  };
-const MIN_SIZE = 120;
-const MAX_SIZE = 720;
-
 const ReferenceImage = () => {
-  const [imageSrc, setImageSrc] = useState(null);
-  const [imageName, setImageName] = useState('');
-  const [pos, setPos] = useState(DEFAULT_POS);
-  const [size, setSize] = useState(DEFAULT_SIZE);
-  const [opacity, setOpacity] = useState(0.7);
-  const [collapsed, setCollapsed] = useState(false);
+  const {
+    refImageSrc, setRefImageSrc,
+    refImageOpacity, setRefImageOpacity,
+    setRefImageRect,
+    refImageLocked, setRefImageLocked,
+  } = useApp();
+  const inputRef = useRef(null);
 
-  // ─── File pick ──────────────────────────────────────────────────────
   const handleFile = (e) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
     if (file.size > 8 * 1024 * 1024) {
-      alert('Image too large (max 8 MB). It only needs to be readable for inspiration.');
+      alert('Image too large (max 8 MB).');
       return;
     }
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setImageSrc(ev.target.result);
-      setImageName(file.name);
-      setPos(DEFAULT_POS);
-      setSize(DEFAULT_SIZE);
-      setCollapsed(false);
+      setRefImageSrc(ev.target.result);
+      setRefImageRect({ x: 0, y: 0, w: 100, h: 100 });
+      setRefImageLocked(false);
     };
     reader.readAsDataURL(file);
-    // Reset the input value so picking the same file twice still fires onChange.
     e.target.value = '';
   };
 
-  // ─── Drag (header) ──────────────────────────────────────────────────
-  const dragRef = useRef(null);
-  const onDragStart = (e) => {
-    e.preventDefault();
-    const startX = e.clientX, startY = e.clientY;
-    const startPos = pos;
-    const onMove = (ev) => {
-      setPos({ x: startPos.x + (ev.clientX - startX), y: startPos.y + (ev.clientY - startY) });
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup',   onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup',   onUp);
-  };
-
-  // ─── Resize (bottom-right corner) ───────────────────────────────────
-  const onResizeStart = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX, startY = e.clientY;
-    const startSize = size;
-    const onMove = (ev) => {
-      setSize({
-        w: Math.max(MIN_SIZE, Math.min(MAX_SIZE, startSize.w + (ev.clientX - startX))),
-        h: Math.max(MIN_SIZE, Math.min(MAX_SIZE, startSize.h + (ev.clientY - startY))),
-      });
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup',   onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup',   onUp);
-  };
-
-  // ─── Render: upload button when empty ───────────────────────────────
-  if (!imageSrc) {
-    return (
-      <label
-        className="absolute top-4 right-1/2 translate-x-1/2 z-30 card px-3 py-2 cursor-pointer hover:bg-backgroundAlt transition-colors flex items-center gap-2 text-sm text-textSecondary hover:text-textPrimary"
-        title="Drop an image you want to copy. It stays only in your browser session."
-      >
-        <CameraIcon />
-        <span>Upload reference</span>
-        <input
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          onChange={handleFile}
-        />
-      </label>
-    );
-  }
-
-  // ─── Render: floating window ────────────────────────────────────────
   return (
-    <div
-      ref={dragRef}
-      className="absolute card shadow-elevate overflow-hidden z-30 select-none"
-      style={{
-        left:   `${pos.x}px`,
-        top:    `${pos.y}px`,
-        width:  `${size.w}px`,
-        height: collapsed ? 'auto' : `${size.h}px`,
-      }}
-    >
-      {/* Header / drag handle */}
-      <div
-        onMouseDown={onDragStart}
-        className="px-3 py-2 bg-backgroundAlt border-b border-border flex items-center gap-2 cursor-move"
-      >
-        <CameraIcon className="text-textMuted" />
-        <span className="text-xs font-medium text-textSecondary truncate flex-1">
-          {imageName || 'Reference'}
-        </span>
-        <button
-          onClick={(e) => { e.stopPropagation(); setCollapsed((c) => !c); }}
-          className="text-textMuted hover:text-textPrimary text-xs px-1"
-          title={collapsed ? 'Expand' : 'Collapse'}
-        >
-          {collapsed ? '▾' : '▴'}
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); setImageSrc(null); }}
-          className="text-textMuted hover:text-error text-base leading-none px-1"
-          title="Remove reference"
-        >
-          ×
-        </button>
+    <div className="w-72 card p-4 space-y-3">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CameraIcon />
+          <h3 className="font-heading text-base font-semibold">Reference</h3>
+        </div>
+        {refImageSrc && (
+          <button
+            onClick={() => setRefImageSrc(null)}
+            className="text-textMuted hover:text-error transition-colors text-lg leading-none"
+            title="Remove reference overlay"
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {!collapsed && (
+      {!refImageSrc ? (
+        /* ── No image: upload prompt ── */
+        <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-lg border-2 border-dashed border-border hover:border-primary/60 bg-backgroundAlt hover:bg-primaryLight/30 cursor-pointer transition-colors group">
+          <UploadIcon className="text-textMuted group-hover:text-primary transition-colors" />
+          <span className="text-xs text-textMuted group-hover:text-primary transition-colors font-medium">
+            Upload reference image
+          </span>
+          <span className="text-[10px] text-textMuted">PNG, JPG, WEBP · max 8 MB</span>
+          <input ref={inputRef} type="file" accept="image/*" className="sr-only" onChange={handleFile} />
+        </label>
+      ) : (
+        /* ── Image loaded: controls ── */
         <>
-          {/* Image */}
-          <div
-            className="bg-backgroundAlt"
-            style={{
-              height: `calc(100% - 64px)`,
-              backgroundImage: `
-                linear-gradient(45deg, rgb(var(--border)) 25%, transparent 25%),
-                linear-gradient(-45deg, rgb(var(--border)) 25%, transparent 25%),
-                linear-gradient(45deg, transparent 75%, rgb(var(--border)) 75%),
-                linear-gradient(-45deg, transparent 75%, rgb(var(--border)) 75%)
-              `,
-              backgroundSize: '12px 12px',
-              backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
-            }}
-          >
-            <img
-              src={imageSrc}
-              alt="reference"
-              className="w-full h-full object-contain pointer-events-none"
-              style={{ opacity }}
-              draggable={false}
-            />
+          {/* Thumbnail */}
+          <div className="w-full h-20 rounded-md overflow-hidden border border-border bg-backgroundAlt flex-shrink-0">
+            <img src={refImageSrc} alt="Reference" className="w-full h-full object-contain" />
           </div>
 
-          {/* Opacity slider */}
-          <div className="px-3 py-2 border-t border-border bg-surface flex items-center gap-2">
-            <span className="text-[10px] text-textMuted">Opacity</span>
+          {/* Opacity */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-textMuted uppercase tracking-wider font-medium">Opacity</span>
+              <span className="text-xs font-semibold tabular-nums text-textSecondary">
+                {Math.round(refImageOpacity * 100)}%
+              </span>
+            </div>
             <input
               type="range"
-              min="10" max="100"
-              value={Math.round(opacity * 100)}
-              onChange={(e) => setOpacity(Number(e.target.value) / 100)}
-              className="flex-1 h-1 accent-primary"
+              min="5" max="100"
+              value={Math.round(refImageOpacity * 100)}
+              onChange={(e) => setRefImageOpacity(Number(e.target.value) / 100)}
+              className="w-full h-1.5 accent-primary"
             />
-            <span className="text-[10px] text-textSecondary tabular-nums w-8 text-right">
-              {Math.round(opacity * 100)}%
-            </span>
           </div>
 
-          {/* Resize handle (bottom-right corner) */}
-          <div
-            onMouseDown={onResizeStart}
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
-            style={{
-              background: `linear-gradient(135deg, transparent 50%, rgb(var(--text-muted) / 0.6) 50%, rgb(var(--text-muted) / 0.6) 65%, transparent 65%)`,
-            }}
-            title="Drag to resize"
-          />
+          {/* Lock toggle */}
+          <button
+            onClick={() => setRefImageLocked((l) => !l)}
+            title={refImageLocked ? 'Unlock — move & resize image' : 'Lock — paint over image normally'}
+            className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+              refImageLocked
+                ? 'bg-primary/15 border-primary/50 text-primary hover:bg-primary/25'
+                : 'border-border text-textMuted hover:border-primary/40 hover:text-primary bg-backgroundAlt'
+            }`}
+          >
+            {refImageLocked ? <LockIcon /> : <UnlockIcon />}
+            {refImageLocked ? 'Locked — click to move' : 'Unlocked — drag to reposition'}
+          </button>
+
+          {/* Reset + Replace row */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setRefImageRect({ x: 0, y: 0, w: 100, h: 100 })}
+              className="flex-1 py-1.5 rounded-md text-xs font-medium border border-border text-textMuted hover:text-textPrimary hover:border-borderStrong bg-backgroundAlt transition-colors"
+              title="Reset image to cover full canvas"
+            >
+              Reset position
+            </button>
+            <label
+              className="flex-1 py-1.5 rounded-md text-xs font-medium border border-border text-textMuted hover:text-textPrimary hover:border-borderStrong bg-backgroundAlt transition-colors cursor-pointer text-center"
+              title="Replace reference image"
+            >
+              Replace
+              <input type="file" accept="image/*" className="sr-only" onChange={handleFile} />
+            </label>
+          </div>
         </>
       )}
     </div>
@@ -199,6 +128,28 @@ const CameraIcon = ({ className = '' }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
     <circle cx="12" cy="13" r="4" />
+  </svg>
+);
+
+const UploadIcon = ({ className = '' }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+const LockIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
+const UnlockIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
   </svg>
 );
 

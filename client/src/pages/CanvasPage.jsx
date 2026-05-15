@@ -6,6 +6,7 @@ import ColorPicker from '../components/ColorPicker';
 import Canvas from '../components/Canvas';
 import Toolbar from '../components/Toolbar';
 import ReferenceImage from '../components/ReferenceImage';
+import RefImageHandle from '../components/RefImageHandle';
 import { useApp } from '../context/AppContext';
 
 /**
@@ -26,6 +27,12 @@ const CanvasPage = () => {
   const { toast, dismissToast } = useApp();
   const navigate = useNavigate();
 
+  // Lock page scroll while on the canvas route; restore on leave.
+  useEffect(() => {
+    document.body.classList.add('canvas-page-active');
+    return () => document.body.classList.remove('canvas-page-active');
+  }, []);
+
   // Redirect if not connected
   useEffect(() => {
     if (!isConnected) {
@@ -40,15 +47,16 @@ const CanvasPage = () => {
 
       {/* Main Content: ColorPicker | Canvas | Toolbar */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Left Sidebar: Color Picker */}
-        <div className="flex-shrink-0 p-4 flex items-center">
+        {/* Left Sidebar: Reference Image + Color Picker */}
+        <div className="flex-shrink-0 p-4 flex flex-col gap-3 items-start overflow-y-auto">
+          <ReferenceImage />
           <ColorPicker />
         </div>
 
-        {/* Center: Canvas (relative so ReferenceImage can position over it) */}
+        {/* Center: Canvas */}
         <div className="flex-1 relative flex items-center justify-center overflow-hidden min-w-0">
           <Canvas />
-          <ReferenceImage />
+          <RefImageHandle />
         </div>
 
         {/* Right Sidebar: Toolbar */}
