@@ -119,6 +119,13 @@ const AdminPage = () => {
   const [charityEpochInput, setCharityEpochInput] = useState('');
   const [setCharitiesState, setSetCharitiesState] = useState('idle');
 
+  // Auto-populate epoch input once stats are known
+  useEffect(() => {
+    if (stats?.epoch && !charityEpochInput) {
+      setCharityEpochInput(String(stats.epoch));
+    }
+  }, [stats?.epoch]);
+
   useEffect(() => {
     if (!isConnected) navigate('/login');
   }, [isConnected, navigate]);
@@ -279,9 +286,18 @@ const AdminPage = () => {
       const epochHex = numToHex(epoch);
       // Each ManagedVec element is a separate @arg
       const nameParts = validRows.map(r => toHex(r.name.trim())).join('@');
-      const addrParts = validRows.map(r => Address.newFromBech32(r.address.trim()).toHex()).join('@');
-      const data = `setEpochCharities@${epochHex}@${nameParts}@${addrParts}`;
-      await sendTxWithData(wallet, data, 10_000_000n);
+      const addrParts = [];
+      for (const r of validRows) {
+        try {
+          addrParts.push(Address.newFromBech32(r.address.trim()).toHex());
+        } catch {
+          showToast(`Invalid address: ${r.address.trim()}`, 'error');
+          setSetCharitiesState('idle');
+          return;
+        }
+      }
+      const data = `setEpochCharities@${epochHex}@${nameParts}@${addrParts.join('@')}`;
+      await sendTxWithData(wallet, data, 20_000_000n);
       showToast(`Charities set for epoch ${epoch}`, 'success');
       setSetCharitiesState('done');
       setTimeout(() => setSetCharitiesState('idle'), 3000);

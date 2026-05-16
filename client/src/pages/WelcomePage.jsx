@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
 import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaintChip, PaletteStrip } from '../components/PaintDecorations';
+import { useApp } from '../context/AppContext';
+import VotingSection from '../components/VotingSection';
 
 /* ─── Pixel art canvas data (24 cols × 13 rows) ──────────────────────────── */
 /* eslint-disable no-unused-vars */
@@ -50,6 +52,7 @@ const scrollTo = (id) =>
 
 /* ─── WelcomePage ────────────────────────────────────────────────────────── */
 const WelcomePage = () => {
+  const { epochInfo } = useApp();
   const navRef = useRef(null);
 
   useLayoutEffect(() => {
@@ -79,6 +82,7 @@ const WelcomePage = () => {
         <div className="flex items-center gap-1">
           <NavButton sectionId="mission">Mission</NavButton>
           <HowItWorksNav />
+          {epochInfo.epoch > 0 && <NavButton sectionId="vote">Vote</NavButton>}
           <NavButton sectionId="nft">NFT</NavButton>
           <NavButton sectionId="split">The Split</NavButton>
           <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
@@ -491,6 +495,36 @@ const WelcomePage = () => {
         </div>
 
       </AnimatedSection>
+
+      {/* ── Voting section ───────────────────────────────────────── */}
+      {epochInfo.epoch > 0 && (
+        <AnimatedSection
+          id="vote"
+          className="flex items-center relative overflow-hidden border-t border-primary/30"
+          style={{ height: 'var(--section-h, 100vh)', background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 40%, #F6E05E 100%)' }}
+        >
+          <Dot color="#E53E3E" style={{ top: 24,    left:  '2%'   }} />
+          <Dot color="#4299E1" style={{ top: 60,    right: '2%'   }} />
+          <Dot color="#48BB78" style={{ bottom: 30, left:  '4%'   }} />
+          <Dot color="#9F7AEA" style={{ bottom: 60, right: '3%'   }} />
+
+          <div className="max-w-5xl mx-auto px-6 py-8 w-full">
+            <div className="mb-8">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/30 border border-primary/50 text-sm font-semibold text-primaryDark mb-4">
+                🗳 Community Vote · Epoch {epochInfo.epoch}
+              </div>
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight text-primaryDark mb-2">
+                You decide where the EGLD goes.
+              </h2>
+              <p className="text-primaryDark/70 text-base max-w-xl">
+                Every epoch, the community votes on which charity receives the accumulated donations. One wallet, one vote — enforced on-chain.
+              </p>
+            </div>
+
+            <VotingSection />
+          </div>
+        </AnimatedSection>
+      )}
 
       {/* ── 9. CTA + Footer ───────────────────────────────────────── */}
       <AnimatedSection

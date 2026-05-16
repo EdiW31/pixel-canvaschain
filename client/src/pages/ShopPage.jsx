@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import ShopCard from '../components/ShopCard';
 import Header from '../components/Header';
 import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
+import VotingSection from '../components/VotingSection';
 
 // Devnet tier definitions — match contract constants in pixel_canvas_contract.rs
 const TIERS = [
@@ -20,7 +21,7 @@ const INFO_COLORS = ['#4299E1', '#48BB78', '#9F7AEA'];
 
 const ShopPage = () => {
   const { isConnected } = useWallet();
-  const { wallet, refetchPixelBalance } = useApp();
+  const { wallet, refetchPixelBalance, epochInfo } = useApp();
   const navigate = useNavigate();
   const pixelBalance = wallet.pixelBalance;
 
@@ -110,6 +111,31 @@ const ShopPage = () => {
             body="Once placed, your pixel is part of a public, indexed canvas — even if our servers disappear, the contract state persists."
           />
         </div>
+
+        {/* ─── Charity voting ────────────────────────────────── */}
+        {epochInfo.epoch > 0 && (
+          <div className="mt-16 -mx-6 px-6 py-14 rounded-2xl relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 50%, #F6E05E 100%)' }}>
+            {/* decorative dots */}
+            <div className="absolute top-4 right-8 w-3 h-3 rounded-full bg-primary/40" />
+            <div className="absolute bottom-6 left-10 w-2 h-2 rounded-full bg-primaryDark/30" />
+            <div className="absolute top-8 left-6 w-2 h-2 rounded-full bg-primary/50" />
+
+            <div className="mb-8">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primaryDark/15 border border-primaryDark/30 text-sm font-semibold text-primaryDark mb-4">
+                🗳 Community Vote · Epoch {epochInfo.epoch}
+              </div>
+              <h2 className="font-heading text-3xl font-semibold tracking-tight text-primaryDark mb-2">
+                Vote for this epoch's charity
+              </h2>
+              <p className="text-primaryDark/70 max-w-xl">
+                The community decides which charity receives the accumulated EGLD at the end of this epoch. Cast your vote on-chain — one wallet, one vote.
+              </p>
+            </div>
+
+            <VotingSection />
+          </div>
+        )}
       </main>
     </div>
   );
