@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
 import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
+import { Address } from '@multiversx/sdk-core/out/core/address';
 import { usePixelBalance } from '../hooks/usePixelBalance';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
@@ -21,6 +22,36 @@ async function queryContractU64(funcName) {
   } catch {
     return 0;
   }
+}
+
+// Returns raw returnData array (base64 strings) from a contract query.
+export async function queryContractRaw(funcName, args = []) {
+  try {
+    const res = await fetch(`${API_URL}/vm-values/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scAddress: CONTRACT_ADDRESS, funcName, args }),
+    });
+    const json = await res.json();
+    return json.data?.data?.returnData ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function b64ToHex(b64) {
+  return atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+function b64ToUtf8(b64) {
+  return decodeURIComponent(escape(atob(b64)));
+}
+function hexToU64(hex) {
+  return hex ? parseInt(hex, 16) : 0;
+}
+// Decode a MultiversX bech32 address from a 32-byte base64 blob.
+// We keep it as hex here; bech32 conversion is done in the UI layer.
+function b64ToAddrHex(b64) {
+  return b64ToHex(b64);
 }
 
 const AppContext = createContext();
@@ -51,6 +82,11 @@ export const AppProvider = ({ children }) => {
   const [epochInfo, setEpochInfo] = useState({ epoch: 0, startTimestamp: 0, durationSeconds: 0, endsAt: 0 });
   const epochRefetchRef = useRef(null);
 
+  // ── Voting state ──────────────────────────────────────────────────────────
+  // charities: [{ name, address, votes }]
+  const [votingState, setVotingState] = useState({ charities: [], hasVoted: false, userVoteIndex: 255, loading: false });
+  const votingRefetchRef = useRef(null);
+
   const fetchEpochInfo = useCallback(async () => {
     const [epoch, startTimestamp, durationSeconds] = await Promise.all([
       queryContractU64('getCurrentEpoch'),
@@ -69,6 +105,103 @@ export const AppProvider = ({ children }) => {
     epochRefetchRef.current = setInterval(fetchEpochInfo, 5 * 60 * 1000);
     return () => clearInterval(epochRefetchRef.current);
   }, [fetchEpochInfo]);
+
+  const fetchVotingState = useCallback(async (epoch, voterAddress) => {
+    if (!epoch) { setVotingState({ charities: [], hasVoted: false, userVoteIndex: 255, loading: false }); return; }
+    setVotingState(prev => ({ ...prev, loading: true }));
+
+    const epochHex = epoch.toString(16).padStart(2, '0');
+
+    // Fetch charities + vote counts
+    const [charitiesData, countsData] = await Promise.all([
+      queryContractRaw('getEpochCharities', [epochHex]),
+      queryContractRaw('getVoteTallies', [epochHex]),
+    ]);
+
+    // getEpochCharities returns MultiValue2<ManagedVec<ManagedBuffer>, ManagedVec<ManagedAddress>>.
+    // Each ManagedVec is nested-encoded into a SINGLE returnData blob, items concatenated:
+    //   charitiesData[0] = (4-byte len + utf8 bytes) * N
+    //   charitiesData[1] = (32 raw bytes) * N
+    const decodeNestedBytes = (b64) => {
+      if (!b64) return [];
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const result = [];
+      let off = 0;
+      while (off + 4 <= bytes.length) {
+        const len = view.getUint32(off);
+        off += 4;
+        if (off + len > bytes.length) break;
+        result.push(new TextDecoder().decode(bytes.slice(off, off + len)));
+        off += len;
+      }
+      return result;
+    };
+    const decodeNestedAddrs = (b64) => {
+      if (!b64) return [];
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const result = [];
+      for (let off = 0; off + 32 <= bytes.length; off += 32) {
+        result.push(Array.from(bytes.slice(off, off + 32))
+          .map(b => b.toString(16).padStart(2, '0')).join(''));
+      }
+      return result;
+    };
+    const decodeNestedU64 = (b64) => {
+      if (!b64) return [];
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const result = [];
+      for (let off = 0; off + 8 <= bytes.length; off += 8) {
+        const hi = view.getUint32(off);
+        const lo = view.getUint32(off + 4);
+        result.push(hi * 0x100000000 + lo);
+      }
+      return result;
+    };
+
+    const names = decodeNestedBytes(charitiesData[0]);
+    const addrs = decodeNestedAddrs(charitiesData[1]);
+    const votes = decodeNestedU64(countsData[0]);
+
+    const charities = names.map((name, i) => ({
+      name,
+      addressHex: addrs[i] || '',
+      votes: votes[i] ?? 0,
+    }));
+
+    // Fetch user vote if connected
+    let hasVoted = false;
+    let userVoteIndex = 255;
+    if (voterAddress) {
+      try {
+        const addrHex = Address.newFromBech32(voterAddress).toHex();
+        const myVoteData = await queryContractRaw('getMyVote', [epochHex, addrHex]);
+        if (myVoteData.length > 0) {
+          const hex = b64ToHex(myVoteData[0]);
+          // Empty bytes encode u32=0 (top-level minimum-bytes encoding).
+          const val = hex === '' ? 0 : parseInt(hex, 16);
+          userVoteIndex = val;
+          hasVoted = val !== 255;
+        }
+      } catch (err) {
+        console.warn('[voting] getMyVote query failed:', err);
+      }
+    }
+
+    setVotingState({ charities, hasVoted, userVoteIndex, loading: false });
+  }, []);
+
+  // Refresh voting state when epoch or wallet changes; also poll every 30s
+  useEffect(() => {
+    fetchVotingState(epochInfo.epoch, address || null);
+    clearInterval(votingRefetchRef.current);
+    votingRefetchRef.current = setInterval(
+      () => fetchVotingState(epochInfo.epoch, address || null),
+      30_000,
+    );
+    return () => clearInterval(votingRefetchRef.current);
+  }, [epochInfo.epoch, address, isLoggedIn, fetchVotingState]);
 
   // ── Pending pixels (painted but not yet paid for) ─────────────────────────
   // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.
@@ -166,6 +299,10 @@ export const AppProvider = ({ children }) => {
     // Epoch
     epochInfo,
     refetchEpochInfo: fetchEpochInfo,
+
+    // Voting
+    votingState,
+    refetchVotingState: () => fetchVotingState(epochInfo.epoch, address || null),
 
     // Pending pixels (paint-then-pay)
     pendingPixels,

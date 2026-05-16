@@ -24,7 +24,7 @@ function b64ToAddress(b64) {
   if (!b64) return '';
   try {
     const hex = atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
-    return Address.fromHex(hex).toBech32();
+    return Address.newFromHex(hex).toBech32();
   } catch {
     return '';
   }
@@ -113,6 +113,18 @@ const AdminPage = () => {
   const [endEpochState, setEndEpochState] = useState('idle');
   const [epochDurationInput, setEpochDurationInput] = useState('86400');
   const [epochDurationState, setEpochDurationState] = useState('idle');
+
+  // Charity voting setup
+  const [charityRows, setCharityRows] = useState([{ name: '', address: '', photoUrl: '', link: '' }]);
+  const [charityEpochInput, setCharityEpochInput] = useState('');
+  const [setCharitiesState, setSetCharitiesState] = useState('idle');
+
+  // Auto-populate epoch input once stats are known
+  useEffect(() => {
+    if (stats?.epoch && !charityEpochInput) {
+      setCharityEpochInput(String(stats.epoch));
+    }
+  }, [stats?.epoch]);
 
   useEffect(() => {
     if (!isConnected) navigate('/login');
@@ -261,6 +273,61 @@ const AdminPage = () => {
     }
   };
 
+  const handleSetCharities = async () => {
+    const epoch = parseInt(charityEpochInput, 10);
+    if (!epoch || epoch <= 0) { showToast('Enter a valid epoch number', 'error'); return; }
+    const validRows = charityRows.filter(r => r.name.trim() && r.address.trim());
+    if (validRows.length === 0) { showToast('Add at least one charity', 'error'); return; }
+    for (const r of validRows) {
+      if (!r.address.startsWith('erd1')) { showToast(`Invalid address: ${r.address}`, 'error'); return; }
+    }
+    setSetCharitiesState('pending');
+    try {
+      const epochHex = numToHex(epoch);
+
+      // ManagedVec<ManagedBuffer> nested encoding: (4-byte len + bytes) per item, no count prefix
+      const encodeListBytes = (names) => {
+        let hex = '';
+        for (const name of names) {
+          const bytes = new TextEncoder().encode(name);
+          hex += bytes.length.toString(16).padStart(8, '0');
+          hex += Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        return hex;
+      };
+
+      // ManagedVec<ManagedAddress> nested encoding: 32 raw bytes per item, no count prefix
+      const encodeListAddrs = (addrHexes) => addrHexes.join('');
+
+      const addrHexes = [];
+      for (const r of validRows) {
+        try {
+          addrHexes.push(Address.newFromBech32(r.address.trim()).toHex());
+        } catch {
+          showToast(`Invalid address: ${r.address.trim()}`, 'error');
+          setSetCharitiesState('idle');
+          return;
+        }
+      }
+
+      const namesContainer = encodeListBytes(validRows.map(r => r.name.trim()));
+      const addrsContainer = encodeListAddrs(addrHexes);
+      const data = `setEpochCharities@${epochHex}@${namesContainer}@${addrsContainer}`;
+      await sendTxWithData(wallet, data, 20_000_000n);
+
+      // Store photo + link metadata in localStorage (not in contract)
+      const meta = validRows.map(r => ({ photoUrl: r.photoUrl.trim(), link: r.link.trim() }));
+      localStorage.setItem(`charity_meta_epoch_${epoch}`, JSON.stringify(meta));
+
+      showToast(`Charities set for epoch ${epoch}`, 'success');
+      setSetCharitiesState('done');
+      setTimeout(() => setSetCharitiesState('idle'), 3000);
+    } catch (err) {
+      showToast(err?.message ?? 'Transaction failed', 'error');
+      setSetCharitiesState('idle');
+    }
+  };
+
   if (!isConnected) return null;
 
   return (
@@ -397,6 +464,157 @@ const AdminPage = () => {
                 </button>
               </div>
               <p className="text-xs text-textMuted mt-1">Current: {stats?.durationSeconds ?? '…'}s</p>
+            </ActionCard>
+
+            {/* ── Set Epoch Charities ───────────────────────────── */}
+            <ActionCard
+              title="Set Epoch Charities"
+              description="Define up to 5 charity candidates for an epoch. Each one will appear as a voting option. Fill in name + wallet address, then click Set."
+              accent="#48BB78"
+              tag="Voting"
+            >
+              <div className="space-y-4">
+                {/* Epoch picker */}
+                <div className="flex gap-2 items-center">
+                  <label className="text-xs text-textMuted whitespace-nowrap">For epoch #</label>
+                  <input
+                    type="number"
+                    value={charityEpochInput}
+                    onChange={e => setCharityEpochInput(e.target.value)}
+                    placeholder={stats?.epoch ? String(stats.epoch) : '1'}
+                    min="1"
+                    className="w-24 px-3 py-1.5 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+
+                {/* Charity rows */}
+                <div className="space-y-3">
+                  {charityRows.map((row, i) => {
+                    const complete = row.name.trim() && row.address.trim();
+                    return (
+                      <div
+                        key={i}
+                        className="rounded-xl border p-4 flex gap-4 transition-colors"
+                        style={{
+                          borderColor: complete ? '#48BB78' : 'rgb(var(--border))',
+                          background: complete ? 'rgba(72,187,120,0.04)' : 'rgb(var(--bg-alt))',
+                        }}
+                      >
+                        {/* Photo preview */}
+                        <div
+                          className="flex-shrink-0 w-16 h-20 rounded-xl overflow-hidden border"
+                          style={{ borderColor: 'rgb(var(--border))' }}
+                        >
+                          {row.photoUrl?.trim() ? (
+                            <img
+                              src={row.photoUrl.trim()}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                            />
+                          ) : null}
+                          <div
+                            className="w-full h-full items-center justify-center text-2xl"
+                            style={{
+                              display: row.photoUrl?.trim() ? 'none' : 'flex',
+                              background: `${['#E53E3E','#4299E1','#48BB78','#ED8936','#9F7AEA'][i % 5]}18`,
+                            }}
+                          >
+                            {['❤','🌊','🌿','☀','✦'][i % 5]}
+                          </div>
+                        </div>
+
+                        {/* Fields */}
+                        <div className="flex flex-col gap-2 flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-textMuted">
+                              Charity {i + 1}
+                              {complete && <span className="ml-2 text-[#48BB78]">✓ ready</span>}
+                            </span>
+                            {charityRows.length > 1 && (
+                              <button
+                                onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))}
+                                className="text-xs text-textMuted hover:text-error transition-colors"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={row.name}
+                            onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                            placeholder="Charity name (e.g. UNICEF)"
+                            className="w-full px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                          />
+                          <input
+                            type="text"
+                            value={row.address}
+                            onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))}
+                            placeholder="erd1… wallet address"
+                            className="w-full px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono text-xs"
+                          />
+                          <div className="flex gap-2">
+                            <input
+                              type="url"
+                              value={row.photoUrl ?? ''}
+                              onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, photoUrl: e.target.value } : r))}
+                              placeholder="Photo URL (https://…)"
+                              className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            />
+                            <input
+                              type="url"
+                              value={row.link ?? ''}
+                              onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, link: e.target.value } : r))}
+                              placeholder="Website link"
+                              className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add row button */}
+                {charityRows.length < 5 && (
+                  <button
+                    onClick={() => setCharityRows(prev => [...prev, { name: '', address: '', photoUrl: '', link: '' }])}
+                    className="w-full py-2 rounded-xl border-2 border-dashed text-sm font-medium transition-colors hover:border-[#48BB78] hover:text-[#48BB78]"
+                    style={{ borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-muted))' }}
+                  >
+                    + Add another charity ({charityRows.length}/5)
+                  </button>
+                )}
+
+                {/* Submit */}
+                {(() => {
+                  const readyCount = charityRows.filter(r => r.name.trim() && r.address.trim()).length;
+                  return (
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs text-textMuted">
+                        {readyCount === 0
+                          ? 'Fill in at least one charity to submit'
+                          : `${readyCount} charit${readyCount === 1 ? 'y' : 'ies'} will be set on-chain`}
+                      </span>
+                      <button
+                        onClick={handleSetCharities}
+                        disabled={setCharitiesState !== 'idle' || readyCount === 0}
+                        className={`btn-primary ${(setCharitiesState !== 'idle' || readyCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {setCharitiesState === 'pending' ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Sending…
+                          </span>
+                        ) : setCharitiesState === 'done'
+                          ? '✓ Charities set'
+                          : `Set ${readyCount || ''} Charit${readyCount === 1 ? 'y' : 'ies'}`}
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
             </ActionCard>
 
             {/* Distribute to charity */}

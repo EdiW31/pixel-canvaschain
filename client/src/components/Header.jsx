@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import WalletInfo from './WalletInfo';
 import ThemeToggle from './ThemeToggle';
 import EpochBanner from './EpochBanner';
+import VotingModal from './VotingModal';
 import { useSocket } from '../hooks/useSocket';
 import { useApp } from '../context/AppContext';
 
@@ -15,10 +17,17 @@ const ADMIN_ADDRESS = import.meta.env.VITE_ADMIN_ADDRESS;
  */
 const Header = () => {
   const { isConnected } = useSocket();
-  const { wallet } = useApp();
+  const { wallet, epochInfo, votingState } = useApp();
   const isAdmin = wallet.address === ADMIN_ADDRESS;
+  const [showVoteModal, setShowVoteModal] = useState(false);
+
+  const showVoteButton =
+    wallet.isConnected &&
+    epochInfo.epoch > 0 &&
+    votingState.charities.length > 0;
 
   return (
+    <>
     <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-md border-b border-border">
       <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
         {/* Brand */}
@@ -48,6 +57,18 @@ const Header = () => {
             <span>{isConnected ? 'Live' : 'Offline'}</span>
           </div>
 
+          {showVoteButton && (
+            <button
+              onClick={() => setShowVoteModal(true)}
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border shadow-soft transition-colors
+                ${votingState.hasVoted
+                  ? 'bg-backgroundAlt border-border text-textSecondary hover:border-borderStrong'
+                  : 'bg-primary border-primaryDark/40 text-textPrimary hover:bg-primaryDark'}`}
+            >
+              {votingState.hasVoted ? '✓ Voted' : '🗳 Vote'}
+            </button>
+          )}
+
           {isAdmin && (
             <Link
               to="/admin"
@@ -62,6 +83,9 @@ const Header = () => {
         </div>
       </div>
     </header>
+
+    {showVoteModal && <VotingModal onClose={() => setShowVoteModal(false)} />}
+  </>
   );
 };
 

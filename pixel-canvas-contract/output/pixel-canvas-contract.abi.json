@@ -65,6 +65,43 @@
         },
         {
             "docs": [
+                "Set the candidate charities for the upcoming (or current) epoch.",
+                "`names` and `addrs` must have the same length (max 5)."
+            ],
+            "name": "setEpochCharities",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                },
+                {
+                    "name": "names",
+                    "type": "List<bytes>"
+                },
+                {
+                    "name": "addrs",
+                    "type": "List<Address>"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "docs": [
+                "Cast a vote for a charity in the current epoch. One vote per wallet."
+            ],
+            "name": "vote",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "charity_index",
+                    "type": "u32"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "docs": [
                 "Start a new epoch. Increments epoch counter, records start timestamp,",
                 "resets top-painter tracking."
             ],
@@ -75,8 +112,8 @@
         },
         {
             "docs": [
-                "End the current epoch. Distributes accumulated PIXEL to charity and emits",
-                "an epoch-ended event. NFT minting is added in Phase 4."
+                "End the current epoch. Distributes accumulated PIXEL to the default charity",
+                "and accumulated EGLD to the vote-winning charity (or default if no votes)."
             ],
             "name": "endEpoch",
             "mutability": "mutable",
@@ -246,6 +283,77 @@
                     "type": "u64"
                 }
             ]
+        },
+        {
+            "docs": [
+                "Returns (names, addresses) for charities registered in `epoch`."
+            ],
+            "name": "getEpochCharities",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "List<bytes>"
+                },
+                {
+                    "type": "List<Address>"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns vote counts per charity for `epoch` (parallel to getEpochCharities)."
+            ],
+            "name": "getVoteTallies",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "List<u64>"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns the charity index the caller voted for, or 255 if not voted."
+            ],
+            "name": "getMyVote",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                },
+                {
+                    "name": "voter",
+                    "type": "Address"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "u32"
+                }
+            ]
+        },
+        {
+            "name": "getTotalEgldForCharity",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "BigUint"
+                }
+            ]
         }
     ],
     "events": [
@@ -315,6 +423,26 @@
                 {
                     "name": "top_paint_count",
                     "type": "u64",
+                    "indexed": true
+                }
+            ]
+        },
+        {
+            "identifier": "voteCast",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64",
+                    "indexed": true
+                },
+                {
+                    "name": "voter",
+                    "type": "Address",
+                    "indexed": true
+                },
+                {
+                    "name": "charity_index",
+                    "type": "u32",
                     "indexed": true
                 }
             ]

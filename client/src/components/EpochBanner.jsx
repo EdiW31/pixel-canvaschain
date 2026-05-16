@@ -88,7 +88,7 @@ const EpochBanner = ({ className = '' }) => {
         ${className}`}
     >
       {/* Mascot */}
-      <div className="flex items-end" style={{ height: 33 }}>
+      <div className="flex items-end" style={{ height: 33, animation: 'pixelman-walk 2.4s ease-in-out infinite' }}>
         <PixelGuy />
       </div>
 

@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
 import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaintChip, PaletteStrip } from '../components/PaintDecorations';
+import { useApp } from '../context/AppContext';
+import VotingSection from '../components/VotingSection';
+import PixelMan from '../components/PixelMan';
 
 /* ─── Pixel art canvas data (24 cols × 13 rows) ──────────────────────────── */
 /* eslint-disable no-unused-vars */
@@ -50,7 +53,32 @@ const scrollTo = (id) =>
 
 /* ─── WelcomePage ────────────────────────────────────────────────────────── */
 const WelcomePage = () => {
+  const { epochInfo, votingState } = useApp();
   const navRef = useRef(null);
+  const [activeSection, setActiveSection] = useState('hero');
+  const [isDark, setIsDark] = useState(false);
+
+  // Detect dark/light theme
+  useEffect(() => {
+    const check = () => setIsDark(document.documentElement.getAttribute('data-theme') === 'dark');
+    check();
+    const mo = new MutationObserver(check);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
+
+  // Track the most-visible section to drive the nav colour
+  useEffect(() => {
+    const ids = ['hero','vote','mission','how-it-works','epochs','charity','bidding','nft','split','cta'];
+    const ratios = {};
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => { ratios[e.target.id] = e.intersectionRatio; });
+      const best = Object.entries(ratios).sort(([,a],[,b]) => b - a)[0];
+      if (best && best[1] > 0) setActiveSection(best[0]);
+    }, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+    ids.forEach(id => { const el = document.getElementById(id); if (el) obs.observe(el); });
+    return () => obs.disconnect();
+  }, [epochInfo.epoch]);
 
   useLayoutEffect(() => {
     const update = () => {
@@ -62,31 +90,105 @@ const WelcomePage = () => {
     return () => window.removeEventListener('resize', update);
   }, []);
 
+  // ── Nav colour tokens ────────────────────────────────────────────────────────
+  const isVoteSec = activeSection === 'vote';
+  let navBg, navLinkClr, navLinkActv, navLinkHov, navBorderClr, navCircBorder, navLogoClr, navBrandClr, navSubClr;
+  if (isVoteSec) {
+    // Vote section → deep sage green, always (even in dark mode)
+    navBg        = '#7A9470';
+    navLinkClr   = 'rgba(255,255,255,0.70)';
+    navLinkActv  = '#fff';
+    navLinkHov   = '#fff';
+    navBorderClr = 'rgba(0,0,0,0.10)';
+    navCircBorder= 'rgba(255,255,255,0.40)';
+    navLogoClr   = '#fff';
+    navBrandClr  = '#fff';
+    navSubClr    = 'rgba(255,255,255,0.55)';
+  } else if (!isDark) {
+    // Light mode, non-vote → white navbar
+    navBg        = '#FFFFFF';
+    navLinkClr   = 'rgba(27,26,23,0.52)';
+    navLinkActv  = '#C49628';
+    navLinkHov   = '#1B1A17';
+    navBorderClr = 'rgba(27,26,23,0.10)';
+    navCircBorder= 'rgba(27,26,23,0.20)';
+    navLogoClr   = '#1B1A17';
+    navBrandClr  = '#1B1A17';
+    navSubClr    = 'rgba(27,26,23,0.40)';
+  } else {
+    // Dark mode, non-vote → dark navbar
+    navBg        = '#131210';
+    navLinkClr   = 'rgba(255,255,255,0.52)';
+    navLinkActv  = '#E5B547';
+    navLinkHov   = 'rgba(255,255,255,0.92)';
+    navBorderClr = 'rgba(255,255,255,0.08)';
+    navCircBorder= 'rgba(255,255,255,0.30)';
+    navLogoClr   = '#fff';
+    navBrandClr  = '#fff';
+    navSubClr    = 'rgba(255,255,255,0.38)';
+  }
+
   return (
   <div className="h-screen flex flex-col overflow-hidden bg-background text-textPrimary">
 
     {/* ─── Nav ─────────────────────────────────────────────────────── */}
-    <nav ref={navRef} className="flex-shrink-0 z-40 bg-background/90 backdrop-blur-md border-b border-border">
-      <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
-        <button onClick={() => scrollTo('hero')} className="flex items-center gap-3 text-left">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-base shadow-soft">🎨</div>
-          <div className="leading-tight">
-            <div className="font-heading text-base font-semibold tracking-tight">Pixel CanvasChain</div>
-            <div className="text-[11px] text-textMuted">Painting for a cause</div>
+    <nav
+      ref={navRef}
+      className="flex-shrink-0 z-40"
+      style={{
+        background: navBg,
+        borderBottom: `1px solid ${navBorderClr}`,
+        position: 'relative',
+        transition: 'background 0.45s ease, border-color 0.45s ease',
+      }}
+    >
+      <div
+        className="max-w-6xl mx-auto flex items-center justify-between"
+        style={{ height: 82, paddingLeft: 112, paddingRight: 32, position: 'relative' }}
+      >
+        {/* Circle logo — half protrudes below nav bottom */}
+        <button
+          onClick={() => scrollTo('hero')}
+          title="Home"
+          style={{
+            position: 'absolute', left: 32, bottom: -28,
+            width: 56, height: 56, borderRadius: '50%',
+            background: navBg,
+            border: `2px solid ${navCircBorder}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 22, color: navLogoClr,
+            zIndex: 20,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.16)',
+            transition: 'background 0.45s ease, border-color 0.45s ease, color 0.45s ease',
+            cursor: 'pointer',
+          }}
+        >
+          🎨
+        </button>
+
+        {/* Brand name */}
+        <button onClick={() => scrollTo('hero')} className="hidden sm:flex flex-col text-left flex-shrink-0">
+          <div className="font-heading text-[16px] font-semibold tracking-tight" style={{ color: navBrandClr, transition: 'color 0.45s ease' }}>
+            Pixel CanvasChain
+          </div>
+          <div className="text-[11px] tracking-widest uppercase" style={{ color: navSubClr, transition: 'color 0.45s ease' }}>
+            Painting for a cause
           </div>
         </button>
 
-        <div className="flex items-center gap-1">
-          <NavButton sectionId="mission">Mission</NavButton>
-          <HowItWorksNav />
-          <NavButton sectionId="nft">NFT</NavButton>
-          <NavButton sectionId="split">The Split</NavButton>
-          <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
+        {/* Center nav links */}
+        <div className="flex items-center gap-7">
+          <NavLink sectionId="mission"   linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>Mission</NavLink>
+          <HowItWorksNavLinks            linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov} />
+          <NavLink sectionId="nft"       linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>NFT</NavLink>
+          <NavLink sectionId="split"     linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>The Split</NavLink>
+        </div>
+
+        {/* Right side */}
+        <div className="flex items-center gap-5">
           <EpochBanner className="hidden md:inline-flex" />
-          <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
           <ThemeToggle />
-          <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
-          <Link to="/login" className="btn-primary text-sm py-1.5 px-4">Open the app</Link>
+          <Link to="/login" className="btn-primary px-5 py-2 text-sm">Open the app</Link>
         </div>
       </div>
     </nav>
@@ -113,6 +215,42 @@ const WelcomePage = () => {
         <Dot color="#E53E3E" style={{ bottom: 20, right: '2%'   }} />
         <Dot color="#48BB78" style={{ top: 15,    left:  '48%'  }} />
         <Dot color="#4299E1" style={{ bottom: 15, left:  '52%'  }} />
+
+        {/* Pixelman vote CTA — bottom-right corner; message changes after voting */}
+        {epochInfo.epoch > 0 && (
+          <button
+            onClick={() => scrollTo('vote')}
+            className="absolute z-20 flex items-end gap-3 group select-none"
+            style={{ bottom: '6%', right: '6%' }}
+            aria-label={votingState.hasVoted ? 'See voting results' : 'Go to voting section'}
+          >
+            {/* Speech bubble — theme-aware; sage tint when voted, gold when pending */}
+            <div
+              className={`relative bg-surface border-2 rounded-2xl px-4 py-3 group-hover:-translate-y-1 transition-all duration-200 mb-2 ${
+                votingState.hasVoted
+                  ? 'border-charity shadow-[0_4px_20px_rgba(123,158,93,0.45)] group-hover:shadow-[0_6px_28px_rgba(123,158,93,0.65)]'
+                  : 'border-primary shadow-[0_4px_20px_rgba(229,181,71,0.45)] group-hover:shadow-[0_6px_28px_rgba(229,181,71,0.65)]'
+              }`}
+            >
+              <p className="text-xs font-bold text-textPrimary leading-snug whitespace-nowrap">
+                {votingState.hasVoted
+                  ? `✓ You voted for epoch ${epochInfo.epoch}!`
+                  : `🗳 Vote for epoch ${epochInfo.epoch}!`}
+              </p>
+              <p className="text-[10px] text-textSecondary mt-0.5 whitespace-nowrap">
+                {votingState.hasVoted ? 'See the live results ↓' : 'Scroll down to pick a charity →'}
+              </p>
+              {/* Tail — rotated square trick, matches border colour */}
+              <div
+                className={`absolute -right-2 bottom-4 w-3 h-3 bg-surface border-r-2 border-b-2 rotate-45 ${
+                  votingState.hasVoted ? 'border-charity' : 'border-primary'
+                }`}
+              />
+            </div>
+            {/* Pixel mascot */}
+            <PixelManBig />
+          </button>
+        )}
 
         <div className="max-w-6xl mx-auto px-6 py-8 w-full">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
@@ -149,7 +287,79 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 2. Mission ────────────────────────────────────────────── */}
+      {/* ── 2. Voting section ────────────────────────────────────── */}
+      {epochInfo.epoch > 0 && (
+        <AnimatedSection
+          id="vote"
+          data-theme="light"
+          className="flex items-center relative overflow-hidden border-t-2 bg-primary"
+          style={{ height: 'var(--section-h, 100vh)', borderColor: 'rgba(0,0,0,0.08)' }}
+        >
+          <Dot color="#E53E3E" style={{ top: 24,    left:  '2%'   }} />
+          <Dot color="#4299E1" style={{ top: 60,    right: '2%'   }} />
+          <Dot color="#48BB78" style={{ bottom: 30, left:  '4%'   }} />
+          <Dot color="#9F7AEA" style={{ bottom: 60, right: '3%'   }} />
+
+          {/* Big tilted pixelman on the RIGHT — always visible, message changes after vote */}
+          <div
+            className="hidden xl:flex absolute pointer-events-none select-none"
+            style={{ right: '2%', top: votingState.hasVoted ? '55%' : '20%', zIndex: 5, animation: 'pixelman-bob 3s ease-in-out infinite', display: 'flex', alignItems: 'flex-end', gap: 16 }}
+          >
+            <div
+              className="relative mb-8"
+              style={{
+                background: '#FFFFFF',
+                border: '2.5px solid #1B1A17',
+                borderRadius: 20,
+                padding: '14px 20px',
+                transform: 'rotate(6deg)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+                maxWidth: 220,
+              }}
+            >
+              <p className="font-heading font-bold text-base leading-tight" style={{ color: '#1B1A17' }}>
+                {votingState.hasVoted ? 'Voted! ✓' : 'Hey! Pick one!'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.65)' }}>
+                {votingState.hasVoted
+                  ? 'Thanks for voting this epoch 🎨'
+                  : 'Your vote sends real EGLD to the charity 🎨'}
+              </p>
+              <div
+                className="absolute"
+                style={{
+                  right: -10, bottom: 18, width: 16, height: 16,
+                  background: '#FFFFFF',
+                  borderRight: '2.5px solid #1B1A17',
+                  borderBottom: '2.5px solid #1B1A17',
+                  transform: 'rotate(-45deg)',
+                }}
+              />
+            </div>
+            <PixelMan px={14} tilt={22} />
+          </div>
+
+          <div className="max-w-5xl mx-auto px-6 py-8 w-full">
+            <div className="mb-8">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border-2 text-sm font-bold mb-4"
+                style={{ borderColor: 'rgba(27,26,23,0.3)', color: '#1B1A17', background: 'rgba(255,255,255,0.25)' }}>
+                🗳 Community Vote · Epoch {epochInfo.epoch}
+              </div>
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2"
+                style={{ color: '#1B1A17' }}>
+                You decide where the EGLD goes.
+              </h2>
+              <p className="text-base max-w-xl" style={{ color: 'rgba(27,26,23,0.7)' }}>
+                Every epoch, the community votes on which charity receives the accumulated donations. One wallet, one vote — enforced on-chain.
+              </p>
+            </div>
+
+            <VotingSection onYellow />
+          </div>
+        </AnimatedSection>
+      )}
+
+      {/* ── 3. Mission ────────────────────────────────────────────── */}
       <AnimatedSection
         id="mission"
         className="bg-backgroundAlt border-t border-border flex items-center relative overflow-hidden"
@@ -165,15 +375,15 @@ const WelcomePage = () => {
         <Dot color="#ED8936" style={{ bottom: 16, right: '30%' }} />
 
         <div className="max-w-5xl mx-auto px-6 py-8 w-full">
-          <div className="mb-5">
+          <div className="mb-4">
             <div className="pill mb-2">Why we built this</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight">
               A blockchain r/place — with a purpose.
             </h2>
             <Stroke />
           </div>
 
-          <div className="relative w-full h-36 sm:h-44 overflow-hidden rounded-2xl border-2 border-dashed border-border bg-surface shadow-card mb-5">
+          <div className="relative w-full h-32 sm:h-40 overflow-hidden rounded-2xl border-2 border-dashed border-border bg-surface shadow-card mb-4">
             <div className="absolute top-2 left-2 grid grid-cols-8 gap-[3px]" aria-hidden="true">
               {['#E53E3E','#ED8936','#ECC94B','#48BB78','#4299E1','#9F7AEA','#ED64A6','#E53E3E',
                 '#ED8936','#ECC94B','#48BB78','#4299E1','#9F7AEA','#ED64A6','#E53E3E','#ED8936'].map((c,i) => (
@@ -194,14 +404,14 @@ const WelcomePage = () => {
 
           <div className="grid md:grid-cols-2 gap-5">
             <div className="rounded-xl px-5 py-4 border border-primary/40" style={{ background: 'rgb(var(--primary) / 0.08)' }}>
-              <span className="inline-flex items-center gap-1.5 font-semibold text-primaryDark text-sm mb-2">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-primaryDark text-base mb-2">
                 🎨 The idea: Reddit r/place, on-chain.
               </span>
-              <p className="text-sm text-textSecondary leading-relaxed">
+              <p className="text-base text-textSecondary leading-relaxed">
                 When Reddit launched <strong className="text-textPrimary">r/place</strong> — a million-pixel canvas where anyone painted one pixel every 5 minutes — millions stayed up defending their art. We built the same thing, but permanent, decentralised, and charitable.
               </p>
             </div>
-            <div className="space-y-3 text-sm text-textSecondary leading-relaxed">
+            <div className="space-y-3 text-base text-textSecondary leading-relaxed">
               <p>
                 Every pixel purchase triggers an automatic{' '}
                 <strong className="text-textPrimary">on-chain donation</strong> — the split happens inside the same transaction, no promises needed.
@@ -237,9 +447,9 @@ const WelcomePage = () => {
         <Dot color="#E53E3E" style={{ top: 80,    right: '25%' }} />
 
         <div className="max-w-5xl mx-auto px-6 py-8 w-full">
-          <div className="text-center mb-8">
+          <div className="text-center mb-7">
             <div className="pill mb-2">How it works</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight">
               Five steps from wallet to canvas to charity
             </h2>
             <div className="flex justify-center"><Stroke color="#4299E1" /></div>
@@ -277,9 +487,9 @@ const WelcomePage = () => {
         <Dot color="#E53E3E" style={{ top: 90,    left:  '10%' }} />
 
         <div className="max-w-5xl mx-auto px-6 py-8 w-full">
-          <div className="text-center mb-7">
+          <div className="text-center mb-6">
             <div className="pill mb-2">Epoch system</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight">
               One week. One charity. One NFT winner.
             </h2>
             <div className="flex justify-center"><Stroke color="#ED8936" /></div>
@@ -320,9 +530,9 @@ const WelcomePage = () => {
         <Dot color="#ED64A6" style={{ bottom: 16, left:  '52%' }} />
 
         <div className="max-w-5xl mx-auto px-6 py-8 w-full">
-          <div className="text-center mb-6">
+          <div className="text-center mb-5">
             <div className="pill-charity mb-2">This epoch's charities</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight">
               Five causes. You decide where the money goes.
             </h2>
             <div className="flex justify-center"><Stroke color="#48BB78" /></div>
@@ -371,11 +581,11 @@ const WelcomePage = () => {
         <div className="max-w-5xl mx-auto px-6 py-8 w-full">
           <div className="text-center mb-5">
             <div className="pill mb-2">Bidding</div>
-            <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight">
               Bid for the epoch's prime 50×50 zone.
             </h2>
             <div className="flex justify-center"><Stroke color="#E53E3E" /></div>
-            <p className="text-textSecondary mt-1 max-w-xl mx-auto text-sm">
+            <p className="text-textSecondary mt-1 max-w-xl mx-auto text-base">
               At the start of every epoch, a <strong className="text-textPrimary">50×50 pixel zone</strong> is locked.
               Painting pauses for the first day while wallets compete. Highest EGLD bid wins exclusive rights for the whole epoch.
             </p>
@@ -405,16 +615,16 @@ const WelcomePage = () => {
           <div className="grid md:grid-cols-2 gap-10 items-center">
             <div>
               <div className="pill mb-2">NFT Rewards</div>
-              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2">
+              <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight mb-2">
                 Paint the most. Win a one-of-a-kind NFT.
               </h2>
               <Stroke color="#9F7AEA" />
-              <p className="text-textSecondary leading-relaxed mb-5 text-sm">
+              <p className="text-textSecondary leading-relaxed mb-5 text-base">
                 At epoch end, the wallet that spent the most credits receives a{' '}
                 <strong className="text-textPrimary">unique generative NFT</strong> minted directly to their address —
                 no claiming transaction, fully automatic.
               </p>
-              <ul className="space-y-2.5 text-sm text-textSecondary">
+              <ul className="space-y-2.5 text-base text-textSecondary">
                 <NftFeature color="#E53E3E" text="One NFT per epoch — never repeated, never duplicated." />
                 <NftFeature color="#4299E1" text="Generative art derived from the epoch's canvas snapshot." />
                 <NftFeature color="#48BB78" text="Automatically airdropped — no claim transaction needed." />
@@ -453,11 +663,11 @@ const WelcomePage = () => {
           <div className="grid md:grid-cols-2 gap-10">
             <div>
               <div className="pill-charity mb-2">The split</div>
-              <h2 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight mb-2">
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2">
                 Where every coin actually goes
               </h2>
               <Stroke color="#48BB78" />
-              <p className="text-sm text-textSecondary mb-5 leading-relaxed">
+              <p className="text-base text-textSecondary mb-4 leading-relaxed">
                 The smart contract enforces this on every single purchase — no one can change it without redeploying.
               </p>
               <div className="flex w-full h-10 rounded-lg overflow-hidden shadow-soft mb-5">
@@ -474,7 +684,7 @@ const WelcomePage = () => {
 
             <div>
               <div className="pill mb-2">Pricing</div>
-              <h2 className="font-heading text-2xl sm:text-3xl font-semibold tracking-tight mb-2">
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2">
                 Five tiers of pixels
               </h2>
               <Stroke color="#9F7AEA" />
@@ -540,96 +750,94 @@ const WelcomePage = () => {
 };
 
 /* ─── NavButton — nav item with gold underline when section is in view ────── */
-const NavButton = ({ sectionId, children }) => {
-  const [active, setActive] = useState(false);
+/* ─── Pixel mascot (bigger scale for hero corner) ───────────────────────── */
+const M_X=null, M_G='#E5B547', M_GD='#C49628', M_SK='#FDE68A', M_EY='#1A1817', M_RD='#E05A4B', M_BL='#3B82F6', M_BK='#1A1817';
+const MASCOT_BIG = [
+  [M_X,  M_X,  M_GD, M_GD, M_GD, M_GD, M_X,  M_X  ],
+  [M_X,  M_GD, M_G,  M_G,  M_G,  M_G,  M_GD, M_X  ],
+  [M_X,  M_X,  M_SK, M_SK, M_SK, M_SK, M_X,  M_X  ],
+  [M_X,  M_X,  M_SK, M_EY, M_SK, M_EY, M_SK, M_X  ],
+  [M_X,  M_X,  M_SK, M_SK, M_SK, M_SK, M_X,  M_X  ],
+  [M_SK, M_RD, M_RD, M_RD, M_RD, M_RD, M_RD, M_SK ],
+  [M_X,  M_RD, M_RD, M_RD, M_RD, M_RD, M_X,  M_X  ],
+  [M_X,  M_X,  M_BL, M_BL, M_X,  M_BL, M_BL, M_X  ],
+  [M_X,  M_X,  M_BL, M_BL, M_X,  M_BL, M_BL, M_X  ],
+  [M_X,  M_X,  M_BK, M_BK, M_X,  M_BK, M_BK, M_X  ],
+  [M_X,  M_X,  M_BK, M_X,  M_X,  M_X,  M_BK, M_X  ],
+];
+const PX_BIG = 7;
+const PixelManBig = () => (
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(8, ${PX_BIG}px)`,
+      gridTemplateRows: `repeat(11, ${PX_BIG}px)`,
+      imageRendering: 'pixelated',
+      flexShrink: 0,
+      filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.25))',
+      transition: 'transform 0.2s',
+    }}
+    className="group-hover:scale-110 group-hover:-translate-y-1"
+  >
+    {MASCOT_BIG.flat().map((color, i) => (
+      <div key={i} style={{ width: PX_BIG, height: PX_BIG, backgroundColor: color ?? 'transparent' }} />
+    ))}
+  </div>
+);
 
+/* ─── NavLink — colour-aware nav button (used in the WelcomePage navbar) ──── */
+const NavLink = ({ sectionId, children, linkColor, activeColor, hoverColor }) => {
+  const [active, setActive] = useState(false);
+  const [hovered, setHovered] = useState(false);
   useEffect(() => {
     const el = document.getElementById(sectionId);
     if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setActive(entry.isIntersecting),
-      { threshold: 0.5 }
-    );
+    const obs = new IntersectionObserver(([e]) => setActive(e.isIntersecting), { threshold: 0.5 });
     obs.observe(el);
     return () => obs.disconnect();
   }, [sectionId]);
-
   return (
     <button
       onClick={() => scrollTo(sectionId)}
-      className="btn-ghost hidden sm:inline-flex text-sm py-1.5 relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="hidden sm:inline-flex relative py-1 text-sm font-medium tracking-wide"
+      style={{ color: active ? activeColor : hovered ? hoverColor : linkColor, transition: 'color 0.2s ease' }}
     >
       {children}
-      <span
-        style={{
-          position: 'absolute',
-          bottom: 2,
-          left: '20%',
-          right: '20%',
-          height: 2,
-          borderRadius: 2,
-          background: '#E5B547',
-          transition: 'opacity 0.25s ease, transform 0.25s ease',
-          opacity: active ? 1 : 0,
-          transform: active ? 'scaleX(1)' : 'scaleX(0)',
-          transformOrigin: 'center',
-        }}
-      />
+      <span style={{ position:'absolute', bottom:-1, left:0, right:0, height:1.5, borderRadius:2, background: activeColor, transition:'opacity 0.25s ease, transform 0.25s ease', opacity: active ? 1 : 0, transform: active ? 'scaleX(1)' : 'scaleX(0)', transformOrigin:'center' }} />
     </button>
   );
 };
 
-/* ─── HowItWorksNav — cycling nav with 4 inline pixel dot indicators ────── */
-const HowItWorksNav = () => {
+/* ─── HowItWorksNavLinks — colour-aware cycling nav with dot indicators ──── */
+const HowItWorksNavLinks = ({ linkColor, activeColor, hoverColor }) => {
   const [step, setStep] = useState(-1);
+  const [hovered, setHovered] = useState(false);
   const sections = ['how-it-works', 'epochs', 'charity', 'bidding'];
-
-  /* Sync active dot with scroll position */
   useEffect(() => {
     const visible = new Set();
-    const obs = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) visible.add(entry.target.id);
-          else visible.delete(entry.target.id);
-        });
-        const active = sections.findIndex((id) => visible.has(id));
-        setStep(active); /* -1 when none visible */
-      },
-      { threshold: 0.5 }
-    );
-    sections.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) obs.observe(el);
-    });
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) visible.add(e.target.id); else visible.delete(e.target.id); });
+      setStep(sections.findIndex(id => visible.has(id)));
+    }, { threshold: 0.5 });
+    sections.forEach(id => { const el = document.getElementById(id); if (el) obs.observe(el); });
     return () => obs.disconnect();
   }, []);
-
-  const handleClick = () => {
-    const next = (step + 1) % sections.length;
-    setStep(next);
-    scrollTo(sections[next]);
-  };
-
+  const isActive = step >= 0;
+  const handleClick = () => { const next = (step + 1) % sections.length; scrollTo(sections[next]); };
   return (
     <button
       onClick={handleClick}
-      className="btn-ghost hidden sm:inline-flex items-center gap-2 text-sm py-1.5 whitespace-nowrap"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="hidden sm:inline-flex items-center gap-2 text-sm font-medium tracking-wide whitespace-nowrap"
+      style={{ color: isActive ? activeColor : hovered ? hoverColor : linkColor, transition: 'color 0.2s ease' }}
     >
       How it works
       <span className="flex items-center gap-1" aria-hidden="true">
         {sections.map((_, i) => (
-          <span
-            key={i}
-            style={{
-              display: 'inline-block',
-              width: 5, height: 5, borderRadius: 1,
-              background: step === i ? '#E5B547' : 'currentColor',
-              opacity: step === i ? 1 : 0.25,
-              transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
-              transform: step === i ? 'scale(1.3)' : 'scale(1)',
-            }}
-          />
+          <span key={i} style={{ display:'inline-block', width:4, height:4, borderRadius:1, background: step === i ? activeColor : linkColor, opacity: step === i ? 1 : 0.4, transition:'all 0.25s cubic-bezier(0.4,0,0.2,1)', transform: step === i ? 'scale(1.4)' : 'scale(1)' }} />
         ))}
       </span>
     </button>
@@ -842,31 +1050,31 @@ const Stat = ({ label, value, emphasis }) => (
 
 const Step = ({ n, color, title, body }) => (
   <div className="card p-5 hover:shadow-card transition-shadow duration-200 flex flex-col gap-3">
-    <div className="w-9 h-9 rounded-lg font-heading font-bold text-base flex items-center justify-center shadow-soft flex-shrink-0"
+    <div className="w-10 h-10 rounded-lg font-heading font-bold text-lg flex items-center justify-center shadow-soft flex-shrink-0"
       style={{ background: color.bg, color: color.text }}>{n}</div>
-    <h3 className="font-heading text-sm font-semibold leading-snug">{title}</h3>
-    <p className="text-xs text-textSecondary leading-relaxed">{body}</p>
+    <h3 className="font-heading text-base font-semibold leading-snug">{title}</h3>
+    <p className="text-sm text-textSecondary leading-relaxed">{body}</p>
   </div>
 );
 
 const EpochPhase = ({ icon, color, label, title, body }) => (
   <div className="flex flex-col items-center text-center gap-2">
-    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-card z-10 bg-surface border border-border"
+    <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-card z-10 bg-surface border border-border"
       style={{ boxShadow: `0 0 0 3px ${color}33` }}>{icon}</div>
-    <div className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+    <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
       style={{ background: color + '22', color }}>{label}</div>
-    <h3 className="font-heading text-sm font-semibold">{title}</h3>
-    <p className="text-xs text-textSecondary leading-relaxed">{body}</p>
+    <h3 className="font-heading text-base font-semibold">{title}</h3>
+    <p className="text-sm text-textSecondary leading-relaxed">{body}</p>
   </div>
 );
 
 const EpochStat = ({ icon, label, value, sub, color }) => (
   <div className="card p-5 relative overflow-hidden">
     <div className="absolute top-0 left-0 right-0 h-1 rounded-t-xl" style={{ background: color }} />
-    <div className="text-2xl mb-2">{icon}</div>
+    <div className="text-3xl mb-2">{icon}</div>
     <div className="text-xs text-textMuted uppercase tracking-wider font-medium mb-1">{label}</div>
-    <div className="font-heading text-xl font-semibold text-textPrimary mb-1">{value}</div>
-    <p className="text-xs text-textMuted">{sub}</p>
+    <div className="font-heading text-2xl font-semibold text-textPrimary mb-1">{value}</div>
+    <p className="text-sm text-textMuted">{sub}</p>
   </div>
 );
 
@@ -883,8 +1091,8 @@ const CharityCard = ({ charity, isHighlighted, votePct }) => (
         {charity.icon}
       </div>
       <div>
-        <h3 className="font-heading text-sm font-semibold leading-snug">{charity.name}</h3>
-        <p className="text-xs text-textSecondary leading-relaxed mt-0.5">{charity.mission}</p>
+        <h3 className="font-heading text-base font-semibold leading-snug">{charity.name}</h3>
+        <p className="text-sm text-textSecondary leading-relaxed mt-0.5">{charity.mission}</p>
       </div>
     </div>
     <div className="mt-3">
@@ -945,23 +1153,23 @@ const NftMockup = () => (
 );
 
 const SplitItem = ({ color, title, body }) => (
-  <div className="flex items-start gap-2">
-    <div className={`w-3 h-3 rounded-sm flex-shrink-0 mt-0.5 ${color}`} />
+  <div className="flex items-start gap-2.5">
+    <div className={`w-3 h-3 rounded-sm flex-shrink-0 mt-1 ${color}`} />
     <div>
-      <span className="font-semibold text-textPrimary text-sm">{title} </span>
-      <span className="text-sm text-textSecondary">{body}</span>
+      <span className="font-semibold text-textPrimary text-base">{title} </span>
+      <span className="text-base text-textSecondary">{body}</span>
     </div>
   </div>
 );
 
 const TierRow = ({ name, egld, pixels, bonus, featured, dot }) => (
-  <div className={`card px-4 py-3 flex items-center gap-3 hover:shadow-card transition-shadow duration-200 ${featured ? 'ring-1 ring-primary' : ''}`}>
-    <div style={{ width:8, height:8, borderRadius:2, background:dot, flexShrink:0 }} />
-    <div className="font-heading text-sm font-semibold flex-1">{name}</div>
-    <div className="text-sm font-semibold text-primaryDark">{egld} <span className="text-xs text-textMuted font-normal">EGLD</span></div>
-    <div className="text-xs text-textSecondary w-16 text-right">{pixels} px</div>
-    {bonus ? <div className="text-xs text-charityDark font-medium w-12 text-right">{bonus}</div> : <div className="w-12" />}
-    {featured && <div className="text-[10px] text-primary font-semibold">★ Best</div>}
+  <div className={`card px-4 py-3.5 flex items-center gap-3 hover:shadow-card transition-shadow duration-200 ${featured ? 'ring-1 ring-primary' : ''}`}>
+    <div style={{ width:9, height:9, borderRadius:2, background:dot, flexShrink:0 }} />
+    <div className="font-heading text-base font-semibold flex-1">{name}</div>
+    <div className="text-base font-semibold text-primaryDark">{egld} <span className="text-xs text-textMuted font-normal">EGLD</span></div>
+    <div className="text-sm text-textSecondary w-20 text-right">{pixels} px</div>
+    {bonus ? <div className="text-sm text-charityDark font-medium w-12 text-right">{bonus}</div> : <div className="w-12" />}
+    {featured && <div className="text-xs text-primary font-semibold">★ Best</div>}
   </div>
 );
 

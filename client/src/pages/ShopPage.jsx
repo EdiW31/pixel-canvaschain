@@ -5,6 +5,8 @@ import { useApp } from '../context/AppContext';
 import ShopCard from '../components/ShopCard';
 import Header from '../components/Header';
 import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
+import VotingSection from '../components/VotingSection';
+import PixelMan from '../components/PixelMan';
 
 // Devnet tier definitions — match contract constants in pixel_canvas_contract.rs
 const TIERS = [
@@ -20,7 +22,7 @@ const INFO_COLORS = ['#4299E1', '#48BB78', '#9F7AEA'];
 
 const ShopPage = () => {
   const { isConnected } = useWallet();
-  const { wallet, refetchPixelBalance } = useApp();
+  const { wallet, refetchPixelBalance, epochInfo, votingState } = useApp();
   const navigate = useNavigate();
   const pixelBalance = wallet.pixelBalance;
 
@@ -110,7 +112,77 @@ const ShopPage = () => {
             body="Once placed, your pixel is part of a public, indexed canvas — even if our servers disappear, the contract state persists."
           />
         </div>
+
       </main>
+
+      {/* ─── Charity voting — full width ─────────────────────────────── */}
+      {epochInfo.epoch > 0 && (
+        <div data-theme="light" className="w-full relative overflow-hidden py-16 bg-primary">
+          {/* Decorative dots */}
+          <div className="absolute top-5 right-10 w-4 h-4 rounded-full bg-primaryDark/20" />
+          <div className="absolute bottom-8 left-14 w-3 h-3 rounded-full bg-primaryDark/15" />
+          <div className="absolute top-10 left-8 w-2 h-2 rounded-full bg-primaryDark/25" />
+          <div className="absolute bottom-5 right-24 w-5 h-5 rounded-full bg-primary/30" />
+          <div className="absolute top-4 left-[35%] w-2 h-2 rounded-full bg-primaryDark/20" />
+          <div className="absolute bottom-10 right-[40%] w-3 h-3 rounded-full bg-primaryDark/15" />
+
+          {/* Big tilted pixelman on the RIGHT — always visible, message changes after vote */}
+          <div
+            className="hidden xl:flex absolute pointer-events-none select-none"
+            style={{ right: '2%', top: votingState.hasVoted ? '50%' : '15%', zIndex: 5, animation: 'pixelman-bob 3s ease-in-out infinite', display: 'flex', alignItems: 'flex-end', gap: 16 }}
+          >
+            <div
+              className="relative mb-8"
+              style={{
+                background: '#FFFFFF',
+                border: '2.5px solid #1B1A17',
+                borderRadius: 20,
+                padding: '14px 20px',
+                transform: 'rotate(6deg)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+                maxWidth: 220,
+              }}
+            >
+              <p className="font-heading font-bold text-base leading-tight" style={{ color: '#1B1A17' }}>
+                {votingState.hasVoted ? 'Voted! ✓' : 'Hey! Pick one!'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.65)' }}>
+                {votingState.hasVoted
+                  ? 'Thanks for voting this epoch 🎨'
+                  : 'Your vote sends real EGLD to the charity 🎨'}
+              </p>
+              <div
+                className="absolute"
+                style={{
+                  right: -10, bottom: 18, width: 16, height: 16,
+                  background: '#FFFFFF',
+                  borderRight: '2.5px solid #1B1A17',
+                  borderBottom: '2.5px solid #1B1A17',
+                  transform: 'rotate(-45deg)',
+                }}
+              />
+            </div>
+            <PixelMan px={14} tilt={22} />
+          </div>
+
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="mb-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border-2 text-sm font-bold mb-4"
+                style={{ borderColor: 'rgba(27,26,23,0.3)', color: '#1B1A17', background: 'rgba(255,255,255,0.25)' }}>
+                🗳 Community Vote · Epoch {epochInfo.epoch}
+              </div>
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2"
+                style={{ color: '#1B1A17' }}>
+                Vote for this epoch's charity
+              </h2>
+              <p className="max-w-xl text-base" style={{ color: 'rgba(27,26,23,0.7)' }}>
+                The community decides which charity receives the accumulated EGLD at the end of this epoch. Cast your vote on-chain — one wallet, one vote.
+              </p>
+            </div>
+            <VotingSection onYellow />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

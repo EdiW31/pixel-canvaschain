@@ -15,6 +15,7 @@
   "getNumArguments",
   "mBufferAppend",
   "mBufferAppendBytes",
+  "mBufferCopyByteSlice",
   "mBufferEq",
   "mBufferFinish",
   "mBufferFromBigIntUnsigned",
