@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
 import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
+import { Address } from '@multiversx/sdk-core/out/core/address';
 import { usePixelBalance } from '../hooks/usePixelBalance';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
@@ -173,17 +174,19 @@ export const AppProvider = ({ children }) => {
     let hasVoted = false;
     let userVoteIndex = 255;
     if (voterAddress) {
-      // Convert bech32 address to hex for the arg
       try {
-        const { Address } = await import('@multiversx/sdk-core');
-        const addrHex = Address.fromBech32(voterAddress).toHex();
+        const addrHex = Address.newFromBech32(voterAddress).toHex();
         const myVoteData = await queryContractRaw('getMyVote', [epochHex, addrHex]);
         if (myVoteData.length > 0) {
-          const val = hexToU64(b64ToHex(myVoteData[0]));
+          const hex = b64ToHex(myVoteData[0]);
+          // Empty bytes encode u32=0 (top-level minimum-bytes encoding).
+          const val = hex === '' ? 0 : parseInt(hex, 16);
           userVoteIndex = val;
           hasVoted = val !== 255;
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.warn('[voting] getMyVote query failed:', err);
+      }
     }
 
     setVotingState({ charities, hasVoted, userVoteIndex, loading: false });
@@ -198,7 +201,7 @@ export const AppProvider = ({ children }) => {
       30_000,
     );
     return () => clearInterval(votingRefetchRef.current);
-  }, [epochInfo.epoch, address, fetchVotingState]);
+  }, [epochInfo.epoch, address, isLoggedIn, fetchVotingState]);
 
   // ── Pending pixels (painted but not yet paid for) ─────────────────────────
   // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.

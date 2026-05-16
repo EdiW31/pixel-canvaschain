@@ -24,7 +24,7 @@ function b64ToAddress(b64) {
   if (!b64) return '';
   try {
     const hex = atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
-    return Address.fromHex(hex).toBech32();
+    return Address.newFromHex(hex).toBech32();
   } catch {
     return '';
   }

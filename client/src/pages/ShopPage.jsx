@@ -117,7 +117,7 @@ const ShopPage = () => {
 
       {/* ─── Charity voting — full width ─────────────────────────────── */}
       {epochInfo.epoch > 0 && (
-        <div className="w-full relative overflow-hidden py-16 bg-primary">
+        <div data-theme="light" className="w-full relative overflow-hidden py-16 bg-primary">
           {/* Decorative dots */}
           <div className="absolute top-5 right-10 w-4 h-4 rounded-full bg-primaryDark/20" />
           <div className="absolute bottom-8 left-14 w-3 h-3 rounded-full bg-primaryDark/15" />
@@ -126,44 +126,44 @@ const ShopPage = () => {
           <div className="absolute top-4 left-[35%] w-2 h-2 rounded-full bg-primaryDark/20" />
           <div className="absolute bottom-10 right-[40%] w-3 h-3 rounded-full bg-primaryDark/15" />
 
-          {/* Big tilted pixelman on the LEFT — outside content, only when user can still vote */}
-          {!votingState.hasVoted && (
+          {/* Big tilted pixelman on the RIGHT — always visible, message changes after vote */}
+          <div
+            className="hidden xl:flex absolute pointer-events-none select-none"
+            style={{ right: '2%', top: votingState.hasVoted ? '50%' : '15%', zIndex: 5, animation: 'pixelman-bob 3s ease-in-out infinite', display: 'flex', alignItems: 'flex-end', gap: 16 }}
+          >
             <div
-              className="hidden xl:flex absolute items-end gap-4 pointer-events-none select-none"
-              style={{ left: '2%', top: '15%', zIndex: 5 }}
+              className="relative mb-8"
+              style={{
+                background: '#FFFFFF',
+                border: '2.5px solid #1B1A17',
+                borderRadius: 20,
+                padding: '14px 20px',
+                transform: 'rotate(6deg)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+                maxWidth: 220,
+              }}
             >
-              <PixelMan px={14} tilt={-22} animateBounce />
+              <p className="font-heading font-bold text-base leading-tight" style={{ color: '#1B1A17' }}>
+                {votingState.hasVoted ? 'Voted! ✓' : 'Hey! Pick one!'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.65)' }}>
+                {votingState.hasVoted
+                  ? 'Thanks for voting this epoch 🎨'
+                  : 'Your vote sends real EGLD to the charity 🎨'}
+              </p>
               <div
-                className="relative mb-8"
+                className="absolute"
                 style={{
+                  right: -10, bottom: 18, width: 16, height: 16,
                   background: '#FFFFFF',
-                  border: '2.5px solid #1B1A17',
-                  borderRadius: 20,
-                  padding: '14px 20px',
-                  transform: 'rotate(-6deg)',
-                  boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
-                  maxWidth: 220,
+                  borderRight: '2.5px solid #1B1A17',
+                  borderBottom: '2.5px solid #1B1A17',
+                  transform: 'rotate(-45deg)',
                 }}
-              >
-                <p className="font-heading font-bold text-base leading-tight" style={{ color: '#1B1A17' }}>
-                  Hey! Pick one!
-                </p>
-                <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.65)' }}>
-                  Your vote sends real EGLD to the charity 🎨
-                </p>
-                <div
-                  className="absolute"
-                  style={{
-                    left: -10, bottom: 18, width: 16, height: 16,
-                    background: '#FFFFFF',
-                    borderLeft: '2.5px solid #1B1A17',
-                    borderBottom: '2.5px solid #1B1A17',
-                    transform: 'rotate(45deg)',
-                  }}
-                />
-              </div>
+              />
             </div>
-          )}
+            <PixelMan px={14} tilt={22} />
+          </div>
 
           <div className="max-w-7xl mx-auto px-6">
             <div className="mb-10">
