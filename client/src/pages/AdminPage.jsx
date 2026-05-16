@@ -464,11 +464,12 @@ const AdminPage = () => {
             {/* ── Set Epoch Charities ───────────────────────────── */}
             <ActionCard
               title="Set Epoch Charities"
-              description="Define up to 5 charity candidates for an epoch. Users will vote on-chain; the winner receives the accumulated EGLD when the epoch ends."
+              description="Define up to 5 charity candidates for an epoch. Each one will appear as a voting option. Fill in name + wallet address, then click Set."
               accent="#48BB78"
               tag="Voting"
             >
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* Epoch picker */}
                 <div className="flex gap-2 items-center">
                   <label className="text-xs text-textMuted whitespace-nowrap">For epoch #</label>
                   <input
@@ -481,54 +482,90 @@ const AdminPage = () => {
                   />
                 </div>
 
-                {charityRows.map((row, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <span className="text-xs text-textMuted w-4 text-right">{i + 1}.</span>
-                    <input
-                      type="text"
-                      value={row.name}
-                      onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
-                      placeholder="Charity name"
-                      className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
-                    />
-                    <input
-                      type="text"
-                      value={row.address}
-                      onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))}
-                      placeholder="erd1… wallet"
-                      className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
-                    />
-                    {charityRows.length > 1 && (
-                      <button
-                        onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))}
-                        className="text-textMuted hover:text-error transition-colors text-sm px-1"
-                      >✕</button>
-                    )}
-                  </div>
-                ))}
-
-                <div className="flex items-center gap-3 pt-1">
-                  {charityRows.length < 5 && (
-                    <button
-                      onClick={() => setCharityRows(prev => [...prev, { name: '', address: '' }])}
-                      className="text-xs text-textSecondary hover:text-textPrimary transition-colors"
-                    >
-                      + Add charity
-                    </button>
-                  )}
-                  <button
-                    onClick={handleSetCharities}
-                    disabled={setCharitiesState !== 'idle'}
-                    className={`btn-primary ml-auto ${setCharitiesState !== 'idle' ? 'opacity-60 cursor-wait' : ''}`}
-                  >
-                    {setCharitiesState === 'pending' ? (
-                      <span className="inline-flex items-center gap-2">
-                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Sending…
-                      </span>
-                    ) : setCharitiesState === 'done' ? '✓ Charities set' : 'Set Charities'}
-                  </button>
+                {/* Charity rows */}
+                <div className="space-y-2">
+                  {charityRows.map((row, i) => {
+                    const complete = row.name.trim() && row.address.trim();
+                    return (
+                      <div
+                        key={i}
+                        className="rounded-xl border p-3 flex flex-col gap-2 transition-colors"
+                        style={{
+                          borderColor: complete ? '#48BB78' : 'rgb(var(--border))',
+                          background: complete ? 'rgba(72,187,120,0.05)' : 'rgb(var(--bg-alt))',
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-textMuted">
+                            Charity {i + 1}
+                            {complete && <span className="ml-2 text-[#48BB78]">✓ ready</span>}
+                          </span>
+                          {charityRows.length > 1 && (
+                            <button
+                              onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))}
+                              className="text-xs text-textMuted hover:text-error transition-colors"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                          placeholder="Charity name (e.g. UNICEF)"
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
+                        <input
+                          type="text"
+                          value={row.address}
+                          onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))}
+                          placeholder="erd1… wallet address"
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
+
+                {/* Add row button */}
+                {charityRows.length < 5 && (
+                  <button
+                    onClick={() => setCharityRows(prev => [...prev, { name: '', address: '' }])}
+                    className="w-full py-2 rounded-xl border-2 border-dashed text-sm font-medium transition-colors hover:border-[#48BB78] hover:text-[#48BB78]"
+                    style={{ borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-muted))' }}
+                  >
+                    + Add another charity ({charityRows.length}/5)
+                  </button>
+                )}
+
+                {/* Submit */}
+                {(() => {
+                  const readyCount = charityRows.filter(r => r.name.trim() && r.address.trim()).length;
+                  return (
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs text-textMuted">
+                        {readyCount === 0
+                          ? 'Fill in at least one charity to submit'
+                          : `${readyCount} charit${readyCount === 1 ? 'y' : 'ies'} will be set on-chain`}
+                      </span>
+                      <button
+                        onClick={handleSetCharities}
+                        disabled={setCharitiesState !== 'idle' || readyCount === 0}
+                        className={`btn-primary ${(setCharitiesState !== 'idle' || readyCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {setCharitiesState === 'pending' ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Sending…
+                          </span>
+                        ) : setCharitiesState === 'done'
+                          ? '✓ Charities set'
+                          : `Set ${readyCount || ''} Charit${readyCount === 1 ? 'y' : 'ies'}`}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </ActionCard>
 
