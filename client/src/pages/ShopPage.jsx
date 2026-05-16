@@ -6,6 +6,7 @@ import ShopCard from '../components/ShopCard';
 import Header from '../components/Header';
 import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
 import VotingSection from '../components/VotingSection';
+import PixelMan from '../components/PixelMan';
 
 // Devnet tier definitions — match contract constants in pixel_canvas_contract.rs
 const TIERS = [
@@ -21,7 +22,7 @@ const INFO_COLORS = ['#4299E1', '#48BB78', '#9F7AEA'];
 
 const ShopPage = () => {
   const { isConnected } = useWallet();
-  const { wallet, refetchPixelBalance, epochInfo } = useApp();
+  const { wallet, refetchPixelBalance, epochInfo, votingState } = useApp();
   const navigate = useNavigate();
   const pixelBalance = wallet.pixelBalance;
 
@@ -124,6 +125,45 @@ const ShopPage = () => {
           <div className="absolute bottom-5 right-24 w-5 h-5 rounded-full bg-primary/30" />
           <div className="absolute top-4 left-[35%] w-2 h-2 rounded-full bg-primaryDark/20" />
           <div className="absolute bottom-10 right-[40%] w-3 h-3 rounded-full bg-primaryDark/15" />
+
+          {/* Big tilted pixelman on the LEFT — outside content, only when user can still vote */}
+          {!votingState.hasVoted && (
+            <div
+              className="hidden xl:flex absolute items-end gap-4 pointer-events-none select-none"
+              style={{ left: '2%', top: '15%', zIndex: 5 }}
+            >
+              <PixelMan px={14} tilt={-22} animateBounce />
+              <div
+                className="relative mb-8"
+                style={{
+                  background: '#FFFFFF',
+                  border: '2.5px solid #1B1A17',
+                  borderRadius: 20,
+                  padding: '14px 20px',
+                  transform: 'rotate(-6deg)',
+                  boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+                  maxWidth: 220,
+                }}
+              >
+                <p className="font-heading font-bold text-base leading-tight" style={{ color: '#1B1A17' }}>
+                  Hey! Pick one!
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.65)' }}>
+                  Your vote sends real EGLD to the charity 🎨
+                </p>
+                <div
+                  className="absolute"
+                  style={{
+                    left: -10, bottom: 18, width: 16, height: 16,
+                    background: '#FFFFFF',
+                    borderLeft: '2.5px solid #1B1A17',
+                    borderBottom: '2.5px solid #1B1A17',
+                    transform: 'rotate(45deg)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="max-w-7xl mx-auto px-6">
             <div className="mb-10">

@@ -5,7 +5,6 @@ import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/Transactio
 import { useApp } from '../context/AppContext';
 import { useWallet, getDappProvider } from '../hooks/useWallet';
 import { Link } from 'react-router-dom';
-import PixelMan from './PixelMan';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
@@ -50,13 +49,15 @@ function loadMeta(epoch) {
 
 // ── Single card ───────────────────────────────────────────────────────────────
 
-const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, onSelect, canSelect }) => {
+const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, hasVoted, onSelect, canSelect }) => {
   const accent   = ACCENTS[index % ACCENTS.length];
   const icon     = ICONS[index % ICONS.length];
   const photo    = meta?.photoUrl || DUMMIES[index % DUMMIES.length];
   const link     = meta?.link || null;
   const pct      = totalVotes > 0 ? Math.round((charity.votes / totalVotes) * 100) : 0;
   const isActive = selected === index;
+  // Cards the user did NOT vote for become dimmed/inert once they've voted
+  const isDimmed = hasVoted && !isMyVote;
 
   const card = (
     <div
@@ -66,11 +67,13 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, onS
         background: '#fff',
         cursor: canSelect ? 'pointer' : 'default',
         boxShadow: isMyVote
-          ? `0 0 0 3px ${accent}, 0 8px 32px rgba(0,0,0,0.14)`
+          ? `0 0 0 3px ${accent}, 0 12px 36px ${accent}55`
           : isActive
           ? `0 0 0 3px ${accent}, 0 8px 24px rgba(0,0,0,0.12)`
           : '0 4px 20px rgba(0,0,0,0.10)',
-        transform: isActive ? 'translateY(-2px)' : 'none',
+        transform: isActive || isMyVote ? 'translateY(-2px)' : 'none',
+        opacity: isDimmed ? 0.45 : 1,
+        filter: isDimmed ? 'grayscale(0.4)' : 'none',
       }}
     >
       {/* ── Photo area ── */}
@@ -236,45 +239,30 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
 
   return (
     <div className="relative">
-      {/* Playful tilted pixelman peeking in from the left — only when user can vote */}
-      {canVote && (
+      {/* "You already voted" big banner — replaces small pill, much more visible */}
+      {hasVoted && (
         <div
-          className="hidden md:flex absolute items-end gap-3 pointer-events-none select-none"
-          style={{ left: -28, top: -60, zIndex: 5 }}
+          className="mb-6 rounded-2xl px-5 py-4 flex items-center gap-4"
+          style={onYellow
+            ? { background: 'rgba(27,26,23,0.10)', border: '2px solid rgba(27,26,23,0.20)' }
+            : { background: 'rgb(var(--primary-light))', border: '2px solid rgb(var(--primary))' }
+          }
         >
-          <PixelMan px={11} tilt={-18} animateBounce />
           <div
-            className="relative mb-6"
-            style={{
-              background: '#FFFFFF',
-              border: '2.5px solid #1B1A17',
-              borderRadius: 18,
-              padding: '12px 18px',
-              transform: 'rotate(-4deg)',
-              boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
-              maxWidth: 240,
-            }}
+            className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+            style={{ background: onYellow ? '#1B1A17' : 'rgb(var(--primary))', color: onYellow ? '#fff' : '#1B1A17' }}
           >
-            <p className="font-bold text-sm leading-tight" style={{ color: '#1B1A17' }}>
-              Pick a charity!
+            <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+              <path d="M2 7l4 4L16 1" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-heading text-base font-bold" style={{ color: textClr }}>
+              You've voted for {charities[userVoteIndex]?.name ?? 'this epoch'}
             </p>
-            <p className="text-xs mt-0.5" style={{ color: 'rgba(27,26,23,0.65)' }}>
-              Your vote sends real EGLD their way 🎨
+            <p className="text-xs mt-0.5" style={{ color: mutedClr }}>
+              One vote per wallet per epoch. Come back next epoch to vote again.
             </p>
-            {/* Tail pointing to mascot */}
-            <div
-              className="absolute"
-              style={{
-                left: -10,
-                bottom: 18,
-                width: 14,
-                height: 14,
-                background: '#FFFFFF',
-                borderLeft: '2.5px solid #1B1A17',
-                borderBottom: '2.5px solid #1B1A17',
-                transform: 'rotate(45deg)',
-              }}
-            />
           </div>
         </div>
       )}
@@ -293,17 +281,6 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
           </div>
           <div className="text-2xl font-bold" style={{ color: textClr }}>{charities.length}</div>
         </div>
-        {hasVoted && (
-          <div
-            className="ml-auto flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold"
-            style={onYellow
-              ? { background: 'rgba(27,26,23,0.12)', color: '#1B1A17' }
-              : { background: 'rgb(var(--primary-light))', color: 'rgb(var(--primary-dark))' }
-            }
-          >
-            ✓ You voted this epoch
-          </div>
-        )}
       </div>
 
       {/* Cards grid */}
@@ -321,6 +298,7 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
             totalVotes={totalVotes}
             selected={selected}
             isMyVote={hasVoted && userVoteIndex === i}
+            hasVoted={hasVoted}
             onSelect={setSelected}
             canSelect={canVote && !submitting}
           />

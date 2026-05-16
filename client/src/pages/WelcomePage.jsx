@@ -5,6 +5,7 @@ import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaintChip, PaletteStrip } from '../components/PaintDecorations';
 import { useApp } from '../context/AppContext';
 import VotingSection from '../components/VotingSection';
+import PixelMan from '../components/PixelMan';
 
 /* ─── Pixel art canvas data (24 cols × 13 rows) ──────────────────────────── */
 /* eslint-disable no-unused-vars */
@@ -121,7 +122,8 @@ const WelcomePage = () => {
         {epochInfo.epoch > 0 && !votingState.hasVoted && (
           <button
             onClick={() => scrollTo('vote')}
-            className="absolute bottom-6 right-6 z-20 flex items-end gap-3 group select-none"
+            className="absolute z-20 flex items-end gap-3 group select-none"
+            style={{ top: '14%', right: '6%' }}
             aria-label="Go to voting section"
           >
             {/* Speech bubble — theme-aware */}
@@ -527,6 +529,45 @@ const WelcomePage = () => {
           <Dot color="#4299E1" style={{ top: 60,    right: '2%'   }} />
           <Dot color="#48BB78" style={{ bottom: 30, left:  '4%'   }} />
           <Dot color="#9F7AEA" style={{ bottom: 60, right: '3%'   }} />
+
+          {/* Big tilted pixelman on the LEFT of the page — outside content, only when user can still vote */}
+          {!votingState.hasVoted && (
+            <div
+              className="hidden xl:flex absolute items-end gap-4 pointer-events-none select-none"
+              style={{ left: '2%', top: '20%', zIndex: 5 }}
+            >
+              <PixelMan px={14} tilt={-22} animateBounce />
+              <div
+                className="relative mb-8"
+                style={{
+                  background: '#FFFFFF',
+                  border: '2.5px solid #1B1A17',
+                  borderRadius: 20,
+                  padding: '14px 20px',
+                  transform: 'rotate(-6deg)',
+                  boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+                  maxWidth: 220,
+                }}
+              >
+                <p className="font-heading font-bold text-base leading-tight" style={{ color: '#1B1A17' }}>
+                  Hey! Pick one!
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.65)' }}>
+                  Your vote sends real EGLD to the charity 🎨
+                </p>
+                <div
+                  className="absolute"
+                  style={{
+                    left: -10, bottom: 18, width: 16, height: 16,
+                    background: '#FFFFFF',
+                    borderLeft: '2.5px solid #1B1A17',
+                    borderBottom: '2.5px solid #1B1A17',
+                    transform: 'rotate(45deg)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="max-w-5xl mx-auto px-6 py-8 w-full">
             <div className="mb-8">
