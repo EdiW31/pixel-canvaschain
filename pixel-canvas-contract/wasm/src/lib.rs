@@ -6,9 +6,9 @@
 
 // Init:                                 1
 // Upgrade:                              1
-// Endpoints:                           11
+// Endpoints:                           19
 // Async Callback (empty):               1
-// Total number of exported functions:  14
+// Total number of exported functions:  22
 
 #![no_std]
 
@@ -22,6 +22,9 @@ multiversx_sc_wasm_adapter::endpoints! {
         upgrade => upgrade
         setPixelToken => set_pixel_token
         setCharityAddress => set_charity_address_endpoint
+        setEpochDuration => set_epoch_duration
+        startEpoch => start_epoch
+        endEpoch => end_epoch
         buyPixels => buy_pixels
         paintPixels => paint_pixels
         distributePixelToCharity => distribute_pixel_to_charity
@@ -31,6 +34,11 @@ multiversx_sc_wasm_adapter::endpoints! {
         getTotalPixelForCharity => get_total_pixel_for_charity
         getCharityAddress => get_charity_address
         getTotalDonated => get_total_donated
+        getCurrentEpoch => get_current_epoch
+        getEpochStartTimestamp => get_epoch_start_timestamp
+        getEpochDuration => get_epoch_duration
+        getEpochTopPainter => get_epoch_top_painter
+        getEpochPixelCount => get_epoch_pixel_count
     )
 }
 

@@ -14,6 +14,7 @@ const TIER_MASTER: u64     = 1_250_000_000_000_000_000u64; // 1.25 xEGLD
 const TIER_LEGEND: u64     = 2_500_000_000_000_000_000u64; // 2.50 xEGLD
 
 const BASE_PIXELS_PER_EGLD: u64 = 20_000u64;
+const DEFAULT_EPOCH_DURATION: u64 = 86_400u64; // 24 hours in seconds
 
 // Each pixel painted: (x, y, color) — u32 each, 12 bytes fixed-size in ManagedVec.
 #[type_abi]
@@ -35,6 +36,9 @@ pub trait PixelCanvasContract {
         self.charity_address().set(&deployer);
         self.total_donated().set(BigUint::zero());
         self.total_pixel_for_charity().set(BigUint::zero());
+        self.current_epoch().set(0u64);
+        self.epoch_duration_seconds().set(DEFAULT_EPOCH_DURATION);
+        self.epoch_top_paint_count().set(0u64);
     }
 
     #[upgrade]
@@ -42,10 +46,6 @@ pub trait PixelCanvasContract {
 
     // ─── Owner configuration ──────────────────────────────────────────────────
 
-    /// Call once after creating the PIXEL ESDT token.
-    /// denomination = smallest token units per 1 pixel:
-    ///   0-decimal token  → denomination = 1
-    ///   18-decimal token → denomination = 1_000_000_000_000_000_000
     #[endpoint(setPixelToken)]
     fn set_pixel_token(&self, token_id: TokenIdentifier, denomination: BigUint) {
         self.require_owner();
@@ -59,6 +59,57 @@ pub trait PixelCanvasContract {
     fn set_charity_address_endpoint(&self, new_address: ManagedAddress) {
         self.require_owner();
         self.charity_address().set(&new_address);
+    }
+
+    #[endpoint(setEpochDuration)]
+    fn set_epoch_duration(&self, seconds: u64) {
+        self.require_owner();
+        require!(seconds > 0u64, "Duration must be > 0");
+        self.epoch_duration_seconds().set(seconds);
+    }
+
+    // ─── Epoch management ─────────────────────────────────────────────────────
+
+    /// Start a new epoch. Increments epoch counter, records start timestamp,
+    /// resets top-painter tracking.
+    #[endpoint(startEpoch)]
+    fn start_epoch(&self) {
+        self.require_owner();
+        let new_epoch = self.current_epoch().get() + 1u64;
+        self.current_epoch().set(new_epoch);
+        self.epoch_start_timestamp().set(self.blockchain().get_block_timestamp());
+        self.epoch_top_painter().clear();
+        self.epoch_top_paint_count().set(0u64);
+        self.epoch_started_event(new_epoch, self.blockchain().get_block_timestamp());
+    }
+
+    /// End the current epoch. Distributes accumulated PIXEL to charity and emits
+    /// an epoch-ended event. NFT minting is added in Phase 4.
+    #[endpoint(endEpoch)]
+    fn end_epoch(&self) {
+        self.require_owner();
+        let epoch = self.current_epoch().get();
+        require!(epoch > 0u64, "No active epoch to end");
+
+        // Flush accumulated PIXEL to charity
+        if !self.pixel_token_id().is_empty() {
+            let total = self.total_pixel_for_charity().get();
+            if total > BigUint::zero() {
+                let token_id = self.pixel_token_id().get();
+                let charity_addr = self.charity_address().get();
+                self.send().direct_esdt(&charity_addr, &token_id, 0, &total);
+                self.total_pixel_for_charity().set(BigUint::zero());
+            }
+        }
+
+        let top_painter = if self.epoch_top_painter().is_empty() {
+            ManagedAddress::zero()
+        } else {
+            self.epoch_top_painter().get()
+        };
+        let top_count = self.epoch_top_paint_count().get();
+
+        self.epoch_ended_event(epoch, &top_painter, top_count);
     }
 
     // ─── Buy PIXEL tokens with EGLD ───────────────────────────────────────────
@@ -80,12 +131,8 @@ pub trait PixelCanvasContract {
         let token_id = self.pixel_token_id().get();
         let caller = self.blockchain().get_caller();
 
-        // Send PIXEL tokens from the contract's balance to the buyer.
         self.send().direct_esdt(&caller, &token_id, 0, &token_amount);
-
-        // Distribute EGLD: 50% owner, 50% charity.
         self.distribute_egld(&payment);
-
         self.buy_pixels_event(&caller, &payment, &token_amount);
     }
 
@@ -119,10 +166,8 @@ pub trait PixelCanvasContract {
                 owner_mapper.get()
             };
             if current_owner.is_zero() || current_owner == caller {
-                // Unowned or own pixel: 1 denomination unit.
                 required += &denomination;
             } else {
-                // Someone else's pixel: 2 units (1 royalty + 1 for charity).
                 required += &denomination;
                 required += &denomination;
             }
@@ -140,7 +185,6 @@ pub trait PixelCanvasContract {
                 owner_mapper.get()
             };
             if !current_owner.is_zero() && current_owner != caller {
-                // Send 1 denomination unit to the previous owner as royalty.
                 self.send().direct_esdt(&current_owner, &token_id, 0, &denomination);
                 royalty_total += &denomination;
             }
@@ -153,25 +197,25 @@ pub trait PixelCanvasContract {
             self.send().direct_esdt(&caller, &token_id, 0, &refund);
         }
 
-        // Accumulate the remaining PIXEL for end-of-epoch charity distribution.
-        // = total received (capped at required) minus royalties already sent out.
+        // Accumulate PIXEL for charity.
         let for_charity = required - royalty_total;
         self.total_pixel_for_charity()
             .update(|total| *total += &for_charity);
 
+        // Track painter count for epoch leaderboard.
+        self.record_paint(&caller, len as u64);
+
         self.paint_pixels_event(&caller, len as u32);
     }
 
-    // ─── Epoch end: flush accumulated PIXEL to charity ───────────────────────
+    // ─── Distribute PIXEL to charity (manual, kept for backward compat) ───────
 
     #[endpoint(distributePixelToCharity)]
     fn distribute_pixel_to_charity(&self) {
         self.require_owner();
         require!(!self.pixel_token_id().is_empty(), "PIXEL token not configured");
-
         let total = self.total_pixel_for_charity().get();
         require!(total > BigUint::zero(), "No PIXEL accumulated");
-
         let token_id = self.pixel_token_id().get();
         let charity_addr = self.charity_address().get();
         self.send().direct_esdt(&charity_addr, &token_id, 0, &total);
@@ -215,6 +259,39 @@ pub trait PixelCanvasContract {
         self.total_donated().get()
     }
 
+    // ─── Epoch views ──────────────────────────────────────────────────────────
+
+    #[view(getCurrentEpoch)]
+    fn get_current_epoch(&self) -> u64 {
+        self.current_epoch().get()
+    }
+
+    #[view(getEpochStartTimestamp)]
+    fn get_epoch_start_timestamp(&self) -> u64 {
+        self.epoch_start_timestamp().get()
+    }
+
+    #[view(getEpochDuration)]
+    fn get_epoch_duration(&self) -> u64 {
+        self.epoch_duration_seconds().get()
+    }
+
+    /// Returns the top painter's address and pixel count for the current epoch.
+    #[view(getEpochTopPainter)]
+    fn get_epoch_top_painter(&self) -> MultiValue2<ManagedAddress, u64> {
+        let painter = if self.epoch_top_painter().is_empty() {
+            ManagedAddress::zero()
+        } else {
+            self.epoch_top_painter().get()
+        };
+        (painter, self.epoch_top_paint_count().get()).into()
+    }
+
+    #[view(getEpochPixelCount)]
+    fn get_epoch_pixel_count(&self, epoch: u64, painter: ManagedAddress) -> u64 {
+        self.epoch_pixel_count(epoch, &painter).get()
+    }
+
     // ─── Storage mappers ──────────────────────────────────────────────────────
 
     #[storage_mapper("pixelTokenId")]
@@ -235,6 +312,25 @@ pub trait PixelCanvasContract {
     #[storage_mapper("totalDonated")]
     fn total_donated(&self) -> SingleValueMapper<BigUint>;
 
+    // Epoch storage
+    #[storage_mapper("currentEpoch")]
+    fn current_epoch(&self) -> SingleValueMapper<u64>;
+
+    #[storage_mapper("epochStartTimestamp")]
+    fn epoch_start_timestamp(&self) -> SingleValueMapper<u64>;
+
+    #[storage_mapper("epochDurationSeconds")]
+    fn epoch_duration_seconds(&self) -> SingleValueMapper<u64>;
+
+    #[storage_mapper("epochPixelCount")]
+    fn epoch_pixel_count(&self, epoch: u64, painter: &ManagedAddress) -> SingleValueMapper<u64>;
+
+    #[storage_mapper("epochTopPainter")]
+    fn epoch_top_painter(&self) -> SingleValueMapper<ManagedAddress>;
+
+    #[storage_mapper("epochTopPaintCount")]
+    fn epoch_top_paint_count(&self) -> SingleValueMapper<u64>;
+
     // ─── Events ───────────────────────────────────────────────────────────────
 
     #[event("buyPixels")]
@@ -252,7 +348,36 @@ pub trait PixelCanvasContract {
         #[indexed] pixel_count: u32,
     );
 
+    #[event("epochStarted")]
+    fn epoch_started_event(
+        &self,
+        #[indexed] epoch: u64,
+        #[indexed] start_timestamp: u64,
+    );
+
+    #[event("epochEnded")]
+    fn epoch_ended_event(
+        &self,
+        #[indexed] epoch: u64,
+        #[indexed] top_painter: &ManagedAddress,
+        #[indexed] top_paint_count: u64,
+    );
+
     // ─── Internal helpers ─────────────────────────────────────────────────────
+
+    fn record_paint(&self, painter: &ManagedAddress, count: u64) {
+        let epoch = self.current_epoch().get();
+        if epoch == 0u64 {
+            return; // No active epoch — painting still works, just not tracked
+        }
+        self.epoch_pixel_count(epoch, painter)
+            .update(|c| *c += count);
+        let new_total = self.epoch_pixel_count(epoch, painter).get();
+        if new_total > self.epoch_top_paint_count().get() {
+            self.epoch_top_paint_count().set(new_total);
+            self.epoch_top_painter().set(painter);
+        }
+    }
 
     fn calculate_pixels(&self, payment: &BigUint) -> BigUint {
         let one_egld = BigUint::from(EGLD_UNIT);
@@ -272,7 +397,6 @@ pub trait PixelCanvasContract {
     }
 
     fn distribute_egld(&self, amount: &BigUint) {
-        // 50% to owner, 50% to charity (remainder goes to charity on odd amounts).
         let owner_half = amount / 2u64;
         let charity_half = amount - &owner_half;
 

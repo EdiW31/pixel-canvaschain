@@ -11,6 +11,7 @@
   "bigIntTDiv",
   "checkNoPayment",
   "finish",
+  "getBlockTimestamp",
   "getNumArguments",
   "mBufferAppend",
   "mBufferAppendBytes",
@@ -33,6 +34,7 @@
   "managedTransferValueExecute",
   "managedWriteLog",
   "signalError",
+  "smallIntFinishUnsigned",
   "smallIntGetUnsignedArgument",
   "validateTokenIdentifier"
 ]

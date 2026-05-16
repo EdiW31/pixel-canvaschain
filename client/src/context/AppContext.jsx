@@ -1,7 +1,27 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
 import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetIsLoggedIn';
 import { usePixelBalance } from '../hooks/usePixelBalance';
+
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
+const API_URL = import.meta.env.VITE_API_URL ?? 'https://devnet-api.multiversx.com';
+
+async function queryContractU64(funcName) {
+  try {
+    const res = await fetch(`${API_URL}/vm-values/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scAddress: CONTRACT_ADDRESS, funcName, args: [] }),
+    });
+    const json = await res.json();
+    const b64 = json.data?.data?.returnData?.[0];
+    if (!b64) return 0;
+    const hex = atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+    return hex ? parseInt(hex, 16) : 0;
+  } catch {
+    return 0;
+  }
+}
 
 const AppContext = createContext();
 
@@ -26,6 +46,29 @@ export const AppProvider = ({ children }) => {
     egld,
     pixelBalance,
   };
+
+  // ── Epoch info ────────────────────────────────────────────────────────────
+  const [epochInfo, setEpochInfo] = useState({ epoch: 0, startTimestamp: 0, durationSeconds: 0, endsAt: 0 });
+  const epochRefetchRef = useRef(null);
+
+  const fetchEpochInfo = useCallback(async () => {
+    const [epoch, startTimestamp, durationSeconds] = await Promise.all([
+      queryContractU64('getCurrentEpoch'),
+      queryContractU64('getEpochStartTimestamp'),
+      queryContractU64('getEpochDuration'),
+    ]);
+    const endsAt = startTimestamp > 0 && durationSeconds > 0
+      ? (startTimestamp + durationSeconds) * 1000  // convert to ms
+      : 0;
+    setEpochInfo({ epoch, startTimestamp, durationSeconds, endsAt });
+  }, []);
+
+  // Fetch epoch on mount and every 5 minutes
+  useEffect(() => {
+    fetchEpochInfo();
+    epochRefetchRef.current = setInterval(fetchEpochInfo, 5 * 60 * 1000);
+    return () => clearInterval(epochRefetchRef.current);
+  }, [fetchEpochInfo]);
 
   // ── Pending pixels (painted but not yet paid for) ─────────────────────────
   // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.
@@ -119,6 +162,10 @@ export const AppProvider = ({ children }) => {
     // Wallet
     wallet,
     refetchPixelBalance,
+
+    // Epoch
+    epochInfo,
+    refetchEpochInfo: fetchEpochInfo,
 
     // Pending pixels (paint-then-pay)
     pendingPixels,

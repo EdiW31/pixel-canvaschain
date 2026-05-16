@@ -82,9 +82,19 @@ async function sendTxWithData(wallet, data, gasLimit = 5_000_000n) {
   await TransactionManager.getInstance().send(signed);
 }
 
+const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:5001';
+
+function toHex(str) {
+  return str.split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+function numToHex(n) {
+  const hex = Number(n).toString(16);
+  return hex.length % 2 === 0 ? hex : '0' + hex;
+}
+
 const AdminPage = () => {
   const { isConnected } = useWallet();
-  const { wallet, showToast } = useApp();
+  const { wallet, showToast, epochInfo, refetchEpochInfo } = useApp();
   const navigate = useNavigate();
 
   const [stats, setStats] = useState(null);
@@ -98,6 +108,12 @@ const AdminPage = () => {
   const [denominationInput, setDenominationInput] = useState('1');
   const [tokenState, setTokenState] = useState('idle');
 
+  // Epoch actions
+  const [startEpochState, setStartEpochState] = useState('idle');
+  const [endEpochState, setEndEpochState] = useState('idle');
+  const [epochDurationInput, setEpochDurationInput] = useState('86400');
+  const [epochDurationState, setEpochDurationState] = useState('idle');
+
   useEffect(() => {
     if (!isConnected) navigate('/login');
   }, [isConnected, navigate]);
@@ -105,17 +121,28 @@ const AdminPage = () => {
   const fetchStats = useCallback(async () => {
     setLoadingStats(true);
     try {
-      const [pixelForCharity, totalDonated, charityAddr, tokenId] = await Promise.all([
+      const [pixelForCharity, totalDonated, charityAddr, tokenId, epochData, startTs, epochDur] = await Promise.all([
         queryContract('getTotalPixelForCharity'),
         queryContract('getTotalDonated'),
         queryContract('getCharityAddress'),
         queryContract('getPixelTokenId'),
+        queryContract('getCurrentEpoch'),
+        queryContract('getEpochStartTimestamp'),
+        queryContract('getEpochDuration'),
       ]);
+      const epoch = Number(b64ToBigInt(epochData[0]));
+      const startTimestamp = Number(b64ToBigInt(startTs[0]));
+      const durationSeconds = Number(b64ToBigInt(epochDur[0]));
+      const endsAt = startTimestamp > 0 ? new Date((startTimestamp + durationSeconds) * 1000) : null;
       setStats({
         pixelForCharity: b64ToBigInt(pixelForCharity[0]),
         totalDonated: b64ToBigInt(totalDonated[0]),
         charityAddress: b64ToAddress(charityAddr[0]),
         tokenId: b64ToString(tokenId[0]),
+        epoch,
+        startTimestamp,
+        durationSeconds,
+        endsAt,
       });
     } catch (err) {
       showToast('Failed to load contract stats', 'error');
@@ -131,6 +158,50 @@ const AdminPage = () => {
   }, [isConnected, wallet.address, fetchStats]);
 
   const isAdmin = wallet.address === ADMIN_ADDRESS;
+
+  const handleStartEpoch = async () => {
+    setStartEpochState('pending');
+    try {
+      await sendTx(wallet, 'startEpoch', 5_000_000n);
+      showToast('Epoch started successfully', 'success');
+      setStartEpochState('done');
+      setTimeout(() => { setStartEpochState('idle'); fetchStats(); refetchEpochInfo(); }, 3000);
+    } catch (err) {
+      showToast(err?.message ?? 'Transaction failed', 'error');
+      setStartEpochState('idle');
+    }
+  };
+
+  const handleEndEpoch = async () => {
+    setEndEpochState('pending');
+    try {
+      // Fetch canvas PNG URI from server to embed as NFT metadata
+      const nftUri = `${SERVER_URL}/canvas/png`;
+      const nftUriHex = toHex(nftUri);
+      await sendTxWithData(wallet, `endEpoch@${nftUriHex}`, 10_000_000n);
+      showToast('Epoch ended — PIXEL distributed to charity', 'success');
+      setEndEpochState('done');
+      setTimeout(() => { setEndEpochState('idle'); fetchStats(); refetchEpochInfo(); }, 3000);
+    } catch (err) {
+      showToast(err?.message ?? 'Transaction failed', 'error');
+      setEndEpochState('idle');
+    }
+  };
+
+  const handleSetEpochDuration = async () => {
+    const seconds = parseInt(epochDurationInput, 10);
+    if (!seconds || seconds <= 0) { showToast('Invalid duration', 'error'); return; }
+    setEpochDurationState('pending');
+    try {
+      await sendTxWithData(wallet, `setEpochDuration@${numToHex(seconds)}`, 5_000_000n);
+      showToast(`Epoch duration set to ${seconds}s`, 'success');
+      setEpochDurationState('done');
+      setTimeout(() => { setEpochDurationState('idle'); fetchStats(); }, 3000);
+    } catch (err) {
+      showToast(err?.message ?? 'Transaction failed', 'error');
+      setEpochDurationState('idle');
+    }
+  };
 
   const handleDistribute = async () => {
     setDistributeState('pending');
@@ -242,7 +313,10 @@ const AdminPage = () => {
                 </div>
               ) : stats ? (
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <StatRow label="PIXEL accumulated for charity" value={stats.pixelForCharity.toLocaleString()} unit="PIXEL" emphasis />
+                  <StatRow label="Current epoch" value={stats.epoch > 0 ? `#${stats.epoch}` : 'Not started'} emphasis={stats.epoch > 0} />
+                  <StatRow label="Epoch ends" value={stats.endsAt ? stats.endsAt.toLocaleString() : '—'} />
+                  <StatRow label="Epoch duration" value={`${stats.durationSeconds}s (${(stats.durationSeconds / 3600).toFixed(1)}h)`} />
+                  <StatRow label="PIXEL accumulated for charity" value={stats.pixelForCharity.toLocaleString()} unit="PIXEL" />
                   <StatRow label="Total EGLD donated" value={(Number(stats.totalDonated) / 1e18).toFixed(4)} unit="EGLD" />
                   <StatRow label="Charity address" value={stats.charityAddress ? `${stats.charityAddress.slice(0, 16)}…` : '—'} mono />
                   <StatRow label="PIXEL token ID" value={stats.tokenId || '—'} mono />
@@ -251,6 +325,79 @@ const AdminPage = () => {
                 <p className="text-textMuted text-sm">No data</p>
               )}
             </div>
+
+            {/* ── Epoch controls ─────────────────────────────────────── */}
+            <ActionCard
+              title="Start New Epoch"
+              description="Increments the epoch counter, resets the painter leaderboard, and records the start timestamp. Run this at the beginning of each epoch."
+              accent="#ED8936"
+              tag="Epoch"
+            >
+              <button
+                onClick={handleStartEpoch}
+                disabled={startEpochState !== 'idle'}
+                className={`btn-primary ${startEpochState !== 'idle' ? 'opacity-60 cursor-wait' : ''}`}
+              >
+                {startEpochState === 'pending' ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Sending…
+                  </span>
+                ) : startEpochState === 'done' ? '✓ Epoch started' : `Start Epoch ${(stats?.epoch ?? 0) + 1}`}
+              </button>
+            </ActionCard>
+
+            <ActionCard
+              title="End Epoch"
+              description="Distributes all accumulated PIXEL tokens to charity and emits an epoch-ended event. The server's canvas PNG URL is passed as the NFT URI for future NFT minting."
+              accent="#E53E3E"
+              tag="Epoch"
+            >
+              <button
+                onClick={handleEndEpoch}
+                disabled={endEpochState !== 'idle' || !stats?.epoch}
+                className={`btn-primary ${endEpochState !== 'idle' ? 'opacity-60 cursor-wait' : ''}`}
+              >
+                {endEpochState === 'pending' ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Sending…
+                  </span>
+                ) : endEpochState === 'done' ? '✓ Epoch ended' : `End Epoch ${stats?.epoch ?? '—'}`}
+              </button>
+              {!stats?.epoch && <p className="text-xs text-textMuted mt-2">No active epoch to end.</p>}
+            </ActionCard>
+
+            <ActionCard
+              title="Set Epoch Duration"
+              description="Configure how long each epoch lasts in seconds. Use 86400 for 24h. Use a small value (e.g. 300) for quick devnet testing."
+              accent="#9F7AEA"
+              tag="Configuration"
+            >
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={epochDurationInput}
+                  onChange={e => setEpochDurationInput(e.target.value)}
+                  placeholder="86400"
+                  min="1"
+                  className="flex-1 px-3 py-2 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <button
+                  onClick={handleSetEpochDuration}
+                  disabled={epochDurationState !== 'idle'}
+                  className={`btn-primary whitespace-nowrap ${epochDurationState !== 'idle' ? 'opacity-60 cursor-wait' : ''}`}
+                >
+                  {epochDurationState === 'pending' ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Sending…
+                    </span>
+                  ) : epochDurationState === 'done' ? '✓ Set' : 'Set Duration'}
+                </button>
+              </div>
+              <p className="text-xs text-textMuted mt-1">Current: {stats?.durationSeconds ?? '…'}s</p>
+            </ActionCard>
 
             {/* Distribute to charity */}
             <ActionCard

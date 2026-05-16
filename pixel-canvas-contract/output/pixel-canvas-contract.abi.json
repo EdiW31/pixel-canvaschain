@@ -27,12 +27,6 @@
     },
     "endpoints": [
         {
-            "docs": [
-                "Call once after creating the PIXEL ESDT token.",
-                "denomination = smallest token units per 1 pixel:",
-                "  0-decimal token  → denomination = 1",
-                "  18-decimal token → denomination = 1_000_000_000_000_000_000"
-            ],
             "name": "setPixelToken",
             "mutability": "mutable",
             "inputs": [
@@ -56,6 +50,37 @@
                     "type": "Address"
                 }
             ],
+            "outputs": []
+        },
+        {
+            "name": "setEpochDuration",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "seconds",
+                    "type": "u64"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "docs": [
+                "Start a new epoch. Increments epoch counter, records start timestamp,",
+                "resets top-painter tracking."
+            ],
+            "name": "startEpoch",
+            "mutability": "mutable",
+            "inputs": [],
+            "outputs": []
+        },
+        {
+            "docs": [
+                "End the current epoch. Distributes accumulated PIXEL to charity and emits",
+                "an epoch-ended event. NFT minting is added in Phase 4."
+            ],
+            "name": "endEpoch",
+            "mutability": "mutable",
+            "inputs": [],
             "outputs": []
         },
         {
@@ -156,6 +181,71 @@
                     "type": "BigUint"
                 }
             ]
+        },
+        {
+            "name": "getCurrentEpoch",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "u64"
+                }
+            ]
+        },
+        {
+            "name": "getEpochStartTimestamp",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "u64"
+                }
+            ]
+        },
+        {
+            "name": "getEpochDuration",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "u64"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns the top painter's address and pixel count for the current epoch."
+            ],
+            "name": "getEpochTopPainter",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "Address"
+                },
+                {
+                    "type": "u64"
+                }
+            ]
+        },
+        {
+            "name": "getEpochPixelCount",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                },
+                {
+                    "name": "painter",
+                    "type": "Address"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "u64"
+                }
+            ]
         }
     ],
     "events": [
@@ -190,6 +280,41 @@
                 {
                     "name": "pixel_count",
                     "type": "u32",
+                    "indexed": true
+                }
+            ]
+        },
+        {
+            "identifier": "epochStarted",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64",
+                    "indexed": true
+                },
+                {
+                    "name": "start_timestamp",
+                    "type": "u64",
+                    "indexed": true
+                }
+            ]
+        },
+        {
+            "identifier": "epochEnded",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64",
+                    "indexed": true
+                },
+                {
+                    "name": "top_painter",
+                    "type": "Address",
+                    "indexed": true
+                },
+                {
+                    "name": "top_paint_count",
+                    "type": "u64",
                     "indexed": true
                 }
             ]
