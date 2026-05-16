@@ -52,7 +52,7 @@ const scrollTo = (id) =>
 
 /* ─── WelcomePage ────────────────────────────────────────────────────────── */
 const WelcomePage = () => {
-  const { epochInfo } = useApp();
+  const { epochInfo, votingState } = useApp();
   const navRef = useRef(null);
 
   useLayoutEffect(() => {
@@ -82,7 +82,6 @@ const WelcomePage = () => {
         <div className="flex items-center gap-1">
           <NavButton sectionId="mission">Mission</NavButton>
           <HowItWorksNav />
-          {epochInfo.epoch > 0 && <NavButton sectionId="vote">Vote</NavButton>}
           <NavButton sectionId="nft">NFT</NavButton>
           <NavButton sectionId="split">The Split</NavButton>
           <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
@@ -117,6 +116,27 @@ const WelcomePage = () => {
         <Dot color="#E53E3E" style={{ bottom: 20, right: '2%'   }} />
         <Dot color="#48BB78" style={{ top: 15,    left:  '48%'  }} />
         <Dot color="#4299E1" style={{ bottom: 15, left:  '52%'  }} />
+
+        {/* Pixelman vote CTA — bottom-right corner, hidden after voting */}
+        {epochInfo.epoch > 0 && !votingState.hasVoted && (
+          <button
+            onClick={() => scrollTo('vote')}
+            className="absolute bottom-6 right-6 z-20 flex items-end gap-3 group select-none"
+            aria-label="Go to voting section"
+          >
+            {/* Speech bubble — theme-aware */}
+            <div className="relative bg-surface border-2 border-primary rounded-2xl px-4 py-3 shadow-[0_4px_20px_rgba(229,181,71,0.45)] group-hover:shadow-[0_6px_28px_rgba(229,181,71,0.65)] group-hover:-translate-y-1 transition-all duration-200 mb-2">
+              <p className="text-xs font-bold text-textPrimary leading-snug whitespace-nowrap">
+                🗳 Vote for epoch {epochInfo.epoch}!
+              </p>
+              <p className="text-[10px] text-textSecondary mt-0.5 whitespace-nowrap">Scroll down to pick a charity →</p>
+              {/* Tail — rotated square trick, theme-aware */}
+              <div className="absolute -right-2 bottom-4 w-3 h-3 bg-surface border-r-2 border-b-2 border-primary rotate-45" />
+            </div>
+            {/* Pixel mascot */}
+            <PixelManBig />
+          </button>
+        )}
 
         <div className="max-w-6xl mx-auto px-6 py-8 w-full">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
@@ -500,8 +520,8 @@ const WelcomePage = () => {
       {epochInfo.epoch > 0 && (
         <AnimatedSection
           id="vote"
-          className="flex items-center relative overflow-hidden border-t border-primary/30"
-          style={{ height: 'var(--section-h, 100vh)', background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 40%, #F6E05E 100%)' }}
+          className="flex items-center relative overflow-hidden border-t-2 border-primaryDark/30 bg-primary"
+          style={{ height: 'var(--section-h, 100vh)' }}
         >
           <Dot color="#E53E3E" style={{ top: 24,    left:  '2%'   }} />
           <Dot color="#4299E1" style={{ top: 60,    right: '2%'   }} />
@@ -510,18 +530,20 @@ const WelcomePage = () => {
 
           <div className="max-w-5xl mx-auto px-6 py-8 w-full">
             <div className="mb-8">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/30 border border-primary/50 text-sm font-semibold text-primaryDark mb-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border-2 text-sm font-bold mb-4"
+                style={{ borderColor: 'rgba(27,26,23,0.3)', color: '#1B1A17', background: 'rgba(255,255,255,0.25)' }}>
                 🗳 Community Vote · Epoch {epochInfo.epoch}
               </div>
-              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight text-primaryDark mb-2">
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2"
+                style={{ color: '#1B1A17' }}>
                 You decide where the EGLD goes.
               </h2>
-              <p className="text-primaryDark/70 text-base max-w-xl">
+              <p className="text-base max-w-xl" style={{ color: 'rgba(27,26,23,0.7)' }}>
                 Every epoch, the community votes on which charity receives the accumulated donations. One wallet, one vote — enforced on-chain.
               </p>
             </div>
 
-            <VotingSection />
+            <VotingSection onYellow />
           </div>
         </AnimatedSection>
       )}
@@ -574,6 +596,41 @@ const WelcomePage = () => {
 };
 
 /* ─── NavButton — nav item with gold underline when section is in view ────── */
+/* ─── Pixel mascot (bigger scale for hero corner) ───────────────────────── */
+const M_X=null, M_G='#E5B547', M_GD='#C49628', M_SK='#FDE68A', M_EY='#1A1817', M_RD='#E05A4B', M_BL='#3B82F6', M_BK='#1A1817';
+const MASCOT_BIG = [
+  [M_X,  M_X,  M_GD, M_GD, M_GD, M_GD, M_X,  M_X  ],
+  [M_X,  M_GD, M_G,  M_G,  M_G,  M_G,  M_GD, M_X  ],
+  [M_X,  M_X,  M_SK, M_SK, M_SK, M_SK, M_X,  M_X  ],
+  [M_X,  M_X,  M_SK, M_EY, M_SK, M_EY, M_SK, M_X  ],
+  [M_X,  M_X,  M_SK, M_SK, M_SK, M_SK, M_X,  M_X  ],
+  [M_SK, M_RD, M_RD, M_RD, M_RD, M_RD, M_RD, M_SK ],
+  [M_X,  M_RD, M_RD, M_RD, M_RD, M_RD, M_X,  M_X  ],
+  [M_X,  M_X,  M_BL, M_BL, M_X,  M_BL, M_BL, M_X  ],
+  [M_X,  M_X,  M_BL, M_BL, M_X,  M_BL, M_BL, M_X  ],
+  [M_X,  M_X,  M_BK, M_BK, M_X,  M_BK, M_BK, M_X  ],
+  [M_X,  M_X,  M_BK, M_X,  M_X,  M_X,  M_BK, M_X  ],
+];
+const PX_BIG = 7;
+const PixelManBig = () => (
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(8, ${PX_BIG}px)`,
+      gridTemplateRows: `repeat(11, ${PX_BIG}px)`,
+      imageRendering: 'pixelated',
+      flexShrink: 0,
+      filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.25))',
+      transition: 'transform 0.2s',
+    }}
+    className="group-hover:scale-110 group-hover:-translate-y-1"
+  >
+    {MASCOT_BIG.flat().map((color, i) => (
+      <div key={i} style={{ width: PX_BIG, height: PX_BIG, backgroundColor: color ?? 'transparent' }} />
+    ))}
+  </div>
+);
+
 const NavButton = ({ sectionId, children }) => {
   const [active, setActive] = useState(false);
 

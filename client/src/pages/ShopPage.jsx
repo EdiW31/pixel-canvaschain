@@ -112,31 +112,37 @@ const ShopPage = () => {
           />
         </div>
 
-        {/* ─── Charity voting ────────────────────────────────── */}
-        {epochInfo.epoch > 0 && (
-          <div className="mt-16 -mx-6 px-6 py-14 rounded-2xl relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 50%, #F6E05E 100%)' }}>
-            {/* decorative dots */}
-            <div className="absolute top-4 right-8 w-3 h-3 rounded-full bg-primary/40" />
-            <div className="absolute bottom-6 left-10 w-2 h-2 rounded-full bg-primaryDark/30" />
-            <div className="absolute top-8 left-6 w-2 h-2 rounded-full bg-primary/50" />
+      </main>
 
-            <div className="mb-8">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primaryDark/15 border border-primaryDark/30 text-sm font-semibold text-primaryDark mb-4">
+      {/* ─── Charity voting — full width ─────────────────────────────── */}
+      {epochInfo.epoch > 0 && (
+        <div className="w-full relative overflow-hidden py-16 bg-primary">
+          {/* Decorative dots */}
+          <div className="absolute top-5 right-10 w-4 h-4 rounded-full bg-primaryDark/20" />
+          <div className="absolute bottom-8 left-14 w-3 h-3 rounded-full bg-primaryDark/15" />
+          <div className="absolute top-10 left-8 w-2 h-2 rounded-full bg-primaryDark/25" />
+          <div className="absolute bottom-5 right-24 w-5 h-5 rounded-full bg-primary/30" />
+          <div className="absolute top-4 left-[35%] w-2 h-2 rounded-full bg-primaryDark/20" />
+          <div className="absolute bottom-10 right-[40%] w-3 h-3 rounded-full bg-primaryDark/15" />
+
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="mb-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border-2 text-sm font-bold mb-4"
+                style={{ borderColor: 'rgba(27,26,23,0.3)', color: '#1B1A17', background: 'rgba(255,255,255,0.25)' }}>
                 🗳 Community Vote · Epoch {epochInfo.epoch}
               </div>
-              <h2 className="font-heading text-3xl font-semibold tracking-tight text-primaryDark mb-2">
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2"
+                style={{ color: '#1B1A17' }}>
                 Vote for this epoch's charity
               </h2>
-              <p className="text-primaryDark/70 max-w-xl">
+              <p className="max-w-xl text-base" style={{ color: 'rgba(27,26,23,0.7)' }}>
                 The community decides which charity receives the accumulated EGLD at the end of this epoch. Cast your vote on-chain — one wallet, one vote.
               </p>
             </div>
-
-            <VotingSection />
+            <VotingSection onYellow />
           </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 };
