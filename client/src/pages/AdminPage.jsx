@@ -505,7 +505,7 @@ const AdminPage = () => {
                           className="flex-shrink-0 w-16 h-20 rounded-xl overflow-hidden border"
                           style={{ borderColor: 'rgb(var(--border))' }}
                         >
-                          {row.photoUrl.trim() ? (
+                          {row.photoUrl?.trim() ? (
                             <img
                               src={row.photoUrl.trim()}
                               alt=""
@@ -516,7 +516,7 @@ const AdminPage = () => {
                           <div
                             className="w-full h-full items-center justify-center text-2xl"
                             style={{
-                              display: row.photoUrl.trim() ? 'none' : 'flex',
+                              display: row.photoUrl?.trim() ? 'none' : 'flex',
                               background: `${['#E53E3E','#4299E1','#48BB78','#ED8936','#9F7AEA'][i % 5]}18`,
                             }}
                           >
@@ -557,14 +557,14 @@ const AdminPage = () => {
                           <div className="flex gap-2">
                             <input
                               type="url"
-                              value={row.photoUrl}
+                              value={row.photoUrl ?? ''}
                               onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, photoUrl: e.target.value } : r))}
                               placeholder="Photo URL (https://…)"
                               className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
                             />
                             <input
                               type="url"
-                              value={row.link}
+                              value={row.link ?? ''}
                               onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, link: e.target.value } : r))}
                               placeholder="Website link"
                               className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -579,7 +579,7 @@ const AdminPage = () => {
                 {/* Add row button */}
                 {charityRows.length < 5 && (
                   <button
-                    onClick={() => setCharityRows(prev => [...prev, { name: '', address: '' }])}
+                    onClick={() => setCharityRows(prev => [...prev, { name: '', address: '', photoUrl: '', link: '' }])}
                     className="w-full py-2 rounded-xl border-2 border-dashed text-sm font-medium transition-colors hover:border-[#48BB78] hover:text-[#48BB78]"
                     style={{ borderColor: 'rgb(var(--border))', color: 'rgb(var(--text-muted))' }}
                   >
