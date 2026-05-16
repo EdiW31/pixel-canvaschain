@@ -180,6 +180,12 @@
   animation: scroll-dot 1.8s ease-in-out infinite;
 }
 
+/* ─── Pixel mascot bobbing animation ────────────────────────────────────── */
+@keyframes pixelman-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
 /* ─── sdk-dapp-ui panel positioning ────────────────────────────────────── */
 /* Pinned to viewport with a tinted backdrop so the QR / unlock / sign panels
    read as proper modals (not "floating in transparent space"). The host element

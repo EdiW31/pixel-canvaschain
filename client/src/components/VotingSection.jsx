@@ -5,6 +5,7 @@ import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/Transactio
 import { useApp } from '../context/AppContext';
 import { useWallet, getDappProvider } from '../hooks/useWallet';
 import { Link } from 'react-router-dom';
+import PixelMan from './PixelMan';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
@@ -234,7 +235,50 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
   const selectedAccent = selected !== null ? ACCENTS[selected % ACCENTS.length] : null;
 
   return (
-    <div>
+    <div className="relative">
+      {/* Playful tilted pixelman peeking in from the left — only when user can vote */}
+      {canVote && (
+        <div
+          className="hidden md:flex absolute items-end gap-3 pointer-events-none select-none"
+          style={{ left: -28, top: -60, zIndex: 5 }}
+        >
+          <PixelMan px={11} tilt={-18} animateBounce />
+          <div
+            className="relative mb-6"
+            style={{
+              background: '#FFFFFF',
+              border: '2.5px solid #1B1A17',
+              borderRadius: 18,
+              padding: '12px 18px',
+              transform: 'rotate(-4deg)',
+              boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
+              maxWidth: 240,
+            }}
+          >
+            <p className="font-bold text-sm leading-tight" style={{ color: '#1B1A17' }}>
+              Pick a charity!
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'rgba(27,26,23,0.65)' }}>
+              Your vote sends real EGLD their way 🎨
+            </p>
+            {/* Tail pointing to mascot */}
+            <div
+              className="absolute"
+              style={{
+                left: -10,
+                bottom: 18,
+                width: 14,
+                height: 14,
+                background: '#FFFFFF',
+                borderLeft: '2.5px solid #1B1A17',
+                borderBottom: '2.5px solid #1B1A17',
+                transform: 'rotate(45deg)',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Stats row */}
       <div className="flex flex-wrap items-center gap-x-8 gap-y-2 mb-8">
         <div>

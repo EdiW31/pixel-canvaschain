@@ -112,20 +112,56 @@ export const AppProvider = ({ children }) => {
     const epochHex = epoch.toString(16).padStart(2, '0');
 
     // Fetch charities + vote counts
-    const [namesData, countsData] = await Promise.all([
+    const [charitiesData, countsData] = await Promise.all([
       queryContractRaw('getEpochCharities', [epochHex]),
       queryContractRaw('getVoteTallies', [epochHex]),
     ]);
 
-    // getEpochCharities returns MultiValue2<ManagedVec<ManagedBuffer>, ManagedVec<ManagedAddress>>
-    // MultiversX TopEncodeMulti serializes each element as a separate returnData entry:
-    //   returnData[0..N-1] = name bytes for each charity
-    //   returnData[N..2N-1] = 32-byte address for each charity
-    const half = Math.floor(namesData.length / 2);
-    const names = namesData.slice(0, half).map(b64ToUtf8);
-    const addrs = namesData.slice(half).map(b64ToAddrHex);
-    // getVoteTallies returns ManagedVec<u64> — each u64 is a separate returnData entry
-    const votes = countsData.map(b => hexToU64(b64ToHex(b)));
+    // getEpochCharities returns MultiValue2<ManagedVec<ManagedBuffer>, ManagedVec<ManagedAddress>>.
+    // Each ManagedVec is nested-encoded into a SINGLE returnData blob, items concatenated:
+    //   charitiesData[0] = (4-byte len + utf8 bytes) * N
+    //   charitiesData[1] = (32 raw bytes) * N
+    const decodeNestedBytes = (b64) => {
+      if (!b64) return [];
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const result = [];
+      let off = 0;
+      while (off + 4 <= bytes.length) {
+        const len = view.getUint32(off);
+        off += 4;
+        if (off + len > bytes.length) break;
+        result.push(new TextDecoder().decode(bytes.slice(off, off + len)));
+        off += len;
+      }
+      return result;
+    };
+    const decodeNestedAddrs = (b64) => {
+      if (!b64) return [];
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const result = [];
+      for (let off = 0; off + 32 <= bytes.length; off += 32) {
+        result.push(Array.from(bytes.slice(off, off + 32))
+          .map(b => b.toString(16).padStart(2, '0')).join(''));
+      }
+      return result;
+    };
+    const decodeNestedU64 = (b64) => {
+      if (!b64) return [];
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const result = [];
+      for (let off = 0; off + 8 <= bytes.length; off += 8) {
+        const hi = view.getUint32(off);
+        const lo = view.getUint32(off + 4);
+        result.push(hi * 0x100000000 + lo);
+      }
+      return result;
+    };
+
+    const names = decodeNestedBytes(charitiesData[0]);
+    const addrs = decodeNestedAddrs(charitiesData[1]);
+    const votes = decodeNestedU64(countsData[0]);
 
     const charities = names.map((name, i) => ({
       name,
