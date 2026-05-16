@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
+import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaintChip, PaletteStrip } from '../components/PaintDecorations';
 
 /* ─── Pixel art canvas data (24 cols × 13 rows) ──────────────────────────── */
@@ -80,6 +81,8 @@ const WelcomePage = () => {
           <HowItWorksNav />
           <NavButton sectionId="nft">NFT</NavButton>
           <NavButton sectionId="split">The Split</NavButton>
+          <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
+          <EpochBanner className="hidden md:inline-flex" />
           <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />
           <ThemeToggle />
           <div className="w-px h-5 bg-border mx-2 flex-shrink-0" />

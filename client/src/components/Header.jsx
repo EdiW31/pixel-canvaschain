@@ -1,49 +1,11 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import WalletInfo from './WalletInfo';
 import ThemeToggle from './ThemeToggle';
+import EpochBanner from './EpochBanner';
 import { useSocket } from '../hooks/useSocket';
 import { useApp } from '../context/AppContext';
 
 const ADMIN_ADDRESS = import.meta.env.VITE_ADMIN_ADDRESS;
-
-function formatCountdown(msLeft) {
-  if (msLeft <= 0) return 'ended';
-  const totalSeconds = Math.floor(msLeft / 1000);
-  const d = Math.floor(totalSeconds / 86400);
-  const h = Math.floor((totalSeconds % 86400) / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  if (d > 0) return `${d}d ${h}h ${m}m`;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  return `${m}m ${s}s`;
-}
-
-const EpochChip = ({ epochInfo }) => {
-  const [msLeft, setMsLeft] = useState(0);
-
-  useEffect(() => {
-    if (!epochInfo.endsAt) { setMsLeft(0); return; }
-    const tick = () => setMsLeft(Math.max(0, epochInfo.endsAt - Date.now()));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [epochInfo.endsAt]);
-
-  if (!epochInfo.epoch) return null;
-
-  return (
-    <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-backgroundAlt border border-border text-xs font-medium text-textSecondary">
-      <span className="text-primary font-semibold">Epoch {epochInfo.epoch}</span>
-      {epochInfo.endsAt > 0 && (
-        <>
-          <span className="text-border">•</span>
-          <span>{formatCountdown(msLeft)}</span>
-        </>
-      )}
-    </div>
-  );
-};
 
 /**
  * Header — sticky navigation for authenticated pages (Shop, Canvas).
@@ -53,7 +15,7 @@ const EpochChip = ({ epochInfo }) => {
  */
 const Header = () => {
   const { isConnected } = useSocket();
-  const { wallet, epochInfo } = useApp();
+  const { wallet } = useApp();
   const isAdmin = wallet.address === ADMIN_ADDRESS;
 
   return (
@@ -74,8 +36,7 @@ const Header = () => {
 
         {/* Right side */}
         <div className="flex items-center gap-4">
-          {/* Epoch countdown */}
-          <EpochChip epochInfo={epochInfo} />
+          <EpochBanner className="hidden sm:inline-flex" />
 
           {/* Live connection indicator */}
           <div className="hidden sm:flex items-center gap-2 text-xs text-textMuted">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import ThemeToggle from '../components/ThemeToggle';
+import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
 
 const LoginPage = () => {
@@ -30,7 +31,10 @@ const LoginPage = () => {
           <span>←</span>
           <span>Back to home</span>
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-3">
+          <EpochBanner />
+          <ThemeToggle />
+        </div>
       </nav>
 
       <div className="flex-1 grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto w-full px-6 pb-20 items-center">
