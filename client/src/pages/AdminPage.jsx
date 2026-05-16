@@ -114,6 +114,11 @@ const AdminPage = () => {
   const [epochDurationInput, setEpochDurationInput] = useState('86400');
   const [epochDurationState, setEpochDurationState] = useState('idle');
 
+  // Charity voting setup
+  const [charityRows, setCharityRows] = useState([{ name: '', address: '' }]);
+  const [charityEpochInput, setCharityEpochInput] = useState('');
+  const [setCharitiesState, setSetCharitiesState] = useState('idle');
+
   useEffect(() => {
     if (!isConnected) navigate('/login');
   }, [isConnected, navigate]);
@@ -261,6 +266,31 @@ const AdminPage = () => {
     }
   };
 
+  const handleSetCharities = async () => {
+    const epoch = parseInt(charityEpochInput, 10);
+    if (!epoch || epoch <= 0) { showToast('Enter a valid epoch number', 'error'); return; }
+    const validRows = charityRows.filter(r => r.name.trim() && r.address.trim());
+    if (validRows.length === 0) { showToast('Add at least one charity', 'error'); return; }
+    for (const r of validRows) {
+      if (!r.address.startsWith('erd1')) { showToast(`Invalid address: ${r.address}`, 'error'); return; }
+    }
+    setSetCharitiesState('pending');
+    try {
+      const epochHex = numToHex(epoch);
+      // Each ManagedVec element is a separate @arg
+      const nameParts = validRows.map(r => toHex(r.name.trim())).join('@');
+      const addrParts = validRows.map(r => Address.newFromBech32(r.address.trim()).toHex()).join('@');
+      const data = `setEpochCharities@${epochHex}@${nameParts}@${addrParts}`;
+      await sendTxWithData(wallet, data, 10_000_000n);
+      showToast(`Charities set for epoch ${epoch}`, 'success');
+      setSetCharitiesState('done');
+      setTimeout(() => setSetCharitiesState('idle'), 3000);
+    } catch (err) {
+      showToast(err?.message ?? 'Transaction failed', 'error');
+      setSetCharitiesState('idle');
+    }
+  };
+
   if (!isConnected) return null;
 
   return (
@@ -397,6 +427,77 @@ const AdminPage = () => {
                 </button>
               </div>
               <p className="text-xs text-textMuted mt-1">Current: {stats?.durationSeconds ?? '…'}s</p>
+            </ActionCard>
+
+            {/* ── Set Epoch Charities ───────────────────────────── */}
+            <ActionCard
+              title="Set Epoch Charities"
+              description="Define up to 5 charity candidates for an epoch. Users will vote on-chain; the winner receives the accumulated EGLD when the epoch ends."
+              accent="#48BB78"
+              tag="Voting"
+            >
+              <div className="space-y-3">
+                <div className="flex gap-2 items-center">
+                  <label className="text-xs text-textMuted whitespace-nowrap">For epoch #</label>
+                  <input
+                    type="number"
+                    value={charityEpochInput}
+                    onChange={e => setCharityEpochInput(e.target.value)}
+                    placeholder={stats?.epoch ? String(stats.epoch) : '1'}
+                    min="1"
+                    className="w-24 px-3 py-1.5 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+
+                {charityRows.map((row, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <span className="text-xs text-textMuted w-4 text-right">{i + 1}.</span>
+                    <input
+                      type="text"
+                      value={row.name}
+                      onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                      placeholder="Charity name"
+                      className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                    <input
+                      type="text"
+                      value={row.address}
+                      onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))}
+                      placeholder="erd1… wallet"
+                      className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-backgroundAlt border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+                    />
+                    {charityRows.length > 1 && (
+                      <button
+                        onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))}
+                        className="text-textMuted hover:text-error transition-colors text-sm px-1"
+                      >✕</button>
+                    )}
+                  </div>
+                ))}
+
+                <div className="flex items-center gap-3 pt-1">
+                  {charityRows.length < 5 && (
+                    <button
+                      onClick={() => setCharityRows(prev => [...prev, { name: '', address: '' }])}
+                      className="text-xs text-textSecondary hover:text-textPrimary transition-colors"
+                    >
+                      + Add charity
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSetCharities}
+                    disabled={setCharitiesState !== 'idle'}
+                    className={`btn-primary ml-auto ${setCharitiesState !== 'idle' ? 'opacity-60 cursor-wait' : ''}`}
+                  >
+                    {setCharitiesState === 'pending' ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Sending…
+                      </span>
+                    ) : setCharitiesState === 'done' ? '✓ Charities set' : 'Set Charities'}
+                  </button>
+                </div>
+              </div>
             </ActionCard>
 
             {/* Distribute to charity */}

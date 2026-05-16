@@ -23,6 +23,36 @@ async function queryContractU64(funcName) {
   }
 }
 
+// Returns raw returnData array (base64 strings) from a contract query.
+export async function queryContractRaw(funcName, args = []) {
+  try {
+    const res = await fetch(`${API_URL}/vm-values/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scAddress: CONTRACT_ADDRESS, funcName, args }),
+    });
+    const json = await res.json();
+    return json.data?.data?.returnData ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function b64ToHex(b64) {
+  return atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+function b64ToUtf8(b64) {
+  return decodeURIComponent(escape(atob(b64)));
+}
+function hexToU64(hex) {
+  return hex ? parseInt(hex, 16) : 0;
+}
+// Decode a MultiversX bech32 address from a 32-byte base64 blob.
+// We keep it as hex here; bech32 conversion is done in the UI layer.
+function b64ToAddrHex(b64) {
+  return b64ToHex(b64);
+}
+
 const AppContext = createContext();
 
 export const useApp = () => {
@@ -51,6 +81,11 @@ export const AppProvider = ({ children }) => {
   const [epochInfo, setEpochInfo] = useState({ epoch: 0, startTimestamp: 0, durationSeconds: 0, endsAt: 0 });
   const epochRefetchRef = useRef(null);
 
+  // ── Voting state ──────────────────────────────────────────────────────────
+  // charities: [{ name, address, votes }]
+  const [votingState, setVotingState] = useState({ charities: [], hasVoted: false, userVoteIndex: 255, loading: false });
+  const votingRefetchRef = useRef(null);
+
   const fetchEpochInfo = useCallback(async () => {
     const [epoch, startTimestamp, durationSeconds] = await Promise.all([
       queryContractU64('getCurrentEpoch'),
@@ -69,6 +104,66 @@ export const AppProvider = ({ children }) => {
     epochRefetchRef.current = setInterval(fetchEpochInfo, 5 * 60 * 1000);
     return () => clearInterval(epochRefetchRef.current);
   }, [fetchEpochInfo]);
+
+  const fetchVotingState = useCallback(async (epoch, voterAddress) => {
+    if (!epoch) { setVotingState({ charities: [], hasVoted: false, userVoteIndex: 255, loading: false }); return; }
+    setVotingState(prev => ({ ...prev, loading: true }));
+
+    const epochHex = epoch.toString(16).padStart(2, '0');
+
+    // Fetch charities + vote counts
+    const [namesData, countsData] = await Promise.all([
+      queryContractRaw('getEpochCharities', [epochHex]),
+      queryContractRaw('getVoteTallies', [epochHex]),
+    ]);
+
+    // namesData: alternating [name, addr, name, addr, ...] per MultiversX MultiValue encoding
+    // Actually getEpochCharities returns MultiValue2<ManagedVec, ManagedVec> —
+    // items are interleaved in returnData as [name0, addr0, ..., nameN, addrN] NO —
+    // ManagedVec items come as separate returnData entries in order.
+    // The first ManagedVec (names) emits its items first, then the second (addrs).
+    // So returnData = [name0, name1, ..., addr0, addr1, ...]
+    const half = Math.floor(namesData.length / 2);
+    const names = namesData.slice(0, half).map(b64ToUtf8);
+    const addrs = namesData.slice(half).map(b64ToAddrHex);
+    const votes = countsData.map(b => hexToU64(b64ToHex(b)));
+
+    const charities = names.map((name, i) => ({
+      name,
+      addressHex: addrs[i] || '',
+      votes: votes[i] ?? 0,
+    }));
+
+    // Fetch user vote if connected
+    let hasVoted = false;
+    let userVoteIndex = 255;
+    if (voterAddress) {
+      // Convert bech32 address to hex for the arg
+      try {
+        const { Address } = await import('@multiversx/sdk-core');
+        const addrHex = Address.fromBech32(voterAddress).toHex();
+        const myVoteData = await queryContractRaw('getMyVote', [epochHex, addrHex]);
+        if (myVoteData.length > 0) {
+          const val = hexToU64(b64ToHex(myVoteData[0]));
+          userVoteIndex = val;
+          hasVoted = val !== 255;
+        }
+      } catch { /* ignore */ }
+    }
+
+    setVotingState({ charities, hasVoted, userVoteIndex, loading: false });
+  }, []);
+
+  // Refresh voting state when epoch or wallet changes; also poll every 30s
+  useEffect(() => {
+    fetchVotingState(epochInfo.epoch, address || null);
+    clearInterval(votingRefetchRef.current);
+    votingRefetchRef.current = setInterval(
+      () => fetchVotingState(epochInfo.epoch, address || null),
+      30_000,
+    );
+    return () => clearInterval(votingRefetchRef.current);
+  }, [epochInfo.epoch, address, fetchVotingState]);
 
   // ── Pending pixels (painted but not yet paid for) ─────────────────────────
   // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.
@@ -166,6 +261,10 @@ export const AppProvider = ({ children }) => {
     // Epoch
     epochInfo,
     refetchEpochInfo: fetchEpochInfo,
+
+    // Voting
+    votingState,
+    refetchVotingState: () => fetchVotingState(epochInfo.epoch, address || null),
 
     // Pending pixels (paint-then-pay)
     pendingPixels,

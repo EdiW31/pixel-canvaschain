@@ -36,6 +36,7 @@ pub trait PixelCanvasContract {
         self.charity_address().set(&deployer);
         self.total_donated().set(BigUint::zero());
         self.total_pixel_for_charity().set(BigUint::zero());
+        self.total_egld_for_charity().set(BigUint::zero());
         self.current_epoch().set(0u64);
         self.epoch_duration_seconds().set(DEFAULT_EPOCH_DURATION);
         self.epoch_top_paint_count().set(0u64);
@@ -68,6 +69,58 @@ pub trait PixelCanvasContract {
         self.epoch_duration_seconds().set(seconds);
     }
 
+    /// Set the candidate charities for the upcoming (or current) epoch.
+    /// `names` and `addrs` must have the same length (max 5).
+    #[endpoint(setEpochCharities)]
+    fn set_epoch_charities(
+        &self,
+        epoch: u64,
+        names: ManagedVec<ManagedBuffer>,
+        addrs: ManagedVec<ManagedAddress>,
+    ) {
+        self.require_owner();
+        require!(names.len() == addrs.len(), "Names and addresses length mismatch");
+        require!(names.len() <= 5, "Max 5 charities per epoch");
+        require!(epoch > 0u64, "Epoch must be > 0");
+
+        // Clear previous data for this epoch
+        self.epoch_charity_names(epoch).clear();
+        self.epoch_charity_addrs(epoch).clear();
+        self.epoch_vote_counts(epoch).clear();
+
+        for i in 0..names.len() {
+            self.epoch_charity_names(epoch).push(&names.get(i));
+            self.epoch_charity_addrs(epoch).push(&addrs.get(i));
+            self.epoch_vote_counts(epoch).push(&0u64);
+        }
+    }
+
+    // ─── Charity voting ───────────────────────────────────────────────────────
+
+    /// Cast a vote for a charity in the current epoch. One vote per wallet.
+    #[endpoint(vote)]
+    fn vote(&self, charity_index: u32) {
+        let epoch = self.current_epoch().get();
+        require!(epoch > 0u64, "No active epoch");
+
+        let caller = self.blockchain().get_caller();
+        require!(
+            !self.epoch_has_voted(epoch, &caller).get(),
+            "Already voted this epoch"
+        );
+
+        let count = self.epoch_charity_names(epoch).len() as u32;
+        require!(count > 0, "No charities set for this epoch");
+        require!(charity_index < count, "Invalid charity index");
+
+        let idx = (charity_index + 1) as usize; // VecMapper is 1-indexed
+        self.epoch_vote_counts(epoch).set(idx, &(self.epoch_vote_counts(epoch).get(idx) + 1u64));
+        self.epoch_voter_choice(epoch, &caller).set(charity_index);
+        self.epoch_has_voted(epoch, &caller).set(true);
+
+        self.vote_cast_event(epoch, &caller, charity_index);
+    }
+
     // ─── Epoch management ─────────────────────────────────────────────────────
 
     /// Start a new epoch. Increments epoch counter, records start timestamp,
@@ -83,15 +136,15 @@ pub trait PixelCanvasContract {
         self.epoch_started_event(new_epoch, self.blockchain().get_block_timestamp());
     }
 
-    /// End the current epoch. Distributes accumulated PIXEL to charity and emits
-    /// an epoch-ended event. NFT minting is added in Phase 4.
+    /// End the current epoch. Distributes accumulated PIXEL to the default charity
+    /// and accumulated EGLD to the vote-winning charity (or default if no votes).
     #[endpoint(endEpoch)]
     fn end_epoch(&self) {
         self.require_owner();
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch to end");
 
-        // Flush accumulated PIXEL to charity
+        // Flush accumulated PIXEL to default charity address
         if !self.pixel_token_id().is_empty() {
             let total = self.total_pixel_for_charity().get();
             if total > BigUint::zero() {
@@ -100,6 +153,15 @@ pub trait PixelCanvasContract {
                 self.send().direct_esdt(&charity_addr, &token_id, 0, &total);
                 self.total_pixel_for_charity().set(BigUint::zero());
             }
+        }
+
+        // Distribute accumulated EGLD to the winning charity
+        let egld_total = self.total_egld_for_charity().get();
+        if egld_total > BigUint::zero() {
+            let winning_addr = self.find_winning_charity(epoch);
+            self.send().direct_egld(&winning_addr, &egld_total);
+            self.total_donated().update(|t| *t += &egld_total);
+            self.total_egld_for_charity().set(BigUint::zero());
         }
 
         let top_painter = if self.epoch_top_painter().is_empty() {
@@ -292,6 +354,49 @@ pub trait PixelCanvasContract {
         self.epoch_pixel_count(epoch, &painter).get()
     }
 
+    // ─── Charity voting views ─────────────────────────────────────────────────
+
+    /// Returns (names, addresses) for charities registered in `epoch`.
+    #[view(getEpochCharities)]
+    fn get_epoch_charities(
+        &self,
+        epoch: u64,
+    ) -> MultiValue2<ManagedVec<ManagedBuffer>, ManagedVec<ManagedAddress>> {
+        let len = self.epoch_charity_names(epoch).len();
+        let mut names: ManagedVec<ManagedBuffer> = ManagedVec::new();
+        let mut addrs: ManagedVec<ManagedAddress> = ManagedVec::new();
+        for i in 1..=len {
+            names.push(self.epoch_charity_names(epoch).get(i));
+            addrs.push(self.epoch_charity_addrs(epoch).get(i));
+        }
+        (names, addrs).into()
+    }
+
+    /// Returns vote counts per charity for `epoch` (parallel to getEpochCharities).
+    #[view(getVoteTallies)]
+    fn get_vote_tallies(&self, epoch: u64) -> ManagedVec<u64> {
+        let len = self.epoch_vote_counts(epoch).len();
+        let mut out: ManagedVec<u64> = ManagedVec::new();
+        for i in 1..=len {
+            out.push(self.epoch_vote_counts(epoch).get(i));
+        }
+        out
+    }
+
+    /// Returns the charity index the caller voted for, or 255 if not voted.
+    #[view(getMyVote)]
+    fn get_my_vote(&self, epoch: u64, voter: ManagedAddress) -> u32 {
+        if !self.epoch_has_voted(epoch, &voter).get() {
+            return 255u32;
+        }
+        self.epoch_voter_choice(epoch, &voter).get()
+    }
+
+    #[view(getTotalEgldForCharity)]
+    fn get_total_egld_for_charity(&self) -> BigUint {
+        self.total_egld_for_charity().get()
+    }
+
     // ─── Storage mappers ──────────────────────────────────────────────────────
 
     #[storage_mapper("pixelTokenId")]
@@ -312,6 +417,9 @@ pub trait PixelCanvasContract {
     #[storage_mapper("totalDonated")]
     fn total_donated(&self) -> SingleValueMapper<BigUint>;
 
+    #[storage_mapper("totalEgldForCharity")]
+    fn total_egld_for_charity(&self) -> SingleValueMapper<BigUint>;
+
     // Epoch storage
     #[storage_mapper("currentEpoch")]
     fn current_epoch(&self) -> SingleValueMapper<u64>;
@@ -330,6 +438,22 @@ pub trait PixelCanvasContract {
 
     #[storage_mapper("epochTopPaintCount")]
     fn epoch_top_paint_count(&self) -> SingleValueMapper<u64>;
+
+    // Charity voting storage
+    #[storage_mapper("epochCharityNames")]
+    fn epoch_charity_names(&self, epoch: u64) -> VecMapper<ManagedBuffer>;
+
+    #[storage_mapper("epochCharityAddrs")]
+    fn epoch_charity_addrs(&self, epoch: u64) -> VecMapper<ManagedAddress>;
+
+    #[storage_mapper("epochVoteCounts")]
+    fn epoch_vote_counts(&self, epoch: u64) -> VecMapper<u64>;
+
+    #[storage_mapper("epochHasVoted")]
+    fn epoch_has_voted(&self, epoch: u64, voter: &ManagedAddress) -> SingleValueMapper<bool>;
+
+    #[storage_mapper("epochVoterChoice")]
+    fn epoch_voter_choice(&self, epoch: u64, voter: &ManagedAddress) -> SingleValueMapper<u32>;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -363,7 +487,36 @@ pub trait PixelCanvasContract {
         #[indexed] top_paint_count: u64,
     );
 
+    #[event("voteCast")]
+    fn vote_cast_event(
+        &self,
+        #[indexed] epoch: u64,
+        #[indexed] voter: &ManagedAddress,
+        #[indexed] charity_index: u32,
+    );
+
     // ─── Internal helpers ─────────────────────────────────────────────────────
+
+    fn find_winning_charity(&self, epoch: u64) -> ManagedAddress {
+        let n = self.epoch_charity_names(epoch).len();
+        if n == 0 {
+            return self.charity_address().get();
+        }
+        let vote_mapper = self.epoch_vote_counts(epoch);
+        if vote_mapper.len() == 0 {
+            return self.charity_address().get();
+        }
+        let mut max_votes: u64 = 0;
+        let mut winner_idx: usize = 1;
+        for i in 1..=vote_mapper.len() {
+            let vc = vote_mapper.get(i);
+            if vc > max_votes {
+                max_votes = vc;
+                winner_idx = i;
+            }
+        }
+        self.epoch_charity_addrs(epoch).get(winner_idx)
+    }
 
     fn record_paint(&self, painter: &ManagedAddress, count: u64) {
         let epoch = self.current_epoch().get();
@@ -403,11 +556,9 @@ pub trait PixelCanvasContract {
         let owner_addr = self.blockchain().get_owner_address();
         self.send().direct_egld(&owner_addr, &owner_half);
 
-        let charity_addr = self.charity_address().get();
-        self.send().direct_egld(&charity_addr, &charity_half);
-
-        self.total_donated()
-            .update(|total| *total += &charity_half);
+        // Accumulate charity EGLD; it is sent to the vote winner at epoch end
+        self.total_egld_for_charity()
+            .update(|t| *t += &charity_half);
     }
 
     fn require_owner(&self) {
