@@ -117,15 +117,14 @@ export const AppProvider = ({ children }) => {
       queryContractRaw('getVoteTallies', [epochHex]),
     ]);
 
-    // namesData: alternating [name, addr, name, addr, ...] per MultiversX MultiValue encoding
-    // Actually getEpochCharities returns MultiValue2<ManagedVec, ManagedVec> —
-    // items are interleaved in returnData as [name0, addr0, ..., nameN, addrN] NO —
-    // ManagedVec items come as separate returnData entries in order.
-    // The first ManagedVec (names) emits its items first, then the second (addrs).
-    // So returnData = [name0, name1, ..., addr0, addr1, ...]
+    // getEpochCharities returns MultiValue2<ManagedVec<ManagedBuffer>, ManagedVec<ManagedAddress>>
+    // MultiversX TopEncodeMulti serializes each element as a separate returnData entry:
+    //   returnData[0..N-1] = name bytes for each charity
+    //   returnData[N..2N-1] = 32-byte address for each charity
     const half = Math.floor(namesData.length / 2);
     const names = namesData.slice(0, half).map(b64ToUtf8);
     const addrs = namesData.slice(half).map(b64ToAddrHex);
+    // getVoteTallies returns ManagedVec<u64> — each u64 is a separate returnData entry
     const votes = countsData.map(b => hexToU64(b64ToHex(b)));
 
     const charities = names.map((name, i) => ({

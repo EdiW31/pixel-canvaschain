@@ -284,19 +284,35 @@ const AdminPage = () => {
     setSetCharitiesState('pending');
     try {
       const epochHex = numToHex(epoch);
-      // Each ManagedVec element is a separate @arg
-      const nameParts = validRows.map(r => toHex(r.name.trim())).join('@');
-      const addrParts = [];
+
+      // ManagedVec<ManagedBuffer> nested encoding: (4-byte len + bytes) per item, no count prefix
+      const encodeListBytes = (names) => {
+        let hex = '';
+        for (const name of names) {
+          const bytes = new TextEncoder().encode(name);
+          hex += bytes.length.toString(16).padStart(8, '0');
+          hex += Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        return hex;
+      };
+
+      // ManagedVec<ManagedAddress> nested encoding: 32 raw bytes per item, no count prefix
+      const encodeListAddrs = (addrHexes) => addrHexes.join('');
+
+      const addrHexes = [];
       for (const r of validRows) {
         try {
-          addrParts.push(Address.newFromBech32(r.address.trim()).toHex());
+          addrHexes.push(Address.newFromBech32(r.address.trim()).toHex());
         } catch {
           showToast(`Invalid address: ${r.address.trim()}`, 'error');
           setSetCharitiesState('idle');
           return;
         }
       }
-      const data = `setEpochCharities@${epochHex}@${nameParts}@${addrParts.join('@')}`;
+
+      const namesContainer = encodeListBytes(validRows.map(r => r.name.trim()));
+      const addrsContainer = encodeListAddrs(addrHexes);
+      const data = `setEpochCharities@${epochHex}@${namesContainer}@${addrsContainer}`;
       await sendTxWithData(wallet, data, 20_000_000n);
       showToast(`Charities set for epoch ${epoch}`, 'success');
       setSetCharitiesState('done');
