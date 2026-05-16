@@ -115,7 +115,7 @@ const AdminPage = () => {
   const [epochDurationState, setEpochDurationState] = useState('idle');
 
   // Charity voting setup
-  const [charityRows, setCharityRows] = useState([{ name: '', address: '' }]);
+  const [charityRows, setCharityRows] = useState([{ name: '', address: '', photoUrl: '', link: '' }]);
   const [charityEpochInput, setCharityEpochInput] = useState('');
   const [setCharitiesState, setSetCharitiesState] = useState('idle');
 
@@ -314,6 +314,11 @@ const AdminPage = () => {
       const addrsContainer = encodeListAddrs(addrHexes);
       const data = `setEpochCharities@${epochHex}@${namesContainer}@${addrsContainer}`;
       await sendTxWithData(wallet, data, 20_000_000n);
+
+      // Store photo + link metadata in localStorage (not in contract)
+      const meta = validRows.map(r => ({ photoUrl: r.photoUrl.trim(), link: r.link.trim() }));
+      localStorage.setItem(`charity_meta_epoch_${epoch}`, JSON.stringify(meta));
+
       showToast(`Charities set for epoch ${epoch}`, 'success');
       setSetCharitiesState('done');
       setTimeout(() => setSetCharitiesState('idle'), 3000);
@@ -483,46 +488,89 @@ const AdminPage = () => {
                 </div>
 
                 {/* Charity rows */}
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {charityRows.map((row, i) => {
                     const complete = row.name.trim() && row.address.trim();
                     return (
                       <div
                         key={i}
-                        className="rounded-xl border p-3 flex flex-col gap-2 transition-colors"
+                        className="rounded-xl border p-4 flex gap-4 transition-colors"
                         style={{
                           borderColor: complete ? '#48BB78' : 'rgb(var(--border))',
-                          background: complete ? 'rgba(72,187,120,0.05)' : 'rgb(var(--bg-alt))',
+                          background: complete ? 'rgba(72,187,120,0.04)' : 'rgb(var(--bg-alt))',
                         }}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-textMuted">
-                            Charity {i + 1}
-                            {complete && <span className="ml-2 text-[#48BB78]">✓ ready</span>}
-                          </span>
-                          {charityRows.length > 1 && (
-                            <button
-                              onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))}
-                              className="text-xs text-textMuted hover:text-error transition-colors"
-                            >
-                              Remove
-                            </button>
-                          )}
+                        {/* Photo preview */}
+                        <div
+                          className="flex-shrink-0 w-16 h-20 rounded-xl overflow-hidden border"
+                          style={{ borderColor: 'rgb(var(--border))' }}
+                        >
+                          {row.photoUrl.trim() ? (
+                            <img
+                              src={row.photoUrl.trim()}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                            />
+                          ) : null}
+                          <div
+                            className="w-full h-full items-center justify-center text-2xl"
+                            style={{
+                              display: row.photoUrl.trim() ? 'none' : 'flex',
+                              background: `${['#E53E3E','#4299E1','#48BB78','#ED8936','#9F7AEA'][i % 5]}18`,
+                            }}
+                          >
+                            {['❤','🌊','🌿','☀','✦'][i % 5]}
+                          </div>
                         </div>
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
-                          placeholder="Charity name (e.g. UNICEF)"
-                          className="w-full px-3 py-2 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
-                        />
-                        <input
-                          type="text"
-                          value={row.address}
-                          onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))}
-                          placeholder="erd1… wallet address"
-                          className="w-full px-3 py-2 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
-                        />
+
+                        {/* Fields */}
+                        <div className="flex flex-col gap-2 flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-textMuted">
+                              Charity {i + 1}
+                              {complete && <span className="ml-2 text-[#48BB78]">✓ ready</span>}
+                            </span>
+                            {charityRows.length > 1 && (
+                              <button
+                                onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))}
+                                className="text-xs text-textMuted hover:text-error transition-colors"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={row.name}
+                            onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                            placeholder="Charity name (e.g. UNICEF)"
+                            className="w-full px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                          />
+                          <input
+                            type="text"
+                            value={row.address}
+                            onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))}
+                            placeholder="erd1… wallet address"
+                            className="w-full px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono text-xs"
+                          />
+                          <div className="flex gap-2">
+                            <input
+                              type="url"
+                              value={row.photoUrl}
+                              onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, photoUrl: e.target.value } : r))}
+                              placeholder="Photo URL (https://…)"
+                              className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            />
+                            <input
+                              type="url"
+                              value={row.link}
+                              onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, link: e.target.value } : r))}
+                              placeholder="Website link"
+                              className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            />
+                          </div>
+                        </div>
                       </div>
                     );
                   })}

@@ -9,8 +9,16 @@ import { Link } from 'react-router-dom';
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
 
-const ACCENTS = ['#E53E3E', '#4299E1', '#48BB78', '#ED8936', '#9F7AEA'];
-const ICONS   = ['❤', '🌊', '🌿', '☀', '✦'];
+const ACCENTS  = ['#E53E3E', '#4299E1', '#48BB78', '#ED8936', '#9F7AEA'];
+const ICONS    = ['❤', '🌊', '🌿', '☀', '✦'];
+// Dummy placeholder images — one per slot, nice editorial photos
+const DUMMIES  = [
+  'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=400&h=560&fit=crop',
+  'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=400&h=560&fit=crop',
+  'https://images.unsplash.com/photo-1509099836639-18ba1795216d?w=400&h=560&fit=crop',
+  'https://images.unsplash.com/photo-1469571486292-0ba58a3f068b?w=400&h=560&fit=crop',
+  'https://images.unsplash.com/photo-1550592704-6c76defa9985?w=400&h=560&fit=crop',
+];
 
 async function sendVoteTx(walletAddress, charityIndex) {
   const dappProvider = getDappProvider();
@@ -31,77 +39,74 @@ async function sendVoteTx(walletAddress, charityIndex) {
   await TransactionManager.getInstance().send(signed);
 }
 
-// ── Single charity card ───────────────────────────────────────────────────────
+function loadMeta(epoch) {
+  try {
+    return JSON.parse(localStorage.getItem(`charity_meta_epoch_${epoch}`) ?? '[]');
+  } catch {
+    return [];
+  }
+}
 
-const CharityCard = ({ charity, index, totalVotes, selected, voted, isMyVote, onSelect, canSelect, onYellow }) => {
-  const accent  = ACCENTS[index % ACCENTS.length];
-  const icon    = ICONS[index % ICONS.length];
-  const pct     = totalVotes > 0 ? Math.round((charity.votes / totalVotes) * 100) : 0;
+// ── Single card ───────────────────────────────────────────────────────────────
 
+const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, onSelect, canSelect }) => {
+  const accent   = ACCENTS[index % ACCENTS.length];
+  const icon     = ICONS[index % ICONS.length];
+  const photo    = meta?.photoUrl || DUMMIES[index % DUMMIES.length];
+  const link     = meta?.link || null;
+  const pct      = totalVotes > 0 ? Math.round((charity.votes / totalVotes) * 100) : 0;
   const isActive = selected === index;
 
-  // Colour tokens
-  const cardBg   = onYellow ? '#FFFFFF' : 'rgb(var(--surface))';
-  const nameClr  = onYellow ? '#1B1A17' : 'rgb(var(--text))';
-  const mutedClr = onYellow ? 'rgba(27,26,23,0.50)' : 'rgb(var(--text-muted))';
-  const trackClr = onYellow ? 'rgba(27,26,23,0.10)' : 'rgb(var(--border))';
-
-  let borderStyle, shadowStyle;
-  if (isMyVote) {
-    borderStyle = `2px solid ${accent}`;
-    shadowStyle = `0 0 0 4px ${accent}22, 0 4px 20px rgba(0,0,0,0.08)`;
-  } else if (isActive) {
-    borderStyle = `2px solid ${accent}`;
-    shadowStyle = `0 0 0 4px ${accent}18, 0 4px 16px rgba(0,0,0,0.06)`;
-  } else {
-    borderStyle = onYellow ? '1.5px solid rgba(27,26,23,0.12)' : '1.5px solid rgb(var(--border))';
-    shadowStyle = '0 2px 8px rgba(0,0,0,0.05)';
-  }
-
-  return (
-    <button
-      onClick={() => canSelect && onSelect(index)}
-      disabled={!canSelect}
-      className="text-left rounded-2xl overflow-hidden flex flex-col transition-all duration-200 w-full"
+  const card = (
+    <div
+      onClick={() => canSelect && onSelect(isActive ? null : index)}
+      className="relative rounded-3xl overflow-hidden flex flex-col select-none transition-all duration-200"
       style={{
-        background: isActive ? `${accent}0d` : cardBg,
-        border: borderStyle,
-        boxShadow: shadowStyle,
+        background: '#fff',
         cursor: canSelect ? 'pointer' : 'default',
-        outline: 'none',
+        boxShadow: isMyVote
+          ? `0 0 0 3px ${accent}, 0 8px 32px rgba(0,0,0,0.14)`
+          : isActive
+          ? `0 0 0 3px ${accent}, 0 8px 24px rgba(0,0,0,0.12)`
+          : '0 4px 20px rgba(0,0,0,0.10)',
+        transform: isActive ? 'translateY(-2px)' : 'none',
       }}
     >
-      {/* Top accent bar */}
-      <div className="h-1 w-full flex-shrink-0" style={{ background: accent }} />
+      {/* ── Photo area ── */}
+      <div className="relative overflow-hidden" style={{ height: 260 }}>
+        <img
+          src={photo}
+          alt={charity.name}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+        {/* Soft gradient so text is legible */}
+        <div
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.10) 50%, transparent 100%)' }}
+        />
 
-      {/* Icon area */}
-      <div
-        className="flex items-center justify-center flex-shrink-0 relative"
-        style={{ height: 90, background: `${accent}12` }}
-      >
-        <span style={{ fontSize: 40, lineHeight: 1 }}>{icon}</span>
-
-        {/* Selection indicator */}
+        {/* Selection circle — top right */}
         {canSelect && (
           <div
-            className="absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-150"
+            className="absolute top-3 right-3 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-150"
             style={isActive
-              ? { borderColor: accent, background: accent }
-              : { borderColor: onYellow ? 'rgba(27,26,23,0.25)' : 'rgb(var(--border-strong))', background: 'transparent' }
+              ? { background: accent, borderColor: accent }
+              : { background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.6)' }
             }
           >
             {isActive && (
-              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                <path d="M1 4l2.5 2.5L9 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+                <path d="M1 5l3 3L11 1" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             )}
           </div>
         )}
 
-        {/* "Your vote" badge when voted */}
+        {/* "Your vote" badge */}
         {isMyVote && (
           <div
-            className="absolute top-3 right-3 flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
+            className="absolute top-3 left-3 flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full"
             style={{ background: accent, color: '#fff' }}
           >
             <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
@@ -110,28 +115,63 @@ const CharityCard = ({ charity, index, totalVotes, selected, voted, isMyVote, on
             Your vote
           </div>
         )}
-      </div>
 
-      {/* Body */}
-      <div className="flex flex-col flex-1 p-5 gap-3">
-        <div>
-          <h3 className="font-heading text-base font-semibold leading-snug mb-0.5" style={{ color: nameClr }}>
+        {/* Name overlay at bottom of photo */}
+        <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
+          <h3 className="font-heading text-xl font-semibold text-white leading-tight drop-shadow">
             {charity.name}
           </h3>
-          <p className="text-xs" style={{ color: mutedClr }}>
-            {charity.votes} vote{charity.votes !== 1 ? 's' : ''} · {pct}%
-          </p>
-        </div>
-
-        {/* Vote bar */}
-        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: trackClr }}>
-          <div
-            className="h-full rounded-full transition-all duration-700"
-            style={{ width: `${pct}%`, background: accent }}
-          />
         </div>
       </div>
-    </button>
+
+      {/* ── Bottom info ── */}
+      <div className="px-5 py-4 flex flex-col gap-3" style={{ background: '#fff' }}>
+        {/* Vote bar + pct */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5 text-xs font-medium" style={{ color: '#6b7280' }}>
+            <span>{charity.votes} vote{charity.votes !== 1 ? 's' : ''}</span>
+            <span style={{ color: accent, fontWeight: 700 }}>{pct}%</span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#f3f4f6' }}>
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${pct}%`, background: accent }}
+            />
+          </div>
+        </div>
+
+        {/* Icon badge row */}
+        <div className="flex items-center gap-2">
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm"
+            style={{ background: accent + '18' }}
+          >
+            {icon}
+          </div>
+          <span className="text-xs" style={{ color: '#9ca3af' }}>Charity · Epoch voting</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Wrap in <a> if link is set (but clicking the card for voting is separate)
+  // We add a small external link icon instead so clicking card = vote, icon = website
+  return (
+    <div className="flex flex-col gap-2">
+      {card}
+      {link && (
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-center text-xs font-medium transition-opacity hover:opacity-70 flex items-center justify-center gap-1"
+          style={{ color: accent }}
+          onClick={e => e.stopPropagation()}
+        >
+          Visit website ↗
+        </a>
+      )}
+    </div>
   );
 };
 
@@ -146,6 +186,7 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
   const { charities, hasVoted, userVoteIndex, loading } = votingState;
   const totalVotes = charities.reduce((s, c) => s + c.votes, 0);
   const canVote = isConnected && epochInfo.epoch > 0 && !hasVoted && charities.length > 0;
+  const meta = loadMeta(epochInfo.epoch);
 
   const handleCastVote = async () => {
     if (selected === null || !canVote || submitting) return;
@@ -222,44 +263,39 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
       </div>
 
       {/* Cards grid */}
-      <div className={`grid gap-4 ${
-        charities.length === 1 ? 'max-w-xs' :
-        charities.length === 2 ? 'sm:grid-cols-2 max-w-xl' :
-        'sm:grid-cols-2 lg:grid-cols-3'
+      <div className={`grid gap-5 ${
+        charities.length === 1 ? 'max-w-xs'            :
+        charities.length === 2 ? 'sm:grid-cols-2 max-w-2xl' :
+                                  'sm:grid-cols-2 lg:grid-cols-3'
       }`}>
         {charities.map((charity, i) => (
           <CharityCard
             key={i}
             charity={charity}
             index={i}
+            meta={meta[i] ?? null}
             totalVotes={totalVotes}
             selected={selected}
-            voted={hasVoted}
             isMyVote={hasVoted && userVoteIndex === i}
             onSelect={setSelected}
             canSelect={canVote && !submitting}
-            onYellow={onYellow}
           />
         ))}
       </div>
 
-      {/* Bottom action area */}
-      <div className="mt-6">
+      {/* Bottom action */}
+      <div className="mt-8">
         {canVote ? (
           <div className="flex items-center gap-4 flex-wrap">
             <button
               onClick={handleCastVote}
               disabled={selected === null || submitting}
-              className="px-8 py-3 rounded-xl text-sm font-bold transition-all duration-150"
+              className="px-8 py-3 rounded-2xl text-sm font-bold transition-all duration-150"
               style={selected === null
-                ? {
-                    background: onYellow ? 'rgba(27,26,23,0.10)' : 'rgb(var(--border))',
-                    color: mutedClr,
-                    cursor: 'not-allowed',
-                  }
+                ? { background: 'rgba(255,255,255,0.25)', color: 'rgba(27,26,23,0.40)', cursor: 'not-allowed' }
                 : submitting
                 ? { background: selectedAccent, color: '#fff', opacity: 0.7, cursor: 'wait' }
-                : { background: selectedAccent, color: '#fff', boxShadow: `0 4px 14px ${selectedAccent}55` }
+                : { background: selectedAccent, color: '#fff', boxShadow: `0 4px 20px ${selectedAccent}66` }
               }
             >
               {submitting
@@ -283,7 +319,7 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
           <div className="flex items-center gap-3">
             <Link
               to="/login"
-              className="px-8 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
+              className="px-8 py-3 rounded-2xl text-sm font-bold transition-opacity hover:opacity-85"
               style={onYellow
                 ? { background: '#1B1A17', color: '#fff' }
                 : { background: 'rgb(var(--primary))', color: '#1B1A17' }
@@ -291,9 +327,7 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
             >
               Connect wallet to vote
             </Link>
-            <span className="text-xs" style={{ color: mutedClr }}>
-              One vote per wallet per epoch, on-chain.
-            </span>
+            <span className="text-xs" style={{ color: mutedClr }}>One vote per wallet · on-chain</span>
           </div>
         ) : hasVoted ? (
           <p className="text-sm" style={{ color: mutedClr }}>
