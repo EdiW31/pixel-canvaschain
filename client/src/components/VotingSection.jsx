@@ -8,7 +8,14 @@ import { Link } from 'react-router-dom';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
-const PALETTE = ['#E53E3E', '#4299E1', '#48BB78', '#ED8936', '#9F7AEA'];
+
+const PALETTE = [
+  { accent: '#E53E3E', bg: 'rgba(229,62,62,0.08)',   symbol: '❤' },
+  { accent: '#4299E1', bg: 'rgba(66,153,225,0.08)',  symbol: '🌊' },
+  { accent: '#48BB78', bg: 'rgba(72,187,120,0.08)',  symbol: '🌿' },
+  { accent: '#ED8936', bg: 'rgba(237,137,54,0.08)',  symbol: '☀' },
+  { accent: '#9F7AEA', bg: 'rgba(159,122,234,0.08)', symbol: '✦' },
+];
 
 async function sendVoteTx(walletAddress, charityIndex) {
   const dappProvider = getDappProvider();
@@ -29,7 +36,122 @@ async function sendVoteTx(walletAddress, charityIndex) {
   await TransactionManager.getInstance().send(signed);
 }
 
-// onYellow=true → white cards, fixed dark text (used when section bg is yellow)
+// ── Charity card ─────────────────────────────────────────────────────────────
+
+const CharityCard = ({ charity, index, totalVotes, onVote, canVote, isMyVote, submitting, onYellow }) => {
+  const { accent, bg, symbol } = PALETTE[index % PALETTE.length];
+  const pct = totalVotes > 0 ? Math.round((charity.votes / totalVotes) * 100) : 0;
+
+  // Surface colors depend on context
+  const cardBg    = onYellow ? '#FFFFFF' : 'rgb(var(--surface))';
+  const borderClr = isMyVote
+    ? accent
+    : onYellow ? 'rgba(27,26,23,0.12)' : 'rgb(var(--border))';
+  const nameclr   = onYellow ? '#1B1A17' : 'rgb(var(--text))';
+  const mutedClr  = onYellow ? 'rgba(27,26,23,0.50)' : 'rgb(var(--text-muted))';
+  const trackClr  = onYellow ? 'rgba(27,26,23,0.10)' : 'rgb(var(--border))';
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden flex flex-col transition-all duration-200"
+      style={{
+        background: cardBg,
+        border: `1.5px solid ${borderClr}`,
+        boxShadow: isMyVote
+          ? `0 0 0 3px ${accent}33, 0 4px 20px rgba(0,0,0,0.08)`
+          : '0 2px 12px rgba(0,0,0,0.06)',
+      }}
+    >
+      {/* Photo / avatar area */}
+      <div
+        className="relative flex items-center justify-center"
+        style={{ background: bg, height: 110 }}
+      >
+        {/* Accent top stripe */}
+        <div className="absolute top-0 left-0 right-0 h-1" style={{ background: accent }} />
+
+        {/* Big symbol placeholder */}
+        <span
+          className="select-none"
+          style={{ fontSize: 48, lineHeight: 1, color: accent, opacity: 0.75 }}
+        >
+          {symbol}
+        </span>
+
+        {/* "Your vote" badge */}
+        {isMyVote && (
+          <div
+            className="absolute top-4 right-4 text-xs font-bold px-2.5 py-1 rounded-full"
+            style={{ background: accent, color: '#fff' }}
+          >
+            ✓ Your vote
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-col flex-1 p-5 gap-4">
+        {/* Name + vote count */}
+        <div>
+          <h3
+            className="font-heading text-lg font-semibold leading-tight mb-1"
+            style={{ color: nameclr }}
+          >
+            {charity.name}
+          </h3>
+          <p className="text-xs font-medium" style={{ color: mutedClr }}>
+            {charity.votes} vote{charity.votes !== 1 ? 's' : ''} · {pct}%
+          </p>
+        </div>
+
+        {/* Vote bar */}
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: trackClr }}>
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${pct}%`, background: accent }}
+          />
+        </div>
+
+        {/* Vote button — pinned to bottom */}
+        <div className="mt-auto">
+          {canVote ? (
+            <button
+              onClick={() => onVote(index)}
+              disabled={submitting}
+              className="w-full py-2.5 rounded-xl text-sm font-bold transition-all duration-150"
+              style={submitting
+                ? { opacity: 0.5, cursor: 'wait', background: trackClr, color: mutedClr }
+                : { background: accent + '18', color: accent, border: `1.5px solid ${accent}` }
+              }
+              onMouseEnter={e => { if (!submitting) e.currentTarget.style.background = accent + '30'; }}
+              onMouseLeave={e => { if (!submitting) e.currentTarget.style.background = accent + '18'; }}
+            >
+              {submitting ? 'Signing…' : `Vote for ${charity.name.split(' ')[0]}`}
+            </button>
+          ) : isMyVote ? (
+            <div
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-center"
+              style={{ background: accent + '18', color: accent }}
+            >
+              ✓ Voted
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className="block w-full py-2.5 rounded-xl text-sm font-semibold text-center transition-opacity hover:opacity-75"
+              style={{ background: trackClr, color: mutedClr }}
+            >
+              Connect to vote
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Section ───────────────────────────────────────────────────────────────────
+
 const VotingSection = ({ compact = false, onYellow = false }) => {
   const { epochInfo, votingState, refetchVotingState, wallet, showToast } = useApp();
   const { isConnected } = useWallet();
@@ -55,153 +177,84 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
 
   if (!epochInfo.epoch) return null;
 
+  const textClr   = onYellow ? '#1B1A17'              : 'rgb(var(--text))';
+  const mutedClr  = onYellow ? 'rgba(27,26,23,0.55)'  : 'rgb(var(--text-muted))';
+
   if (loading) {
     return (
       <div className="flex justify-center py-16">
-        <span className={`inline-block w-8 h-8 border-2 rounded-full animate-spin ${
-          onYellow ? 'border-[rgba(27,26,23,0.2)] border-t-[#1B1A17]' : 'border-primary/30 border-t-primary'
-        }`} />
+        <span
+          className="inline-block w-8 h-8 border-2 rounded-full animate-spin"
+          style={onYellow
+            ? { borderColor: 'rgba(27,26,23,0.15)', borderTopColor: '#1B1A17' }
+            : { borderColor: 'rgb(var(--primary)/30)', borderTopColor: 'rgb(var(--primary))' }
+          }
+        />
       </div>
     );
   }
 
   if (charities.length === 0) {
     return (
-      <div className="text-center py-16" style={{ color: onYellow ? 'rgba(27,26,23,0.55)' : undefined }}>
-        <div className={`text-4xl mb-3 ${!onYellow ? 'text-textMuted' : ''}`}>🗳</div>
+      <div className="text-center py-16" style={{ color: mutedClr }}>
+        <div className="text-4xl mb-3">🗳</div>
         <p className="text-sm">No charities set for epoch {epochInfo.epoch} yet.</p>
       </div>
     );
   }
 
   return (
-    <div className={compact ? 'space-y-3' : 'space-y-4'}>
+    <div>
       {/* Stats row */}
-      <div className={`flex flex-wrap gap-6 ${compact ? 'mb-3' : 'mb-6'}`}>
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-2 mb-8">
         <div>
-          <div className={`text-xs uppercase tracking-wider mb-0.5 ${onYellow ? '' : 'text-textMuted'}`}
-            style={onYellow ? { color: 'rgba(27,26,23,0.55)' } : undefined}>
+          <div className="text-xs uppercase tracking-wider font-medium mb-0.5" style={{ color: mutedClr }}>
             Total votes
           </div>
-          <div className={`font-bold ${compact ? 'text-lg' : 'text-2xl'} ${onYellow ? '' : 'text-textPrimary'}`}
-            style={onYellow ? { color: '#1B1A17' } : undefined}>
-            {totalVotes}
-          </div>
+          <div className="text-2xl font-bold" style={{ color: textClr }}>{totalVotes}</div>
         </div>
         <div>
-          <div className={`text-xs uppercase tracking-wider mb-0.5 ${onYellow ? '' : 'text-textMuted'}`}
-            style={onYellow ? { color: 'rgba(27,26,23,0.55)' } : undefined}>
+          <div className="text-xs uppercase tracking-wider font-medium mb-0.5" style={{ color: mutedClr }}>
             Charities
           </div>
-          <div className={`font-bold ${compact ? 'text-lg' : 'text-2xl'} ${onYellow ? '' : 'text-textPrimary'}`}
-            style={onYellow ? { color: '#1B1A17' } : undefined}>
-            {charities.length}
-          </div>
+          <div className="text-2xl font-bold" style={{ color: textClr }}>{charities.length}</div>
         </div>
         {hasVoted && (
-          <div className="flex items-center">
-            <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full ${
-              onYellow ? '' : 'text-primaryDark bg-primary/20'
-            }`}
-              style={onYellow ? { background: 'rgba(27,26,23,0.15)', color: '#1B1A17' } : undefined}>
-              ✓ You voted this epoch
-            </span>
+          <div
+            className="ml-auto flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold"
+            style={onYellow
+              ? { background: 'rgba(27,26,23,0.12)', color: '#1B1A17' }
+              : { background: 'rgb(var(--primary-light))', color: 'rgb(var(--primary-dark))' }
+            }
+          >
+            ✓ You voted this epoch
           </div>
         )}
       </div>
 
-      {/* Charity cards grid */}
-      <div className={`grid gap-4 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-3'}`}>
-        {charities.map((charity, i) => {
-          const accent = PALETTE[i % PALETTE.length];
-          const pct = totalVotes > 0 ? Math.round((charity.votes / totalVotes) * 100) : 0;
-          const isMyVote = hasVoted && userVoteIndex === i;
-
-          return (
-            <div
-              key={i}
-              className={`relative rounded-xl overflow-hidden transition-all duration-200 ${
-                onYellow
-                  ? 'shadow-sm hover:shadow-md'
-                  : isMyVote
-                  ? 'shadow-[0_0_16px_rgba(229,181,71,0.35)]'
-                  : 'bg-background border border-border hover:border-borderStrong'
-              }`}
-              style={{
-                background: onYellow ? '#FFFFFF' : isMyVote ? 'rgba(229,181,71,0.06)' : undefined,
-                border: onYellow
-                  ? isMyVote ? `2px solid ${accent}` : '1.5px solid rgba(27,26,23,0.12)'
-                  : isMyVote ? '2px solid rgb(var(--primary))'
-                  : undefined,
-              }}
-            >
-              {/* Accent bar */}
-              <div className="h-1.5" style={{ background: accent }} />
-
-              <div className={compact ? 'p-4' : 'p-5'}>
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div>
-                    <div className={`font-semibold ${compact ? 'text-sm' : 'text-base'} ${onYellow ? '' : 'text-textPrimary'}`}
-                      style={onYellow ? { color: '#1B1A17' } : undefined}>
-                      {charity.name}
-                    </div>
-                    <div className={`text-xs mt-0.5 ${onYellow ? '' : 'text-textMuted'}`}
-                      style={onYellow ? { color: 'rgba(27,26,23,0.55)' } : undefined}>
-                      {charity.votes} vote{charity.votes !== 1 ? 's' : ''} · {pct}%
-                    </div>
-                  </div>
-                  {isMyVote && (
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                      onYellow ? '' : 'text-primaryDark bg-primary/20'
-                    }`}
-                      style={onYellow ? { background: accent + '22', color: accent } : undefined}>
-                      Your vote ✓
-                    </span>
-                  )}
-                </div>
-
-                {/* Vote bar */}
-                <div className="h-2 rounded-full overflow-hidden mb-4"
-                  style={{ background: onYellow ? 'rgba(27,26,23,0.1)' : 'rgb(var(--border))' }}>
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${pct}%`, background: accent }}
-                  />
-                </div>
-
-                {/* Vote / Connect button */}
-                {canVote ? (
-                  <button
-                    onClick={() => handleVote(i)}
-                    disabled={submitting}
-                    className="w-full py-2 rounded-lg text-sm font-bold transition-all duration-150 border-2"
-                    style={submitting
-                      ? { opacity: 0.5, cursor: 'wait', borderColor: 'rgba(27,26,23,0.2)', color: 'rgba(27,26,23,0.35)' }
-                      : { borderColor: accent, color: '#1B1A17', background: 'transparent' }
-                    }
-                    onMouseEnter={e => { if (!submitting) e.currentTarget.style.background = accent + '22'; }}
-                    onMouseLeave={e => { if (!submitting) e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {submitting ? 'Signing…' : `Vote for ${charity.name.split(' ')[0]}`}
-                  </button>
-                ) : hasVoted ? null : (
-                  <Link
-                    to="/login"
-                    className="block w-full py-2 rounded-lg text-sm font-semibold text-center border-2 transition-colors hover:opacity-80"
-                    style={{ borderColor: 'rgba(27,26,23,0.2)', color: onYellow ? '#1B1A17' : undefined }}
-                  >
-                    Connect to vote
-                  </Link>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      {/* Cards grid — 1 col on mobile, up to 3 on large */}
+      <div className={`grid gap-5 ${
+        charities.length === 1 ? 'max-w-sm' :
+        charities.length === 2 ? 'sm:grid-cols-2 max-w-2xl' :
+        'sm:grid-cols-2 lg:grid-cols-3'
+      }`}>
+        {charities.map((charity, i) => (
+          <CharityCard
+            key={i}
+            charity={charity}
+            index={i}
+            totalVotes={totalVotes}
+            onVote={handleVote}
+            canVote={canVote}
+            isMyVote={hasVoted && userVoteIndex === i}
+            submitting={submitting}
+            onYellow={onYellow}
+          />
+        ))}
       </div>
 
       {!isConnected && (
-        <p className={`text-xs text-center pt-2 ${onYellow ? '' : 'text-textMuted'}`}
-          style={onYellow ? { color: 'rgba(27,26,23,0.5)' } : undefined}>
+        <p className="text-xs text-center mt-6" style={{ color: mutedClr }}>
           Connect your MultiversX wallet to cast your vote on-chain.
         </p>
       )}
