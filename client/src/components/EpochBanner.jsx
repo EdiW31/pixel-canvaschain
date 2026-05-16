@@ -13,10 +13,6 @@ function formatCountdown(msLeft) {
   return `${m}m ${sec}s`;
 }
 
-/**
- * EpochBanner — shows "🔴 Epoch N is live · Xd Xh Xm" anywhere in the UI.
- * Hidden when no epoch is active (epoch === 0).
- */
 const EpochBanner = ({ className = '' }) => {
   const { epochInfo } = useApp();
   const [msLeft, setMsLeft] = useState(0);
@@ -32,13 +28,30 @@ const EpochBanner = ({ className = '' }) => {
   if (!epochInfo.epoch) return null;
 
   return (
-    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-error/10 border border-error/25 text-xs font-medium ${className}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-error animate-subtle-pulse flex-shrink-0" />
-      <span className="text-error font-semibold">Epoch {epochInfo.epoch} is live</span>
+    <div
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full
+        bg-primaryLight border border-primary/50
+        shadow-[0_0_12px_rgba(229,181,71,0.25)]
+        text-xs font-medium select-none ${className}`}
+    >
+      {/* Pulsing gold dot */}
+      <span className="relative flex h-2 w-2 flex-shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-primaryDark" />
+      </span>
+
+      {/* Epoch label */}
+      <span className="font-semibold text-primaryDark tracking-wide">
+        Epoch {epochInfo.epoch}
+      </span>
+
+      {/* Separator + countdown */}
       {epochInfo.endsAt > 0 && (
         <>
-          <span className="text-border">·</span>
-          <span className="text-textSecondary tabular-nums">{formatCountdown(msLeft)}</span>
+          <span className="text-primary/40 font-light">|</span>
+          <span className="tabular-nums text-primaryDark/80 font-mono text-[11px]">
+            {formatCountdown(msLeft)}
+          </span>
         </>
       )}
     </div>
