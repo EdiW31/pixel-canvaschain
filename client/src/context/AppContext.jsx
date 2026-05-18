@@ -42,6 +42,14 @@ export async function queryContractRaw(funcName, args = []) {
 function b64ToHex(b64) {
   return atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
 }
+
+function decodeBigUintBase64(base64) {
+  if (!base64) return BigInt(0);
+  const s = atob(base64);
+  let n = BigInt(0);
+  for (let i = 0; i < s.length; i++) n = (n << BigInt(8)) | BigInt(s.charCodeAt(i));
+  return n;
+}
 function b64ToUtf8(b64) {
   return decodeURIComponent(escape(atob(b64)));
 }
@@ -248,6 +256,20 @@ export const AppProvider = ({ children }) => {
   const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // ── Total donated (polled every 60s) ──────────────────────────────────────
+  const [totalDonatedEgld, setTotalDonatedEgld] = useState(null);
+
+  useEffect(() => {
+    const fetchDonated = async () => {
+      const returnData = await queryContractRaw('getTotalDonated', []);
+      const wei = decodeBigUintBase64(returnData[0] ?? '');
+      setTotalDonatedEgld(Number(wei) / 1e18);
+    };
+    fetchDonated();
+    const id = setInterval(fetchDonated, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // ── Color helpers ─────────────────────────────────────────────────────────
   const changeColor = (color) => {
     setSelectedColor(color);
@@ -348,6 +370,9 @@ export const AppProvider = ({ children }) => {
     dismissToast,
     isLoading,
     setIsLoading,
+
+    // On-chain aggregates
+    totalDonatedEgld,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

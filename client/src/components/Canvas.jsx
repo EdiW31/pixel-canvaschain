@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCanvas } from '../hooks/useCanvas';
+import { useSocket } from '../hooks/useSocket';
 
 /**
  * Canvas - Main 100x100 pixel canvas component
@@ -15,7 +16,8 @@ import { useCanvas } from '../hooks/useCanvas';
  */
 
 const Canvas = () => {
-  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect } = useApp();
+  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect, wallet } = useApp();
+  const { socket } = useSocket();
   const {
     zoom,
     offset,
@@ -35,7 +37,74 @@ const Canvas = () => {
 
   const displayCanvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
+  const flashCanvasRef = useRef(null);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // Flash effect state (refs to avoid re-renders)
+  const flashMapRef = useRef(new Map()); // "x_y" -> timestamp
+  const rafRef = useRef(null);
+  const offsetRef = useRef(offset);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { offsetRef.current = offset; }, [offset]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  const startFlashLoop = useCallback(() => {
+    if (rafRef.current) return;
+    const loop = () => {
+      const canvas = flashCanvasRef.current;
+      const displayCanvas = displayCanvasRef.current;
+      if (!canvas || !displayCanvas) { rafRef.current = null; return; }
+      const ctx = canvas.getContext('2d');
+      canvas.width = displayCanvas.width;
+      canvas.height = displayCanvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const now = Date.now();
+      const DURATION = 800;
+      let anyActive = false;
+      flashMapRef.current.forEach((ts, key) => {
+        const age = now - ts;
+        if (age >= DURATION) { flashMapRef.current.delete(key); return; }
+        anyActive = true;
+        const [px, py] = key.split('_').map(Number);
+        const alpha = 0.6 * (1 - age / DURATION);
+        const { x: ox, y: oy } = offsetRef.current;
+        const z = zoomRef.current;
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.scale(z, z);
+        ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+        ctx.fillRect(px, py, 1, 1);
+        ctx.restore();
+      });
+      rafRef.current = anyActive ? requestAnimationFrame(loop) : null;
+    };
+    rafRef.current = requestAnimationFrame(loop);
+  }, []);
+
+  // Cleanup rAF on unmount
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+
+  // Listen for remote pixel updates to trigger flash
+  useEffect(() => {
+    if (!socket) return;
+    const handlePixelUpdate = ({ x, y, address }) => {
+      if (address && address === wallet?.address) return;
+      flashMapRef.current.set(`${x}_${y}`, Date.now());
+      startFlashLoop();
+    };
+    const handlePixelsUpdate = ({ pixels }) => {
+      const toFlash = pixels.slice(0, 8);
+      const now = Date.now();
+      toFlash.forEach(({ x, y }) => flashMapRef.current.set(`${x}_${y}`, now));
+      if (toFlash.length) startFlashLoop();
+    };
+    socket.on('pixel:update', handlePixelUpdate);
+    socket.on('pixels:update', handlePixelsUpdate);
+    return () => {
+      socket.off('pixel:update', handlePixelUpdate);
+      socket.off('pixels:update', handlePixelsUpdate);
+    };
+  }, [socket, wallet?.address, startFlashLoop]);
 
   // Preloaded reference image — stored in state so canvas re-renders when it loads.
   const [refImageObj, setRefImageObj] = useState(null);
@@ -209,6 +278,13 @@ const Canvas = () => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         className="w-full h-full cursor-crosshair"
+        style={{ imageRendering: 'pixelated' }}
+      />
+
+      {/* Flash overlay canvas (remote pixel highlights) */}
+      <canvas
+        ref={flashCanvasRef}
+        className="absolute inset-0 pointer-events-none"
         style={{ imageRendering: 'pixelated' }}
       />
 

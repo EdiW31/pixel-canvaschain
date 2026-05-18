@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import WalletInfo from './WalletInfo';
 import ThemeToggle from './ThemeToggle';
@@ -20,6 +20,18 @@ const Header = () => {
   const { wallet, epochInfo, votingState } = useApp();
   const isAdmin = wallet.address === ADMIN_ADDRESS;
   const [showVoteModal, setShowVoteModal] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(null);
+
+  useEffect(() => {
+    const poll = () =>
+      window.fetch('http://localhost:5001/health')
+        .then(r => r.json())
+        .then(data => setOnlineCount(data.users))
+        .catch(() => {});
+    poll();
+    const id = setInterval(poll, 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   const showVoteButton =
     wallet.isConnected &&
@@ -55,6 +67,9 @@ const Header = () => {
               }`}
             />
             <span>{isConnected ? 'Live' : 'Offline'}</span>
+            {onlineCount !== null && (
+              <span className="pill ml-1">👥 {onlineCount} online</span>
+            )}
           </div>
 
           {showVoteButton && (

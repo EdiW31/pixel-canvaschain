@@ -6,6 +6,60 @@ import cors from 'cors';
 import pixelGrid from './pixelGrid.js';
 import userManager from './userManager.js';
 
+const API_URL = process.env.DEVNET_API_URL || 'https://devnet-api.multiversx.com';
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+
+function decodeBase64BigUint(base64) {
+  if (!base64) return BigInt(0);
+  const buf = Buffer.from(base64, 'base64');
+  let n = BigInt(0);
+  for (const byte of buf) n = (n << BigInt(8)) | BigInt(byte);
+  return n;
+}
+
+let _contractCache = null;
+let _contractCacheAt = 0;
+
+async function getContractStats() {
+  const now = Date.now();
+  if (_contractCache && now - _contractCacheAt < 15_000) return _contractCache;
+
+  let currentEpoch = 0;
+  let totalDonated = '0';
+
+  if (CONTRACT_ADDRESS) {
+    const query = async (funcName) => {
+      const r = await fetch(`${API_URL}/vm-values/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scAddress: CONTRACT_ADDRESS, funcName, args: [] }),
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j?.data?.data?.returnData?.[0] ?? j?.data?.returnData?.[0] ?? j?.returnData?.[0] ?? null;
+    };
+
+    try { currentEpoch = Number(decodeBase64BigUint(await query('getCurrentEpoch'))); } catch (_) {}
+    try { totalDonated = decodeBase64BigUint(await query('getTotalDonated')).toString(); } catch (_) {}
+  }
+
+  _contractCache = { currentEpoch, totalDonated };
+  _contractCacheAt = now;
+  return _contractCache;
+}
+
+async function collectStats() {
+  const { paintedPixels, totalPixels } = pixelGrid.getStats();
+  const contract = await getContractStats();
+  return {
+    onlineUsers: userManager.getUserCount(),
+    totalPixels: paintedPixels,
+    canvasSize: totalPixels,
+    ...contract,
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -174,14 +228,9 @@ io.on('connection', (socket) => {
   /**
    * stats:request
    */
-  socket.on('stats:request', () => {
+  socket.on('stats:request', async () => {
     try {
-      const address = socket.walletAddress;
-      socket.emit('stats:data', {
-        grid: pixelGrid.getStats(),
-        user: address ? userManager.getUserStats(address) : null,
-        totalUsers: userManager.getUserCount(),
-      });
+      socket.emit('stats:data', await collectStats());
     } catch (error) {
       console.error('❌ Stats request error:', error);
     }
@@ -190,6 +239,14 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`🔌 Client disconnected: ${socket.id}`);
   });
+});
+
+app.get('/stats', async (req, res) => {
+  try {
+    res.json(await collectStats());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to collect stats' });
+  }
 });
 
 app.get('/health', (req, res) => {
@@ -202,6 +259,14 @@ app.get('/health', (req, res) => {
 });
 
 httpServer.listen(PORT, () => {
+  setInterval(async () => {
+    try {
+      io.emit('stats:data', await collectStats());
+    } catch (err) {
+      console.error('❌ Periodic stats broadcast error:', err);
+    }
+  }, 10_000);
+
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import Header from '../components/Header';
@@ -24,7 +24,7 @@ import { useApp } from '../context/AppContext';
 
 const CanvasPage = () => {
   const { isConnected } = useWallet();
-  const { toast, dismissToast } = useApp();
+  const { toast, dismissToast, epochInfo, showToast, refetchEpochInfo, refetchVotingState } = useApp();
   const navigate = useNavigate();
 
   // Lock page scroll while on the canvas route; restore on leave.
@@ -39,6 +39,24 @@ const CanvasPage = () => {
       navigate('/login');
     }
   }, [isConnected, navigate]);
+
+  // Fire a one-shot toast when the current epoch ends
+  const lastFiredEpochRef = useRef(null);
+  useEffect(() => {
+    if (!epochInfo?.endsAt || epochInfo.endsAt <= 0) return;
+    const id = setInterval(() => {
+      if (
+        Date.now() >= epochInfo.endsAt &&
+        lastFiredEpochRef.current !== epochInfo.epoch
+      ) {
+        lastFiredEpochRef.current = epochInfo.epoch;
+        showToast(`Epoch ${epochInfo.epoch} ended! Refreshing for the new round…`, 'success');
+        refetchEpochInfo();
+        refetchVotingState();
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [epochInfo?.endsAt, epochInfo?.epoch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
