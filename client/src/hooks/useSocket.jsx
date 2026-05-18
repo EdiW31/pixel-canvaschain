@@ -15,6 +15,7 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [liveStats, setLiveStats] = useState(null);
 
   const { updatePixel, showToast, setGridState, addPendingPixels, clearPendingPixels } = useApp();
   const isLoggedIn = useGetIsLoggedIn();
@@ -71,6 +72,10 @@ export const SocketProvider = ({ children }) => {
     socketInstance.on('error', ({ message }) => {
       console.error('Socket error:', message);
       showToast(message, 'error');
+    });
+
+    socketInstance.on('stats:data', (data) => {
+      setLiveStats(data);
     });
 
     setSocket(socketInstance);
@@ -140,6 +145,7 @@ export const SocketProvider = ({ children }) => {
     notifyPixelsSubmitted,
     requestCanvas,
     requestStats,
+    liveStats,
   };
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;

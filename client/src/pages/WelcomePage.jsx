@@ -4,6 +4,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaintChip, PaletteStrip } from '../components/PaintDecorations';
 import { useApp } from '../context/AppContext';
+import { useSocket } from '../hooks/useSocket';
 import VotingSection from '../components/VotingSection';
 import PixelMan from '../components/PixelMan';
 
@@ -53,7 +54,8 @@ const scrollTo = (id) =>
 
 /* ─── WelcomePage ────────────────────────────────────────────────────────── */
 const WelcomePage = () => {
-  const { epochInfo, votingState } = useApp();
+  const { epochInfo, votingState, totalDonatedEgld } = useApp();
+  const { liveStats } = useSocket();
   const navRef = useRef(null);
   const [activeSection, setActiveSection] = useState('hero');
   const [isDark, setIsDark] = useState(false);
@@ -280,7 +282,7 @@ const WelcomePage = () => {
             </div>
 
             <div className="hidden lg:block">
-              <HeroCanvasPreview />
+              <HeroCanvasPreview onlineUsers={liveStats?.onlineUsers} />
             </div>
           </div>
         </div>
@@ -509,6 +511,17 @@ const WelcomePage = () => {
             <EpochStat icon="📅" label="Epoch length"   value="7 days"        sub="Fixed, on-chain enforced"            color="#4299E1" />
             <EpochStat icon="🎗️" label="Charities"      value="5 candidates"  sub="Community allocates credits to vote"  color="#48BB78" />
             <EpochStat icon="🖼️" label="NFT reward"     value="1 unique mint"  sub="Awarded to the top pixel painter"    color="#9F7AEA" />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4 mt-4">
+            <EpochStat icon="💰" label="Total donated"
+              value={totalDonatedEgld != null ? `${totalDonatedEgld.toFixed(4)} EGLD` : '—'}
+              sub="Accumulated across all epochs"
+              color="#ED8936" />
+            <EpochStat icon="🎨" label="Pixels painted"
+              value={liveStats?.totalPixels?.toLocaleString() ?? '—'}
+              sub="Live canvas activity"
+              color="#ED64A6" />
           </div>
         </div>
 
@@ -925,13 +938,13 @@ const AnimatedSection = ({ children, className = '', style, id, scrollTarget }) 
 };
 
 /* ─── HeroCanvasPreview ──────────────────────────────────────────────────── */
-const HeroCanvasPreview = () => (
+const HeroCanvasPreview = ({ onlineUsers }) => (
   <div className="w-full">
     <div className="flex items-center gap-2 mb-2">
       <div className="w-2 h-2 rounded-full bg-success flex-shrink-0"
            style={{ animation: 'subtle-pulse 2s ease-in-out infinite' }} />
       <span className="text-xs text-textMuted uppercase tracking-wider font-medium">Live canvas preview</span>
-      <span className="ml-auto text-xs font-mono text-textMuted">247 online</span>
+      <span className="ml-auto text-xs font-mono text-textMuted">{onlineUsers ?? '—'} online</span>
     </div>
     <div style={{
       display: 'grid', gridTemplateColumns: 'repeat(24, 1fr)',
