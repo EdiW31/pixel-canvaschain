@@ -328,6 +328,53 @@ app.post('/canvas/upload', async (req, res) => {
   }
 });
 
+/**
+ * POST /canvas/upload-section
+ * Renders only the requested {x, y, w, h} canvas section at the requested scale
+ * and uploads it to catbox.moe. Returns { url: "https://files.catbox.moe/xxxxxx.png" }.
+ *
+ * Used by the admin client to mint the Auction Winner NFT with an image of ONLY
+ * their 20×20 zone (default scale 32 → 640×640 px), instead of the full canvas.
+ */
+app.post('/canvas/upload-section', express.json(), async (req, res) => {
+  try {
+    const x     = Number(req.body?.x ?? 0);
+    const y     = Number(req.body?.y ?? 0);
+    const w     = Number(req.body?.w ?? 20);
+    const h     = Number(req.body?.h ?? 20);
+    const scale = Number(req.body?.scale ?? 32);
+    if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > 100 || y + h > 100) {
+      return res.status(400).json({ error: 'Invalid bounds' });
+    }
+    console.log(`📤 Uploading section (${x},${y}) ${w}×${h} @${scale}× to catbox.moe…`);
+    const buf = await renderCanvasPng(pixelGrid.getGrid(), { x, y, w, h, scale });
+
+    const formData = new FormData();
+    formData.append('reqtype', 'fileupload');
+    formData.append(
+      'fileToUpload',
+      new Blob([buf], { type: 'image/png' }),
+      `zone-${x}-${y}-${Date.now()}.png`,
+    );
+
+    const upload = await fetch('https://catbox.moe/user.php', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!upload.ok) throw new Error(`catbox.moe responded ${upload.status}`);
+    const url = (await upload.text()).trim();
+    if (!url.startsWith('https://')) {
+      throw new Error(`Unexpected response from catbox.moe: ${url}`);
+    }
+    console.log(`✅ Section uploaded: ${url}`);
+    res.json({ url });
+  } catch (err) {
+    console.error('Section upload error:', err);
+    res.status(500).json({ error: err.message ?? 'Upload failed' });
+  }
+});
+
 app.get('/canvas/section-png', async (req, res) => {
   try {
     const x = parseInt(req.query.x ?? '0', 10);

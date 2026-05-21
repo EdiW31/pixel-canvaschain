@@ -154,18 +154,27 @@
             "docs": [
                 "End the current epoch. Distributes accumulated PIXEL to the default charity",
                 "and accumulated EGLD to the vote-winning charity (or default if no votes).",
-                "Optionally accepts a canvas PNG URI for NFT metadata (passed as hex by admin UI)."
+                "Accepts two optional NFT URIs:",
+                "  `painter_uri`  — full-canvas PNG used for the top-painter NFT image.",
+                "  `auction_uri`  — cropped 20×20 zone PNG used for the auction-winner NFT image.",
+                "Both are passed as hex-encoded ManagedBuffers by the admin UI."
             ],
             "name": "endEpoch",
             "mutability": "mutable",
             "inputs": [
                 {
-                    "name": "nft_uri",
+                    "name": "painter_uri",
+                    "type": "optional<bytes>",
+                    "multi_arg": true
+                },
+                {
+                    "name": "auction_uri",
                     "type": "optional<bytes>",
                     "multi_arg": true
                 }
             ],
-            "outputs": []
+            "outputs": [],
+            "allow_multiple_var_args": true
         },
         {
             "docs": [

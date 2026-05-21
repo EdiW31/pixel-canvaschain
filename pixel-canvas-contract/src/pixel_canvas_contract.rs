@@ -184,9 +184,17 @@ pub trait PixelCanvasContract {
 
     /// End the current epoch. Distributes accumulated PIXEL to the default charity
     /// and accumulated EGLD to the vote-winning charity (or default if no votes).
-    /// Optionally accepts a canvas PNG URI for NFT metadata (passed as hex by admin UI).
+    /// Accepts two optional NFT URIs:
+    ///   `painter_uri`  — full-canvas PNG used for the top-painter NFT image.
+    ///   `auction_uri`  — cropped 20×20 zone PNG used for the auction-winner NFT image.
+    /// Both are passed as hex-encoded ManagedBuffers by the admin UI.
+    #[allow_multiple_var_args]
     #[endpoint(endEpoch)]
-    fn end_epoch(&self, nft_uri: OptionalValue<ManagedBuffer>) {
+    fn end_epoch(
+        &self,
+        painter_uri: OptionalValue<ManagedBuffer>,
+        auction_uri: OptionalValue<ManagedBuffer>,
+    ) {
         self.require_owner();
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch to end");
@@ -230,15 +238,22 @@ pub trait PixelCanvasContract {
             let hash = ManagedBuffer::new();
             let amount = BigUint::from(1u64);
 
-            // Build URI list
-            let mut uris: ManagedVec<ManagedBuffer> = ManagedVec::new();
-            if let OptionalValue::Some(uri) = nft_uri {
+            // Build separate URI lists — painter NFT gets the full canvas image,
+            // auction-winner NFT gets only their 20×20 zone image.
+            let mut painter_uris: ManagedVec<ManagedBuffer> = ManagedVec::new();
+            if let OptionalValue::Some(uri) = painter_uri {
                 if uri.len() > 0 {
-                    uris.push(uri);
+                    painter_uris.push(uri);
+                }
+            }
+            let mut auction_uris: ManagedVec<ManagedBuffer> = ManagedVec::new();
+            if let OptionalValue::Some(uri) = auction_uri {
+                if uri.len() > 0 {
+                    auction_uris.push(uri);
                 }
             }
 
-            // Mint NFT for top painter
+            // Mint NFT for top painter (full-canvas image)
             if !top_painter.is_zero() {
                 let name = sc_format!("Painter of Epoch {}", epoch);
                 let attributes = sc_format!(
@@ -253,12 +268,12 @@ pub trait PixelCanvasContract {
                     &royalties,
                     &hash,
                     &attributes,
-                    &uris,
+                    &painter_uris,
                 );
                 self.send().direct_esdt(&top_painter, &token_id, nft_nonce, &amount);
             }
 
-            // Mint NFT for auction zone winner
+            // Mint NFT for auction zone winner (cropped 20×20 zone image)
             let auction_winner = if self.zone_unlocked_for(epoch).is_empty() {
                 ManagedAddress::zero()
             } else {
@@ -281,7 +296,7 @@ pub trait PixelCanvasContract {
                     &royalties,
                     &hash,
                     &attributes,
-                    &uris,
+                    &auction_uris,
                 );
                 self.send().direct_esdt(&auction_winner, &token_id, nft_nonce, &amount);
             }

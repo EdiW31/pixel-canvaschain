@@ -271,22 +271,55 @@ const AdminPage = () => {
 
   const handleEndEpoch = async () => {
     setEndEpochState('pending');
-    setEndEpochStep('uploading');
+    setEndEpochStep('uploading-painter');
     setLastNftUrl('');
     try {
-      let nftUri = `${SERVER_URL}/canvas/png`;
-      try {
-        const uploadRes = await fetch(`${SERVER_URL}/canvas/upload`, { method: 'POST' });
-        if (uploadRes.ok) {
-          const { url } = await uploadRes.json();
-          if (url?.startsWith('https://')) { nftUri = url; setLastNftUrl(url); }
-        }
-      } catch (uploadErr) {
-        console.warn('[endEpoch] Canvas upload failed, falling back:', uploadErr?.message);
-        showToast('Image upload failed — NFT will use server URL', 'info');
+      // Auction zone coords — sx/sy come from getAuctionState (set in fetchStats).
+      // Fall back to (40,40) only if absolutely no zone info is available.
+      const sx = Number.isFinite(auctionInfo?.sx) ? auctionInfo.sx : 40;
+      const sy = Number.isFinite(auctionInfo?.sy) ? auctionInfo.sy : 40;
+
+      // Default fallback URIs (devnet-only — admin server must be reachable)
+      let painterUri = `${SERVER_URL}/canvas/png`;
+      let auctionUri = `${SERVER_URL}/canvas/section-png?x=${sx}&y=${sy}&w=20&h=20`;
+
+      // Upload both images in parallel to catbox.moe for permanent hosting
+      const [painterRes, auctionRes] = await Promise.allSettled([
+        fetch(`${SERVER_URL}/canvas/upload`, { method: 'POST' }),
+        fetch(`${SERVER_URL}/canvas/upload-section`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ x: sx, y: sy, w: 20, h: 20, scale: 32 }),
+        }),
+      ]);
+
+      if (painterRes.status === 'fulfilled' && painterRes.value.ok) {
+        const { url } = await painterRes.value.json();
+        if (url?.startsWith('https://')) painterUri = url;
+      } else {
+        console.warn('[endEpoch] Painter canvas upload failed — falling back to server URL');
+        showToast('Painter image upload failed — using server URL', 'info');
       }
+
+      setEndEpochStep('uploading-auction');
+
+      if (auctionRes.status === 'fulfilled' && auctionRes.value.ok) {
+        const { url } = await auctionRes.value.json();
+        if (url?.startsWith('https://')) auctionUri = url;
+      } else {
+        console.warn('[endEpoch] Auction zone upload failed — falling back to server URL');
+        showToast('Auction zone upload failed — using server URL', 'info');
+      }
+
+      setLastNftUrl({ painter: painterUri, auction: auctionUri });
+
       setEndEpochStep('signing');
-      await sendTxWithData(wallet, `endEpoch@${toHex(nftUri)}`, 10_000_000n);
+      // endEpoch@<painterUri hex>@<auctionUri hex>
+      await sendTxWithData(
+        wallet,
+        `endEpoch@${toHex(painterUri)}@${toHex(auctionUri)}`,
+        10_000_000n,
+      );
       showToast('Epoch ended — PIXEL & EGLD distributed, NFTs minted, canvas resetting…', 'success');
       setEndEpochState('done');
       setEndEpochStep('');
@@ -1017,26 +1050,49 @@ const EndEpochTab = ({
           {/* Step 2 — End Epoch */}
           <Card title="End Epoch & Distribute + Mint NFTs" description="Distributes PIXEL & EGLD to charities, mints 2 NFTs, resets canvas." accent="#E53E3E" badge={<StepBadge n={2} done={false} />}>
             {endEpochState === 'pending' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))', marginBottom: 14, fontSize: 12 }}>
-                <ProgStep active={endEpochStep === 'uploading'} done={endEpochStep === 'signing' || endEpochState === 'done'} label="Upload canvas" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))', marginBottom: 14, fontSize: 12, flexWrap: 'wrap' }}>
+                <ProgStep
+                  active={endEpochStep === 'uploading-painter'}
+                  done={['uploading-auction', 'signing'].includes(endEpochStep) || endEpochState === 'done'}
+                  label="Upload painter"
+                />
+                <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
+                <ProgStep
+                  active={endEpochStep === 'uploading-auction'}
+                  done={endEpochStep === 'signing' || endEpochState === 'done'}
+                  label="Upload zone"
+                />
                 <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
                 <ProgStep active={endEpochStep === 'signing'} done={endEpochState === 'done'} label="Sign tx" />
                 <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
                 <ProgStep active={false} done={endEpochState === 'done'} label="Done" />
               </div>
             )}
-            {lastNftUrl && endEpochState !== 'pending' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))', marginBottom: 14 }}>
-                <img src={lastNftUrl} alt="Canvas NFT" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', imageRendering: 'pixelated', flexShrink: 0 }} />
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))', marginBottom: 2 }}>Canvas uploaded to catbox.moe</p>
-                  <a href={lastNftUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontFamily: 'monospace', color: 'rgb(var(--primary-dark))', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{lastNftUrl}</a>
-                </div>
+            {lastNftUrl && endEpochState !== 'pending' && typeof lastNftUrl === 'object' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                {[
+                  { label: 'Painter NFT (full canvas)', url: lastNftUrl.painter },
+                  { label: 'Auction NFT (20×20 zone)', url: lastNftUrl.auction },
+                ].map(item => (
+                  <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))' }}>
+                    <img src={item.url} alt={item.label} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', imageRendering: 'pixelated', flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))', marginBottom: 2 }}>{item.label}</p>
+                      <a href={item.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontFamily: 'monospace', color: 'rgb(var(--primary-dark))', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{item.url}</a>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <PrimaryBtn disabled={endEpochState !== 'idle' || !hasActiveEpoch} pending={endEpochState === 'pending'} onClick={handleEndEpoch}>
-                {endEpochState === 'pending' ? <Spinner label={endEpochStep === 'uploading' ? 'Uploading canvas…' : 'Signing…'} /> : endEpochState === 'done' ? '✓ Epoch ended' : `End Epoch ${stats?.epoch ?? '—'}`}
+                {endEpochState === 'pending' ? (
+                  <Spinner label={
+                    endEpochStep === 'uploading-painter' ? 'Uploading canvas…' :
+                    endEpochStep === 'uploading-auction' ? 'Uploading zone…' :
+                    'Signing…'
+                  } />
+                ) : endEpochState === 'done' ? '✓ Epoch ended' : `End Epoch ${stats?.epoch ?? '—'}`}
               </PrimaryBtn>
               <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))' }}>Canvas resets ~30 s after confirmation.</p>
             </div>
