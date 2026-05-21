@@ -8,6 +8,8 @@ import LoginPage from './pages/LoginPage';
 import ShopPage from './pages/ShopPage';
 import CanvasPage from './pages/CanvasPage';
 import AdminPage from './pages/AdminPage';
+import NftPage from './pages/NftPage';
+import AuctionPage from './pages/AuctionPage';
 
 /**
  * App - Main application component
@@ -47,6 +49,12 @@ function App() {
 
             {/* Contract Admin */}
             <Route path="/admin" element={<AdminPage />} />
+
+            {/* NFT Gallery */}
+            <Route path="/nft" element={<NftPage />} />
+
+            {/* Epoch Auction */}
+            <Route path="/auction" element={<AuctionPage />} />
 
             {/* 404 - Redirect to home */}
             <Route path="*" element={<WelcomePage />} />

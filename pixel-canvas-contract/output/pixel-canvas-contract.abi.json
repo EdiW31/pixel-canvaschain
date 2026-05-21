@@ -13,7 +13,7 @@
         },
         "framework": {
             "name": "multiversx-sc",
-            "version": "0.57.1"
+            "version": "0.58.0"
         }
     },
     "name": "PixelCanvasContract",
@@ -64,6 +64,17 @@
             "outputs": []
         },
         {
+            "name": "setAuctionDuration",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "seconds",
+                    "type": "u64"
+                }
+            ],
+            "outputs": []
+        },
+        {
             "docs": [
                 "Set the candidate charities for the upcoming (or current) epoch.",
                 "`names` and `addrs` must have the same length (max 5)."
@@ -82,6 +93,17 @@
                 {
                     "name": "addrs",
                     "type": "List<Address>"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setNftCollection",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "token_id",
+                    "type": "TokenIdentifier"
                 }
             ],
             "outputs": []
@@ -112,10 +134,66 @@
         },
         {
             "docs": [
+                "Start a new epoch AND open a 24h auction for the given 20×20 zone."
+            ],
+            "name": "startEpochWithAuction",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "section_x",
+                    "type": "u32"
+                },
+                {
+                    "name": "section_y",
+                    "type": "u32"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "docs": [
                 "End the current epoch. Distributes accumulated PIXEL to the default charity",
-                "and accumulated EGLD to the vote-winning charity (or default if no votes)."
+                "and accumulated EGLD to the vote-winning charity (or default if no votes).",
+                "Optionally accepts a canvas PNG URI for NFT metadata (passed as hex by admin UI)."
             ],
             "name": "endEpoch",
+            "mutability": "mutable",
+            "inputs": [
+                {
+                    "name": "nft_uri",
+                    "type": "optional<bytes>",
+                    "multi_arg": true
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "docs": [
+                "Place a bid in the current epoch's auction."
+            ],
+            "name": "placeBid",
+            "mutability": "mutable",
+            "payableInTokens": [
+                "EGLD"
+            ],
+            "inputs": [],
+            "outputs": []
+        },
+        {
+            "docs": [
+                "Withdraw a non-winning bid (or any bid once auction is closed)."
+            ],
+            "name": "withdrawBid",
+            "mutability": "mutable",
+            "inputs": [],
+            "outputs": []
+        },
+        {
+            "docs": [
+                "Close the current epoch's auction (owner only). Sets the winner and",
+                "commits the winning bid to the charity accumulator."
+            ],
+            "name": "closeAuction",
             "mutability": "mutable",
             "inputs": [],
             "outputs": []
@@ -250,6 +328,16 @@
             ]
         },
         {
+            "name": "getAuctionDurationSeconds",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "u64"
+                }
+            ]
+        },
+        {
             "docs": [
                 "Returns the top painter's address and pixel count for the current epoch."
             ],
@@ -354,6 +442,96 @@
                     "type": "BigUint"
                 }
             ]
+        },
+        {
+            "docs": [
+                "Returns full auction state for the given epoch."
+            ],
+            "name": "getAuctionState",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "bool"
+                },
+                {
+                    "type": "u32"
+                },
+                {
+                    "type": "u32"
+                },
+                {
+                    "type": "u64"
+                },
+                {
+                    "type": "Address"
+                },
+                {
+                    "type": "BigUint"
+                },
+                {
+                    "type": "Address"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns a specific address's total bid for the given epoch."
+            ],
+            "name": "getMyBid",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                },
+                {
+                    "name": "addr",
+                    "type": "Address"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "BigUint"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns the NFT collection token identifier."
+            ],
+            "name": "getNftCollectionId",
+            "mutability": "readonly",
+            "inputs": [],
+            "outputs": [
+                {
+                    "type": "optional<TokenIdentifier>",
+                    "multi_result": true
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns whether the auction is currently active for the given epoch."
+            ],
+            "name": "isAuctionActive",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "bool"
+                }
+            ]
         }
     ],
     "events": [
@@ -443,6 +621,76 @@
                 {
                     "name": "charity_index",
                     "type": "u32",
+                    "indexed": true
+                }
+            ]
+        },
+        {
+            "identifier": "auctionStarted",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64",
+                    "indexed": true
+                },
+                {
+                    "name": "section_x",
+                    "type": "u32",
+                    "indexed": true
+                },
+                {
+                    "name": "section_y",
+                    "type": "u32",
+                    "indexed": true
+                },
+                {
+                    "name": "end_ts",
+                    "type": "u64",
+                    "indexed": true
+                }
+            ]
+        },
+        {
+            "identifier": "bidPlaced",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64",
+                    "indexed": true
+                },
+                {
+                    "name": "bidder",
+                    "type": "Address",
+                    "indexed": true
+                },
+                {
+                    "name": "amount",
+                    "type": "BigUint",
+                    "indexed": true
+                },
+                {
+                    "name": "total",
+                    "type": "BigUint",
+                    "indexed": true
+                }
+            ]
+        },
+        {
+            "identifier": "auctionClosed",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64",
+                    "indexed": true
+                },
+                {
+                    "name": "winner",
+                    "type": "Address",
+                    "indexed": true
+                },
+                {
+                    "name": "winning_bid",
+                    "type": "BigUint",
                     "indexed": true
                 }
             ]

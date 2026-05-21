@@ -16,7 +16,7 @@ import { useSocket } from '../hooks/useSocket';
  */
 
 const Canvas = () => {
-  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect, wallet } = useApp();
+  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect, wallet, auctionState } = useApp();
   const { socket } = useSocket();
   const {
     zoom,
@@ -32,12 +32,15 @@ const Canvas = () => {
     handleMouseLeave,
     centerCanvas,
     getVisibleArea,
+    auctionBlockReason,
     CANVAS_SIZE,
   } = useCanvas();
 
   const displayCanvasRef = useRef(null);
   const previewCanvasRef = useRef(null);
   const flashCanvasRef = useRef(null);
+  const auctionCanvasRef = useRef(null);
+  const auctionFrameRef = useRef(0);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Flash effect state (refs to avoid re-renders)
@@ -172,9 +175,15 @@ const Canvas = () => {
     // Restore context before drawing grid (draw grid in screen space)
     ctx.restore();
 
-    // Draw grid lines at high zoom (in screen space for crisp 1px lines)
+    // Draw grid lines at high zoom (in screen space for crisp 1px lines).
+    // Soft gray that fades in between zoom 5 → 25 so the grid is never
+    // visually loud, just barely readable when you're working close.
     if (shouldShowGrid) {
-      ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const baseAlpha = Math.min(0.16, Math.max(0.05, (zoom - 5) / 24));
+      ctx.strokeStyle = isDark
+        ? `rgba(255, 255, 255, ${baseAlpha})`
+        : `rgba(40, 40, 40, ${baseAlpha})`;
       ctx.lineWidth = 1;
 
       // Calculate screen coordinates for grid lines
@@ -235,21 +244,142 @@ const Canvas = () => {
       const previewHeight = Math.min(brushSize, CANVAS_SIZE - previewY);
 
       if (previewWidth > 0 && previewHeight > 0) {
-        // Draw semi-transparent fill with selected color
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = selectedColor;
+        // Check if any pixel under the brush hits a blocked auction zone
+        let blocked = false;
+        for (let dy = 0; dy < previewHeight && !blocked; dy++) {
+          for (let dx = 0; dx < previewWidth && !blocked; dx++) {
+            if (auctionBlockReason(previewX + dx, previewY + dy)) blocked = true;
+          }
+        }
+
+        // Fill: selected color preview, dimmed red when blocked
+        ctx.globalAlpha = blocked ? 0.35 : 0.55;
+        ctx.fillStyle = blocked ? '#E53E3E' : selectedColor;
         ctx.fillRect(previewX, previewY, previewWidth, previewHeight);
         ctx.globalAlpha = 1;
 
-        // Draw outline
-        ctx.strokeStyle = '#00FFFF';
-        ctx.lineWidth = 0.1;
+        // Outline: subtle dark in normal mode, bold red when blocked
+        ctx.strokeStyle = blocked ? '#E53E3E' : 'rgba(0, 0, 0, 0.65)';
+        ctx.lineWidth = blocked ? 0.18 : 0.08;
         ctx.strokeRect(previewX, previewY, previewWidth, previewHeight);
+
+        // Subtle white inner outline for visibility on dark pixels
+        if (!blocked) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+          ctx.lineWidth = 0.05;
+          ctx.strokeRect(previewX + 0.05, previewY + 0.05, previewWidth - 0.1, previewHeight - 0.1);
+        }
       }
 
       ctx.restore();
     }
-  }, [hoverPixel, brushSize, selectedColor, zoom, offset, CANVAS_SIZE]);
+  }, [hoverPixel, brushSize, selectedColor, zoom, offset, CANVAS_SIZE, auctionBlockReason]);
+
+  /**
+   * Render auction zone border on a dedicated overlay canvas.
+   * Gold pulsing border during active auction; solid purple after winner is set.
+   */
+  useEffect(() => {
+    const canvas = auctionCanvasRef.current;
+    const displayCanvas = displayCanvasRef.current;
+    if (!canvas || !displayCanvas) return;
+
+    const rect = displayCanvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!auctionState) return;
+
+    const { active, sectionX, sectionY, endTs, winner } = auctionState;
+    const now = Date.now() / 1000; // seconds
+    const auctionLive = active && now < endTs;
+    const zoneWon = !active && winner && winner !== '';
+
+    if (!auctionLive && !zoneWon) return;
+
+    const ZONE = 20;
+
+    /**
+     * Draw the full auction zone: dark overlay + animated border + text.
+     * @param {number} borderAlpha  0–1, pulsed for live auctions
+     */
+    const drawZone = (borderAlpha) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // ── World-space pass: overlay fill + border ──────────────────────
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(zoom, zoom);
+
+      // Semi-transparent warm overlay over the locked zone
+      ctx.fillStyle = auctionLive
+        ? 'rgba(229, 181, 71, 0.28)'   // gold tint during live auction
+        : 'rgba(160, 80, 255, 0.20)';  // purple tint after winner set
+      ctx.fillRect(sectionX, sectionY, ZONE, ZONE);
+
+      // Animated / static border
+      ctx.strokeStyle = auctionLive
+        ? `rgba(255, 200, 0, ${borderAlpha})`
+        : `rgba(160, 80, 255, 0.90)`;
+      ctx.lineWidth = 4 / zoom;
+      ctx.strokeRect(sectionX + 0.5 / zoom, sectionY + 0.5 / zoom, ZONE, ZONE);
+
+      ctx.restore();
+
+      // ── Screen-space pass: lock icon + labels ────────────────────────
+      // Only render text when the zone is large enough to be legible
+      const zoneScreenW = ZONE * zoom;
+      if (zoneScreenW < 64) return;
+
+      const cx = offset.x + (sectionX + ZONE / 2) * zoom;
+      const cy = offset.y + (sectionY + ZONE / 2) * zoom;
+
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Lock emoji — size scales with zoom, capped so it never gets silly large
+      const lockPx = Math.min(Math.max(zoneScreenW * 0.22, 14), 40);
+      ctx.font = `${lockPx}px serif`;
+      ctx.fillText('🔒', cx, cy - zoneScreenW * 0.09);
+
+      // "AUCTION ZONE" label
+      const labelPx = Math.min(Math.max(zoneScreenW * 0.10, 8), 14);
+      if (labelPx >= 8) {
+        ctx.font = `bold ${labelPx}px system-ui, -apple-system, sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.93)';
+        ctx.fillText('AUCTION ZONE', cx, cy + zoneScreenW * 0.12);
+      }
+
+      // Dimensions label
+      const dimPx = Math.min(Math.max(zoneScreenW * 0.075, 6), 11);
+      if (dimPx >= 6) {
+        ctx.font = `${dimPx}px system-ui, -apple-system, sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.58)';
+        ctx.fillText(`${ZONE} × ${ZONE} px`, cx, cy + zoneScreenW * 0.24);
+      }
+
+      ctx.restore();
+    };
+
+    if (auctionLive) {
+      let running = true;
+      const animate = () => {
+        if (!running) return;
+        auctionFrameRef.current += 1;
+        const alpha = 0.45 + 0.55 * Math.abs(Math.sin(auctionFrameRef.current * 0.04));
+        drawZone(alpha);
+        requestAnimationFrame(animate);
+      };
+      const rafId = requestAnimationFrame(animate);
+      return () => { running = false; cancelAnimationFrame(rafId); };
+    } else {
+      drawZone(0.90);
+    }
+  }, [auctionState, zoom, offset]);
 
   // Disable context menu on right click
   useEffect(() => {
@@ -265,7 +395,14 @@ const Canvas = () => {
   }, []);
 
   return (
-    <div className="relative w-full h-full bg-background overflow-hidden">
+    <div
+      className="relative w-full h-full overflow-hidden"
+      style={{
+        background:
+          'radial-gradient(circle at 50% 40%, rgb(var(--background-alt)) 0%, rgb(var(--background)) 70%)',
+        boxShadow: 'inset 0 0 60px rgba(0,0,0,0.08), inset 0 0 0 1px rgb(var(--border))',
+      }}
+    >
       {/* Main pixel canvas */}
       <canvas
         ref={(el) => {
@@ -284,6 +421,13 @@ const Canvas = () => {
       {/* Flash overlay canvas (remote pixel highlights) */}
       <canvas
         ref={flashCanvasRef}
+        className="absolute inset-0 pointer-events-none"
+        style={{ imageRendering: 'pixelated' }}
+      />
+
+      {/* Auction zone border overlay */}
+      <canvas
+        ref={auctionCanvasRef}
         className="absolute inset-0 pointer-events-none"
         style={{ imageRendering: 'pixelated' }}
       />

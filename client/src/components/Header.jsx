@@ -84,6 +84,20 @@ const Header = () => {
             </button>
           )}
 
+          <Link
+            to="/auction"
+            className="hidden sm:inline-flex px-3 py-1.5 rounded-lg text-sm font-semibold border border-border shadow-soft hover:bg-backgroundAlt transition-colors text-textSecondary"
+          >
+            🔨 Auction
+          </Link>
+
+          <Link
+            to="/nft"
+            className="hidden sm:inline-flex px-3 py-1.5 rounded-lg text-sm font-semibold border border-border shadow-soft hover:bg-backgroundAlt transition-colors text-textSecondary"
+          >
+            🖼 Gallery
+          </Link>
+
           {isAdmin && (
             <Link
               to="/admin"

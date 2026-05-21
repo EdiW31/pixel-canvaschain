@@ -36,3 +36,6 @@ Thumbs.db
 # Rust build artifacts (keep output/ but ignore target/)
 pixel-canvas-contract/target/
 pixel-canvas-contract/wasm/target/
+
+# Server runtime DB
+server/data/

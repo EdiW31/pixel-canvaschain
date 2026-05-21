@@ -4,6 +4,19 @@ import { useGetIsLoggedIn } from '@multiversx/sdk-dapp/out/react/account/useGetI
 import { Address } from '@multiversx/sdk-core/out/core/address';
 import { usePixelBalance } from '../hooks/usePixelBalance';
 
+// Decode a 32-byte raw address blob (base64) to bech32. Returns '' for zero address.
+function b64ToAddrBech32(b64) {
+  if (!b64) return '';
+  try {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    if (bytes.every(b => b === 0)) return '';
+    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return Address.newFromHex(hex).toBech32();
+  } catch {
+    return '';
+  }
+}
+
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const API_URL = import.meta.env.VITE_API_URL ?? 'https://devnet-api.multiversx.com';
 
@@ -89,6 +102,13 @@ export const AppProvider = ({ children }) => {
   // ── Epoch info ────────────────────────────────────────────────────────────
   const [epochInfo, setEpochInfo] = useState({ epoch: 0, startTimestamp: 0, durationSeconds: 0, endsAt: 0 });
   const epochRefetchRef = useRef(null);
+
+  // ── Auction state ─────────────────────────────────────────────────────────
+  const [auctionState, setAuctionState] = useState(null);
+  const auctionRefetchRef = useRef(null);
+
+  // ── NFT collection ID (one-time fetch) ───────────────────────────────────
+  const [nftCollectionId, setNftCollectionId] = useState(null);
 
   // ── Voting state ──────────────────────────────────────────────────────────
   // charities: [{ name, address, votes }]
@@ -211,16 +231,92 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(votingRefetchRef.current);
   }, [epochInfo.epoch, address, isLoggedIn, fetchVotingState]);
 
+  const fetchAuctionState = useCallback(async (epoch, callerAddress) => {
+    if (!epoch) { setAuctionState(null); return; }
+    const epochHex = epoch.toString(16).padStart(2, '0');
+
+    const stateData = await queryContractRaw('getAuctionState', [epochHex]);
+    // getAuctionState returns MultiValue7<bool, u32, u32, u64, ManagedAddress, BigUint, ManagedAddress>
+    // Each item is a separate returnData entry.
+    if (!stateData || stateData.length < 7) { setAuctionState(null); return; }
+
+    const active = stateData[0] ? atob(stateData[0]).charCodeAt(0) === 1 : false;
+    const sectionX = stateData[1] ? parseInt(b64ToHex(stateData[1]) || '0', 16) : 0;
+    const sectionY = stateData[2] ? parseInt(b64ToHex(stateData[2]) || '0', 16) : 0;
+    const endTsHex = b64ToHex(stateData[3]);
+    const endTs = endTsHex ? parseInt(endTsHex, 16) : 0;
+    const highestBidder = b64ToAddrBech32(stateData[4]);
+    const highestBid = decodeBigUintBase64(stateData[5]);
+    const winner = b64ToAddrBech32(stateData[6]);
+
+    let myBid = BigInt(0);
+    if (callerAddress) {
+      try {
+        const addrHex = Address.newFromBech32(callerAddress).toHex();
+        const myBidData = await queryContractRaw('getMyBid', [epochHex, addrHex]);
+        myBid = decodeBigUintBase64(myBidData[0] ?? '');
+      } catch (_) {}
+    }
+
+    setAuctionState({
+      epoch,
+      active,
+      sectionX,
+      sectionY,
+      endTs,
+      highestBidder,
+      highestBid,
+      winner,
+      myBid,
+      hasWon: winner !== '' && callerAddress === winner,
+    });
+  }, []);
+
+  // Poll auction state every 15s while connected
+  useEffect(() => {
+    fetchAuctionState(epochInfo.epoch, address || null);
+    clearInterval(auctionRefetchRef.current);
+    auctionRefetchRef.current = setInterval(
+      () => fetchAuctionState(epochInfo.epoch, address || null),
+      15_000,
+    );
+    return () => clearInterval(auctionRefetchRef.current);
+  }, [epochInfo.epoch, address, isLoggedIn, fetchAuctionState]);
+
+  // Fetch NFT collection ID once on mount
+  useEffect(() => {
+    queryContractRaw('getNftCollectionId', []).then(data => {
+      if (data && data[0]) {
+        try { setNftCollectionId(atob(data[0])); } catch (_) {}
+      }
+    });
+  }, []);
+
   // ── Pending pixels (painted but not yet paid for) ─────────────────────────
   // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.
   const [pendingPixels, setPendingPixels] = useState(new Map());
   const pendingCount = pendingPixels.size;
 
+  // Ref to track the original grid color BEFORE each pixel was first painted into
+  // pending. Used by undoPendingPixels() to restore the canvas on undo.
+  const pendingOriginalsRef = useRef(new Map()); // Map<"x_y", originalColor>
+
+  // Keep a live ref to gridState so addPendingPixels can snapshot originals
+  // without needing gridState in its dependency array.
+  // NOTE: the syncing useEffect is placed AFTER gridState is declared below.
+  const gridStateRef = useRef(null);
+
   const addPendingPixels = useCallback((pixels) => {
     setPendingPixels((prev) => {
       const next = new Map(prev);
       for (const p of pixels) {
-        next.set(`${p.x}_${p.y}`, { x: p.x, y: p.y, color: p.color });
+        const key = `${p.x}_${p.y}`;
+        // Capture original color the first time this pixel enters pending
+        if (!prev.has(key) && !pendingOriginalsRef.current.has(key)) {
+          const origColor = gridStateRef.current?.[p.y]?.[p.x] ?? '#FFFFFF';
+          pendingOriginalsRef.current.set(key, origColor);
+        }
+        next.set(key, { x: p.x, y: p.y, color: p.color });
       }
       return next;
     });
@@ -228,7 +324,34 @@ export const AppProvider = ({ children }) => {
 
   const clearPendingPixels = useCallback(() => {
     setPendingPixels(new Map());
+    pendingOriginalsRef.current = new Map();
   }, []);
+
+  /**
+   * Undo all pending pixels: reverts the local gridState to the original
+   * colors and clears the pending set.
+   * Returns an array of {x, y, color} with the original colors so the caller
+   * can emit pixels:paint to the server.
+   */
+  const undoPendingPixels = useCallback(() => {
+    const reverts = [];
+    pendingOriginalsRef.current.forEach((origColor, key) => {
+      const [x, y] = key.split('_').map(Number);
+      reverts.push({ x, y, color: origColor });
+    });
+    // Revert local grid visually
+    reverts.forEach(({ x, y, color }) => {
+      setGridState((prev) => {
+        if (!prev) return prev;
+        const next = [...prev];
+        next[y] = [...next[y]];
+        next[y][x] = color;
+        return next;
+      });
+    });
+    clearPendingPixels();
+    return reverts;
+  }, [clearPendingPixels]);
 
   // Clear pending when wallet disconnects
   useEffect(() => {
@@ -237,6 +360,9 @@ export const AppProvider = ({ children }) => {
 
   // ── Canvas state ──────────────────────────────────────────────────────────
   const [gridState, setGridState] = useState(null);
+  // Keep gridStateRef in sync — must live AFTER gridState declaration to avoid TDZ
+  useEffect(() => { gridStateRef.current = gridState; }, [gridState]);
+
   const [selectedColor, setSelectedColor] = useState('#FF0000');
   const [colorHistory, setColorHistory] = useState(['#FF0000']);
   const [brushSize, setBrushSize] = useState(1);
@@ -331,6 +457,7 @@ export const AppProvider = ({ children }) => {
     pendingCount,
     addPendingPixels,
     clearPendingPixels,
+    undoPendingPixels,
 
     // Canvas
     gridState,
@@ -373,6 +500,11 @@ export const AppProvider = ({ children }) => {
 
     // On-chain aggregates
     totalDonatedEgld,
+
+    // Phase 3: Auction
+    auctionState,
+    refetchAuctionState: () => fetchAuctionState(epochInfo.epoch, address || null),
+    nftCollectionId,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

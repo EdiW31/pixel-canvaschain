@@ -11,6 +11,15 @@ const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
 
 const ACCENTS  = ['#E53E3E', '#4299E1', '#48BB78', '#ED8936', '#9F7AEA'];
 const ICONS    = ['❤', '🌊', '🌿', '☀', '✦'];
+
+// Fallback charity website links keyed by charity name (case-sensitive)
+const CHARITY_LINKS = {
+  'Save the Children':       'https://www.savethechildren.org',
+  'UNICEF':                  'https://www.unicef.org',
+  'Doctors Without Borders': 'https://www.msf.org',
+  'Room to Read':            'https://www.roomtoread.org',
+  'Plan International':      'https://plan-international.org',
+};
 // Dummy placeholder images — one per slot, nice editorial photos
 const DUMMIES  = [
   'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=400&h=560&fit=crop',
@@ -53,7 +62,7 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
   const accent   = ACCENTS[index % ACCENTS.length];
   const icon     = ICONS[index % ICONS.length];
   const photo    = meta?.photoUrl || DUMMIES[index % DUMMIES.length];
-  const link     = meta?.link || null;
+  const link     = meta?.link || CHARITY_LINKS[charity.name] || null;
   const pct      = totalVotes > 0 ? Math.round((charity.votes / totalVotes) * 100) : 0;
   const isActive = selected === index;
   // Cards the user did NOT vote for become dimmed/inert once they've voted
@@ -77,11 +86,11 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
       }}
     >
       {/* ── Photo area ── */}
-      <div className="relative overflow-hidden" style={{ height: 260 }}>
+      <div className="relative overflow-hidden group/photo" style={{ height: 200 }}>
         <img
           src={photo}
           alt={charity.name}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-transform duration-300 group-hover/photo:scale-105"
           loading="lazy"
         />
         {/* Soft gradient so text is legible */}
@@ -89,6 +98,24 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
           className="absolute inset-0"
           style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.10) 50%, transparent 100%)' }}
         />
+        {/* Hover overlay: visit website */}
+        {link && (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/photo:opacity-100 transition-opacity duration-200"
+            style={{ background: 'rgba(0,0,0,0.42)' }}
+          >
+            <span
+              className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold text-white"
+              style={{ background: accent, boxShadow: `0 4px 18px ${accent}66` }}
+            >
+              Visit website ↗
+            </span>
+          </a>
+        )}
 
         {/* Selection circle — top right */}
         {canSelect && (
@@ -144,39 +171,33 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
           </div>
         </div>
 
-        {/* Icon badge row */}
+        {/* Icon badge row + link button */}
         <div className="flex items-center gap-2">
           <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0"
             style={{ background: accent + '18' }}
           >
             {icon}
           </div>
-          <span className="text-xs" style={{ color: '#9ca3af' }}>Charity · Epoch voting</span>
+          <span className="text-xs flex-1" style={{ color: '#9ca3af' }}>Charity · Epoch voting</span>
+          {link && (
+            <a
+              href={link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-all hover:opacity-80"
+              style={{ background: accent + '18', color: accent }}
+            >
+              Website ↗
+            </a>
+          )}
         </div>
       </div>
     </div>
   );
 
-  // Wrap in <a> if link is set (but clicking the card for voting is separate)
-  // We add a small external link icon instead so clicking card = vote, icon = website
-  return (
-    <div className="flex flex-col gap-2">
-      {card}
-      {link && (
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-center text-xs font-medium transition-opacity hover:opacity-70 flex items-center justify-center gap-1"
-          style={{ color: accent }}
-          onClick={e => e.stopPropagation()}
-        >
-          Visit website ↗
-        </a>
-      )}
-    </div>
-  );
+  return card;
 };
 
 // ── Section ───────────────────────────────────────────────────────────────────

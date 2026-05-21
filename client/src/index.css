@@ -186,6 +186,12 @@
   50%      { transform: translateY(-6px); }
 }
 
+/* ─── Pixel mascot entrance (slide up + spring scale) ───────────────────── */
+@keyframes pixelman-enter {
+  from { opacity: 0; transform: translateY(22px) scale(0.80); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
 /* ─── Pixel mascot walk left-to-right (navbar epoch banner) ─────────────── */
 @keyframes pixelman-walk {
   0%   { transform: translateX(-4px) translateY(0px); }

@@ -34,7 +34,7 @@ const ReferenceImage = () => {
   };
 
   return (
-    <div className="w-72 card p-4 space-y-3">
+    <div className="w-64 card p-3 space-y-2">
       {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -101,23 +101,6 @@ const ReferenceImage = () => {
             {refImageLocked ? 'Locked — click to move' : 'Unlocked — drag to reposition'}
           </button>
 
-          {/* Reset + Replace row */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setRefImageRect({ x: 0, y: 0, w: 100, h: 100 })}
-              className="flex-1 py-1.5 rounded-md text-xs font-medium border border-border text-textMuted hover:text-textPrimary hover:border-borderStrong bg-backgroundAlt transition-colors"
-              title="Reset image to cover full canvas"
-            >
-              Reset position
-            </button>
-            <label
-              className="flex-1 py-1.5 rounded-md text-xs font-medium border border-border text-textMuted hover:text-textPrimary hover:border-borderStrong bg-backgroundAlt transition-colors cursor-pointer text-center"
-              title="Replace reference image"
-            >
-              Replace
-              <input type="file" accept="image/*" className="sr-only" onChange={handleFile} />
-            </label>
-          </div>
         </>
       )}
     </div>

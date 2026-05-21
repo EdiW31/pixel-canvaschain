@@ -86,11 +86,6 @@ export const CANVAS_WIDTH = CANVAS_SIZE;
 export const CANVAS_HEIGHT = CANVAS_SIZE;
 
 /**
- * Rate limiting: Maximum pixels per second per user
- */
-export const MAX_PIXELS_PER_SECOND = 10;
-
-/**
  * Credit cost per pixel
  */
 export const COST_PER_PIXEL = 1;

@@ -1,5 +1,3 @@
-import { MAX_PIXELS_PER_SECOND } from './constants.js';
-
 class UserManager {
   constructor() {
     // Map<address, { address, paintHistory, joinedAt }>
@@ -33,24 +31,14 @@ class UserManager {
   }
 
   /**
-   * Record a paint action for rate-limiting.
+   * Record a paint action (kept for stats / analytics; no longer used for
+   * throttling — PIXEL ESDT supply enforces capacity).
    */
   recordPaint(address, x, y, color) {
     const user = this.users.get(address);
     if (!user) return;
     user.paintHistory.push({ timestamp: Date.now(), x, y, color });
     if (user.paintHistory.length > 100) user.paintHistory.shift();
-  }
-
-  /**
-   * Returns true if the user has exceeded the pixel-per-second rate limit.
-   */
-  isRateLimited(address) {
-    const user = this.users.get(address);
-    if (!user || !user.paintHistory.length) return false;
-    const now = Date.now();
-    const recentPaints = user.paintHistory.filter((p) => p.timestamp > now - 1000);
-    return recentPaints.length >= MAX_PIXELS_PER_SECOND;
   }
 
   getUserStats(address) {

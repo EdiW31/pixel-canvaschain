@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useApp } from '../context/AppContext';
 import ShopCard from '../components/ShopCard';
-import Header from '../components/Header';
+import MarketingNav from '../components/MarketingNav';
 import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
 import VotingSection from '../components/VotingSection';
 import PixelMan from '../components/PixelMan';
@@ -32,7 +32,7 @@ const ShopPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <MarketingNav />
 
       <main className="max-w-7xl mx-auto px-6 py-12">
 

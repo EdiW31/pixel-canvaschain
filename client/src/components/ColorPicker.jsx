@@ -153,7 +153,7 @@ const ColorPicker = () => {
   const hueColor = `hsl(${hsv.h}, 100%, 50%)`;
 
   return (
-    <div className="w-72 card p-4 space-y-5">
+    <div className="w-64 card p-3 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-heading text-base font-semibold">Colour</h3>
@@ -194,7 +194,7 @@ const ColorPicker = () => {
         <div
           ref={squareRef}
           onMouseDown={onSquareDown}
-          className="relative w-full h-32 rounded-md cursor-crosshair overflow-hidden shadow-soft select-none"
+          className="relative w-full h-24 rounded-md cursor-crosshair overflow-hidden shadow-soft select-none"
           style={{
             background: `
               linear-gradient(to top, #000, transparent),

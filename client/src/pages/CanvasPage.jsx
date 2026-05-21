@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import Header from '../components/Header';
+import MarketingNav from '../components/MarketingNav';
 import ColorPicker from '../components/ColorPicker';
 import Canvas from '../components/Canvas';
 import Toolbar from '../components/Toolbar';
@@ -60,15 +60,16 @@ const CanvasPage = () => {
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
-      {/* Header */}
-      <Header />
+      <MarketingNav />
 
       {/* Main Content: ColorPicker | Canvas | Toolbar */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Left Sidebar: Reference Image + Color Picker */}
-        <div className="flex-shrink-0 p-4 flex flex-col gap-3 items-start overflow-y-auto">
-          <ReferenceImage />
+        {/* Left Sidebar: Color Picker first (always visible), Reference Image below.
+            Swapped order so uploading a reference image never pushes the
+            ColorPicker out of view — it expands downward, not upward. */}
+        <div className="flex-shrink-0 h-full min-h-0 p-4 flex flex-col gap-3 items-start overflow-y-auto">
           <ColorPicker />
+          <ReferenceImage />
         </div>
 
         {/* Center: Canvas */}
@@ -78,7 +79,7 @@ const CanvasPage = () => {
         </div>
 
         {/* Right Sidebar: Toolbar */}
-        <div className="flex-shrink-0 p-4 flex items-center">
+        <div className="flex-shrink-0 h-full min-h-0 p-4 flex flex-col items-end gap-3 overflow-y-auto">
           <Toolbar />
         </div>
       </div>
