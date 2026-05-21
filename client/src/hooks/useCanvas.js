@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useSocket } from './useSocket';
 
@@ -36,8 +37,9 @@ function getBrushPixels(x, y, brushSize, color, canvasSize = CANVAS_SIZE) {
 }
 
 export const useCanvas = () => {
-  const { selectedColor, wallet, gridState, showToast, brushSize, zoom, setZoom, offset, setOffset, minZoom, setMinZoom } = useApp();
+  const { selectedColor, wallet, gridState, showToast, brushSize, zoom, setZoom, offset, setOffset, minZoom, setMinZoom, auctionState } = useApp();
   const { paintPixel, paintPixels } = useSocket();
+  const navigate = useNavigate();
 
   // Canvas state (local, not shared)
   const [isPanning, setIsPanning] = useState(false);
@@ -49,6 +51,92 @@ export const useCanvas = () => {
   const canvasRef = useRef(null);
   const lastPaintedPixel = useRef(null); // For drag-to-paint throttling
   const hoverThrottleRef = useRef(null); // For hover throttling
+  const strokeBlockedRef = useRef(false); // Debounce redirect when dragging into auction zone
+
+  // ── Smooth zoom (eased lerp toward a target) ──
+  const targetZoomRef = useRef(zoom);
+  const zoomFocusRef = useRef(null);   // {x,y} in screen px to keep stable under zoom
+  const zoomRafRef = useRef(null);
+
+  const animateZoom = useCallback(() => {
+    if (zoomRafRef.current) return;
+    const step = () => {
+      let stop = false;
+      setZoom((prev) => {
+        const target = targetZoomRef.current;
+        const diff = target - prev;
+        if (Math.abs(diff) < 0.01) { stop = true; return target; }
+        const next = prev + diff * 0.22; // ease factor
+        // Keep the focal screen point stable
+        const focus = zoomFocusRef.current;
+        if (focus) {
+          // worldX = (screenX - offset.x) / prev
+          // newOffset.x = screenX - worldX * next
+          setOffset((prevOffset) => {
+            const worldX = (focus.x - prevOffset.x) / prev;
+            const worldY = (focus.y - prevOffset.y) / prev;
+            return {
+              x: focus.x - worldX * next,
+              y: focus.y - worldY * next,
+            };
+          });
+        }
+        return next;
+      });
+      if (stop) {
+        zoomRafRef.current = null;
+      } else {
+        zoomRafRef.current = requestAnimationFrame(step);
+      }
+    };
+    zoomRafRef.current = requestAnimationFrame(step);
+  }, [setZoom, setOffset]);
+
+  // ── Pan momentum ──
+  const panVelocityRef = useRef({ vx: 0, vy: 0 });
+  const lastMoveRef = useRef({ x: 0, y: 0, t: 0 });
+  const momentumRafRef = useRef(null);
+
+  const startMomentum = useCallback(() => {
+    if (momentumRafRef.current) return;
+    const step = () => {
+      const { vx, vy } = panVelocityRef.current;
+      if (Math.abs(vx) < 0.1 && Math.abs(vy) < 0.1) {
+        momentumRafRef.current = null;
+        panVelocityRef.current = { vx: 0, vy: 0 };
+        return;
+      }
+      setOffset((o) => ({ x: o.x + vx, y: o.y + vy }));
+      panVelocityRef.current = { vx: vx * 0.92, vy: vy * 0.92 };
+      momentumRafRef.current = requestAnimationFrame(step);
+    };
+    momentumRafRef.current = requestAnimationFrame(step);
+  }, [setOffset]);
+
+  // Cleanup rAFs on unmount
+  useEffect(() => () => {
+    if (zoomRafRef.current) cancelAnimationFrame(zoomRafRef.current);
+    if (momentumRafRef.current) cancelAnimationFrame(momentumRafRef.current);
+  }, []);
+
+  /**
+   * Returns a reason if the (x,y) coord lies inside a blocked auction zone,
+   * or null otherwise. The zone is blocked if:
+   *   - the auction is active (no one paints here yet), OR
+   *   - the auction is closed AND the wallet is not the winner.
+   */
+  const auctionBlockReason = useCallback((x, y) => {
+    if (!auctionState) return null;
+    const { active, sectionX, sectionY, endTs, winner } = auctionState;
+    if (sectionX === undefined || sectionX === null) return null;
+    const ZONE = 20;
+    const inside = x >= sectionX && x < sectionX + ZONE && y >= sectionY && y < sectionY + ZONE;
+    if (!inside) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (active && now < (endTs ?? 0)) return 'auction-active';
+    if (winner && winner !== '' && winner !== wallet?.address) return 'winner-only';
+    return null;
+  }, [auctionState, wallet?.address]);
 
   /**
    * Calculate pixel coordinates from mouse event
@@ -76,6 +164,26 @@ export const useCanvas = () => {
     const coords = getPixelCoords(e);
     if (!coords) return;
 
+    // Block painting if any pixel in the brush footprint sits in a locked
+    // auction zone. Show a toast and (once per stroke) redirect to /auction.
+    const allBrushPixels = getBrushPixels(coords.x, coords.y, brushSize, selectedColor);
+    const blockedReason = allBrushPixels
+      .map(p => auctionBlockReason(p.x, p.y))
+      .find(r => r !== null);
+    if (blockedReason) {
+      if (!strokeBlockedRef.current) {
+        strokeBlockedRef.current = true;
+        showToast(
+          blockedReason === 'auction-active'
+            ? 'This zone is locked during the live auction. Bid to claim it!'
+            : 'This zone is reserved for the auction winner this epoch.',
+          'warning'
+        );
+        setTimeout(() => navigate('/auction'), 700);
+      }
+      return;
+    }
+
     // Skip if same pixel (for drag painting)
     if (lastPaintedPixel.current &&
         lastPaintedPixel.current.x === coords.x &&
@@ -83,7 +191,7 @@ export const useCanvas = () => {
       return;
     }
 
-    const pixels = getBrushPixels(coords.x, coords.y, brushSize, selectedColor);
+    const pixels = allBrushPixels;
     if (pixels.length === 0) return;
 
     lastPaintedPixel.current = coords;
@@ -99,26 +207,35 @@ export const useCanvas = () => {
         console.log(`🎨 Painting ${pixels.length} pixels with ${brushSize}x${brushSize} brush`);
       }
     }
-  }, [wallet, brushSize, selectedColor, paintPixel, paintPixels, showToast, getPixelCoords]);
+  }, [wallet, brushSize, selectedColor, paintPixel, paintPixels, showToast, getPixelCoords, auctionBlockReason, navigate]);
 
   /**
-   * Handle mouse wheel zoom
+   * Handle mouse wheel zoom — eased toward a target, focal point preserved
+   * so the pixel under the cursor stays put as you zoom in.
    */
   const handleWheel = useCallback((e) => {
     e.preventDefault();
-
-    const delta = e.deltaY > 0 ? -0.5 : 0.5;
-    setZoom((prev) => {
-      // Use minZoom (initial fit zoom) as the minimum, not MIN_ZOOM constant
-      const newZoom = Math.max(minZoom, Math.min(MAX_ZOOM, prev + delta));
-      return newZoom;
-    });
-  }, [setZoom, minZoom]);
+    const delta = e.deltaY > 0 ? -1 : 1;
+    const next = Math.max(minZoom, Math.min(MAX_ZOOM, targetZoomRef.current + delta));
+    targetZoomRef.current = next;
+    // Capture the screen-space focal point of the wheel event
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      zoomFocusRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+    animateZoom();
+  }, [minZoom, animateZoom]);
 
   /**
    * Handle mouse down (start panning or painting)
    */
   const handleMouseDown = useCallback((e) => {
+    // Cancel any in-flight pan momentum on a fresh click
+    if (momentumRafRef.current) {
+      cancelAnimationFrame(momentumRafRef.current);
+      momentumRafRef.current = null;
+      panVelocityRef.current = { vx: 0, vy: 0 };
+    }
     if (e.button === 0) {
       // Left click - start painting
       e.preventDefault();
@@ -133,6 +250,7 @@ export const useCanvas = () => {
         x: e.clientX - offset.x,
         y: e.clientY - offset.y,
       };
+      lastMoveRef.current = { x: e.clientX, y: e.clientY, t: performance.now() };
     }
   }, [offset, paintAtPosition]);
 
@@ -146,6 +264,15 @@ export const useCanvas = () => {
         x: e.clientX - panStart.current.x,
         y: e.clientY - panStart.current.y,
       });
+      // Track velocity for momentum on release (px / 16ms frame)
+      const now = performance.now();
+      const last = lastMoveRef.current;
+      const dt = Math.max(1, now - last.t);
+      panVelocityRef.current = {
+        vx: ((e.clientX - last.x) / dt) * 16,
+        vy: ((e.clientY - last.y) / dt) * 16,
+      };
+      lastMoveRef.current = { x: e.clientX, y: e.clientY, t: now };
     } else {
       // Update hover pixel with throttling
       const coords = getPixelCoords(e);
@@ -170,10 +297,16 @@ export const useCanvas = () => {
    * Handle mouse up (stop panning and painting)
    */
   const handleMouseUp = useCallback(() => {
+    if (isPanning) {
+      // Trigger momentum decay if the user released with meaningful velocity
+      const { vx, vy } = panVelocityRef.current;
+      if (Math.abs(vx) > 1 || Math.abs(vy) > 1) startMomentum();
+    }
     setIsPanning(false);
     setIsPainting(false);
     lastPaintedPixel.current = null;
-  }, []);
+    strokeBlockedRef.current = false;
+  }, [isPanning, startMomentum]);
 
   /**
    * Handle mouse leave (clear hover and stop painting)
@@ -183,6 +316,7 @@ export const useCanvas = () => {
     setIsPainting(false);
     setIsPanning(false);
     lastPaintedPixel.current = null;
+    strokeBlockedRef.current = false;
     if (hoverThrottleRef.current) {
       clearTimeout(hoverThrottleRef.current);
     }
@@ -205,6 +339,7 @@ export const useCanvas = () => {
     // Set this as the minimum zoom level (can't zoom out past initial fit)
     setMinZoom(initialZoom);
     setZoom(initialZoom);
+    targetZoomRef.current = initialZoom;
     setOffset({ x: centerX, y: centerY });
   }, [setZoom, setOffset, setMinZoom]);
 
@@ -212,14 +347,22 @@ export const useCanvas = () => {
    * Zoom in
    */
   const zoomIn = useCallback(() => {
-    setZoom((prev) => Math.min(MAX_ZOOM, prev + 1));
+    setZoom((prev) => {
+      const next = Math.min(MAX_ZOOM, prev + 1);
+      targetZoomRef.current = next;
+      return next;
+    });
   }, [setZoom]);
 
   /**
    * Zoom out
    */
   const zoomOut = useCallback(() => {
-    setZoom((prev) => Math.max(minZoom, prev - 1));
+    setZoom((prev) => {
+      const next = Math.max(minZoom, prev - 1);
+      targetZoomRef.current = next;
+      return next;
+    });
   }, [setZoom, minZoom]);
 
   /**
@@ -296,6 +439,7 @@ export const useCanvas = () => {
     centerOn,
     centerCanvas,
     getVisibleArea,
+    auctionBlockReason,
 
     // Constants
     CANVAS_SIZE,

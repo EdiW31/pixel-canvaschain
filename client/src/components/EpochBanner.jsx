@@ -8,22 +8,13 @@ function formatCountdown(msLeft) {
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (d > 0) return `${d}d ${h}h ${m}m`;
-  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
   return `${m}m ${sec}s`;
 }
 
-// ── Pixel art mascot ──────────────────────────────────────────────────────────
-// 8 cols × 11 rows. null = transparent.
-const T = null;
-const G  = '#E5B547'; // gold hat
-const GD = '#C49628'; // hat shadow
-const SK = '#FDE68A'; // skin
-const EY = '#1A1817'; // eyes
-const RD = '#E05A4B'; // red shirt (painter vibes)
-const BL = '#3B82F6'; // blue pants
-const BK = '#1A1817'; // boots
-
+// ── Pixel art mascot (8 × 11) ────────────────────────────────────────────────
+const T=null, G='#E5B547', GD='#C49628', SK='#FDE68A', EY='#1A1817', RD='#E05A4B', BL='#3B82F6', BK='#1A1817';
 const MASCOT = [
   [T,  T,  GD, GD, GD, GD, T,  T ],
   [T,  GD, G,  G,  G,  G,  GD, T ],
@@ -38,7 +29,7 @@ const MASCOT = [
   [T,  T,  BK, T,  T,  T,  BK, T ],
 ];
 
-const PX = 3; // pixel size in px
+const PX = 3;
 
 const PixelGuy = () => (
   <div
@@ -48,17 +39,11 @@ const PixelGuy = () => (
       gridTemplateRows: `repeat(11, ${PX}px)`,
       imageRendering: 'pixelated',
       flexShrink: 0,
+      willChange: 'transform',
     }}
   >
     {MASCOT.flat().map((color, i) => (
-      <div
-        key={i}
-        style={{
-          width: PX,
-          height: PX,
-          backgroundColor: color ?? 'transparent',
-        }}
-      />
+      <div key={i} style={{ width: PX, height: PX, backgroundColor: color ?? 'transparent' }} />
     ))}
   </div>
 );
@@ -78,44 +63,97 @@ const EpochBanner = ({ className = '' }) => {
 
   if (!epochInfo.epoch) return null;
 
+  const epochEnded = epochInfo.endsAt > 0 && msLeft <= 0;
+
   return (
-    <div
-      className={`inline-flex items-center gap-2.5 pl-2 pr-3.5 py-1
-        rounded-full select-none
-        bg-primaryLight border border-primary/60
-        shadow-[0_0_14px_rgba(229,181,71,0.3),inset_0_1px_0_rgba(255,255,255,0.4)]
-        hover:shadow-[0_0_20px_rgba(229,181,71,0.45)] transition-shadow duration-300
-        ${className}`}
-    >
-      {/* Mascot */}
-      <div className="flex items-end" style={{ height: 33, animation: 'pixelman-walk 2.4s ease-in-out infinite' }}>
-        <PixelGuy />
-      </div>
+    <>
+      <style>{`
+        @keyframes mascot-float {
+          0%,100% { transform: translateY(0px);   }
+          50%      { transform: translateY(-3px);  }
+        }
+      `}</style>
 
-      {/* Divider */}
-      <div className="w-px h-5 bg-primary/30 flex-shrink-0" />
+      <div
+        className={`inline-flex items-center gap-2 select-none ${className}`}
+        style={epochEnded ? {
+          padding: '5px 12px 5px 7px',
+          borderRadius: 999,
+          background: 'rgb(var(--primary))',
+          border: '1px solid rgba(196,150,40,0.40)',
+          boxShadow: '0 2px 8px rgba(229,181,71,0.25)',
+          transition: 'box-shadow 0.3s ease',
+          opacity: 0.6,
+        } : {
+          padding: '5px 12px 5px 7px',
+          borderRadius: 999,
+          background: 'rgb(var(--primary))',
+          border: '1px solid rgba(196,150,40,0.40)',
+          boxShadow: '0 2px 10px rgba(229,181,71,0.30)',
+          transition: 'box-shadow 0.3s ease',
+        }}
+      >
+        {/* Mascot with gentle float */}
+        <div
+          style={{
+            display: 'flex', alignItems: 'flex-end',
+            height: 33, flexShrink: 0,
+            animation: 'mascot-float 2.8s ease-in-out infinite',
+            willChange: 'transform',
+            opacity: epochEnded ? 0.5 : 1,
+          }}
+        >
+          <PixelGuy />
+        </div>
 
-      {/* Text block */}
-      <div className="flex flex-col leading-tight">
-        <span className="text-[10px] font-semibold text-primaryDark/60 uppercase tracking-widest">
-          Epoch {epochInfo.epoch}
-        </span>
-        <span className="text-xs font-bold text-primaryDark tracking-tight">
-          is live
-          {epochInfo.endsAt > 0 && (
-            <span className="font-mono font-normal text-primaryDark/70 ml-1.5 text-[11px]">
-              · {formatCountdown(msLeft)}
-            </span>
+        {/* Thin divider */}
+        <div style={{ width: 1, height: 18, background: 'rgba(27,26,23,0.20)', flexShrink: 0 }} />
+
+        {/* Text */}
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+          {epochEnded ? (
+            <>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(27,26,23,0.60)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>
+                Epoch {epochInfo.epoch} ended
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#1B1A17', letterSpacing: '-0.01em' }}>
+                Waiting for Epoch {epochInfo.epoch + 1}
+                <span style={{ fontWeight: 400, color: 'rgba(27,26,23,0.55)', marginLeft: 4, fontSize: 11 }}>to start</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(27,26,23,0.60)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>
+                Epoch {epochInfo.epoch}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#1B1A17', letterSpacing: '-0.01em' }}>
+                is live
+                {epochInfo.endsAt > 0 && (
+                  <span style={{ fontFamily: 'monospace', fontWeight: 400, color: 'rgba(27,26,23,0.55)', marginLeft: 6, fontSize: 11 }}>
+                    · {formatCountdown(msLeft)}
+                  </span>
+                )}
+              </span>
+            </>
           )}
-        </span>
-      </div>
+        </div>
 
-      {/* Pulsing dot */}
-      <span className="relative flex h-2 w-2 flex-shrink-0">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-primaryDark" />
-      </span>
-    </div>
+        {/* Live dot (hidden when ended) */}
+        {!epochEnded && (
+          <span style={{ position: 'relative', display: 'flex', height: 7, width: 7, flexShrink: 0 }}>
+            <span
+              className="animate-ping"
+              style={{
+                position: 'absolute', inset: 0,
+                borderRadius: '50%',
+                background: '#1B1A17', opacity: 0.40,
+              }}
+            />
+            <span style={{ position: 'relative', borderRadius: '50%', height: 7, width: 7, background: '#1B1A17', display: 'block' }} />
+          </span>
+        )}
+      </div>
+    </>
   );
 };
 

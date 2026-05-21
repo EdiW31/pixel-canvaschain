@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import ThemeToggle from '../components/ThemeToggle';
-import EpochBanner from '../components/EpochBanner';
+import MarketingNav from '../components/MarketingNav';
 import { Dot, Stroke, PaletteStrip } from '../components/PaintDecorations';
 
 const LoginPage = () => {
@@ -25,17 +24,7 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
 
-      {/* Top bar */}
-      <nav className="px-6 py-5 flex items-center justify-between">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-textSecondary hover:text-textPrimary transition-colors">
-          <span>←</span>
-          <span>Back to home</span>
-        </Link>
-        <div className="flex items-center gap-3">
-          <EpochBanner />
-          <ThemeToggle />
-        </div>
-      </nav>
+      <MarketingNav />
 
       <div className="flex-1 grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto w-full px-6 pb-20 items-center">
 

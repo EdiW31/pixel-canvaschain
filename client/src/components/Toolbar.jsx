@@ -25,12 +25,23 @@ const Toolbar = () => {
   const { zoom, hoverPixel, zoomIn, zoomOut, resetView, minZoom, MAX_ZOOM } = useCanvas();
   const {
     brushSize, setBrushSize, selectedColor,
-    pendingPixels, pendingCount, clearPendingPixels,
+    pendingPixels, pendingCount, clearPendingPixels, undoPendingPixels,
     wallet, showToast, refetchPixelBalance,
   } = useApp();
-  const { notifyPixelsSubmitted } = useSocket();
+  const { notifyPixelsSubmitted, watchPaintTx, socket, isConnected } = useSocket();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleUndo = () => {
+    const reverts = undoPendingPixels(); // reverts local gridState + clears pending
+    if (reverts.length && socket && isConnected) {
+      // Tell server to restore original colors so other clients see the revert
+      socket.emit('pixels:paint', { pixels: reverts });
+    }
+    if (reverts.length) {
+      showToast(`${reverts.length} pixel${reverts.length !== 1 ? 's' : ''} undone.`, 'info');
+    }
+  };
 
   // Keyboard shortcuts: [/] cycle brush, R reset view, +/- zoom
   useEffect(() => {
@@ -110,6 +121,14 @@ const Toolbar = () => {
       // Notify server (optional — server can verify on-chain ownership)
       if (txHash) notifyPixelsSubmitted(txHash);
 
+      // Poll devnet API for tx outcome — if it fails, revert pixels client + server.
+      // Run in background so the UI stays responsive.
+      if (txHash) {
+        watchPaintTx(txHash, pixels.map((p) => ({ x: p.x, y: p.y }))).catch((err) => {
+          console.warn('[watchPaintTx] error:', err?.message);
+        });
+      }
+
       // Refresh PIXEL balance after devnet confirms (~8s)
       setTimeout(refetchPixelBalance, 8_000);
       setTimeout(refetchPixelBalance, 20_000);
@@ -122,13 +141,13 @@ const Toolbar = () => {
   };
 
   return (
-    <div className="w-56 card p-4 space-y-5">
-      <h3 className="font-heading text-base font-semibold">Tools</h3>
+    <div className="w-52 card p-3 space-y-3">
+      <h3 className="font-heading text-sm font-semibold">Tools</h3>
 
       {/* ─── Pending pixels / Submit & Pay ─────────────────────────── */}
       {pendingCount > 0 && (
         <Section label="Pending">
-          <div className="bg-primaryLight/50 border border-primary/30 rounded-lg p-3 space-y-2">
+          <div className="bg-primaryLight/50 border border-primary/30 rounded-lg p-2.5 space-y-2">
             <p className="text-xs text-textSecondary">
               <span className="font-semibold text-textPrimary">{pendingCount}</span>{' '}
               pixel{pendingCount !== 1 ? 's' : ''} painted
@@ -154,13 +173,21 @@ const Toolbar = () => {
                 'Submit & Pay'
               )}
             </button>
+            <button
+              onClick={handleUndo}
+              disabled={isSubmitting}
+              className="w-full text-xs py-2 rounded-lg border border-border text-textSecondary hover:text-error hover:border-error/50 hover:bg-error/5 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <UndoIcon />
+              Undo all
+            </button>
           </div>
         </Section>
       )}
 
       {/* ─── Shortcuts ─────────────────────────────────────────────── */}
       <Section label="Shortcuts">
-        <div className="space-y-1.5 text-xs text-textSecondary bg-backgroundAlt rounded-md p-3">
+        <div className="space-y-1 text-xs text-textSecondary bg-backgroundAlt rounded-md p-2">
           <Shortcut keys={['[', ']']} desc="Brush size" />
           <Shortcut keys={['+', '−']} desc="Zoom" />
           <Shortcut keys={['R']}      desc="Reset view" />
@@ -169,7 +196,7 @@ const Toolbar = () => {
 
       {/* ─── Zoom ──────────────────────────────────────────────────── */}
       <Section label="Zoom">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-1.5">
           <IconBtn onClick={zoomOut} disabled={zoom <= minZoom} title="Zoom out (-)">−</IconBtn>
           <div className="flex-1 text-center font-semibold tabular-nums">
             {zoom.toFixed(1)}<span className="text-textMuted text-xs ml-0.5">×</span>
@@ -186,7 +213,7 @@ const Toolbar = () => {
 
       {/* ─── Brush ─────────────────────────────────────────────────── */}
       <Section label="Brush">
-        <div className="flex items-center justify-center mb-3 h-12 bg-backgroundAlt rounded-md">
+        <div className="flex items-center justify-center mb-2 h-10 bg-backgroundAlt rounded-md">
           <div
             className="rounded-sm border border-borderStrong"
             style={{
@@ -197,7 +224,7 @@ const Toolbar = () => {
           />
         </div>
 
-        <div className="grid grid-cols-4 gap-1 mb-2">
+        <div className="grid grid-cols-4 gap-1 mb-1.5">
           {[1, 2, 3, 4].map((size) => (
             <button
               key={size}
@@ -227,9 +254,9 @@ const Toolbar = () => {
 
       {/* ─── Cursor ────────────────────────────────────────────────── */}
       <Section label="Cursor">
-        <div className="bg-backgroundAlt rounded-md p-3">
+        <div className="bg-backgroundAlt rounded-md p-2">
           {hoverPixel ? (
-            <div className="space-y-1 font-mono text-sm">
+            <div className="space-y-0.5 font-mono text-sm">
               <Row k="X" v={hoverPixel.x} />
               <Row k="Y" v={hoverPixel.y} />
             </div>
@@ -280,6 +307,13 @@ const Shortcut = ({ keys, desc }) => (
       ))}
     </span>
   </div>
+);
+
+const UndoIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 7v6h6" />
+    <path d="M3 13C5.5 7.5 11 4 17 5.5A9 9 0 0 1 21 13" />
+  </svg>
 );
 
 const RecenterIcon = () => (

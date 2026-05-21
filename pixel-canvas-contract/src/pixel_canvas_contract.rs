@@ -16,6 +16,10 @@ const TIER_LEGEND: u64     = 2_500_000_000_000_000_000u64; // 2.50 xEGLD
 const BASE_PIXELS_PER_EGLD: u64 = 20_000u64;
 const DEFAULT_EPOCH_DURATION: u64 = 86_400u64; // 24 hours in seconds
 
+// ─── Phase 3: Auction constants ───────────────────────────────────────────────
+const AUCTION_SIZE: u32 = 20;                  // 20×20 pixel zone
+const DEFAULT_AUCTION_DURATION: u64 = 300u64;  // 5 min default; configurable via setAuctionDuration
+
 // Each pixel painted: (x, y, color) — u32 each, 12 bytes fixed-size in ManagedVec.
 #[type_abi]
 #[derive(TopEncode, TopDecode, NestedEncode, NestedDecode, ManagedVecItem, Clone)]
@@ -40,10 +44,16 @@ pub trait PixelCanvasContract {
         self.current_epoch().set(0u64);
         self.epoch_duration_seconds().set(DEFAULT_EPOCH_DURATION);
         self.epoch_top_paint_count().set(0u64);
+        self.auction_duration_seconds().set(DEFAULT_AUCTION_DURATION);
     }
 
     #[upgrade]
-    fn upgrade(&self) {}
+    fn upgrade(&self) {
+        // Backfill auction duration for contracts deployed before this storage existed.
+        if self.auction_duration_seconds().is_empty() {
+            self.auction_duration_seconds().set(DEFAULT_AUCTION_DURATION);
+        }
+    }
 
     // ─── Owner configuration ──────────────────────────────────────────────────
 
@@ -67,6 +77,13 @@ pub trait PixelCanvasContract {
         self.require_owner();
         require!(seconds > 0u64, "Duration must be > 0");
         self.epoch_duration_seconds().set(seconds);
+    }
+
+    #[endpoint(setAuctionDuration)]
+    fn set_auction_duration(&self, seconds: u64) {
+        self.require_owner();
+        require!(seconds > 0u64, "Duration must be > 0");
+        self.auction_duration_seconds().set(seconds);
     }
 
     /// Set the candidate charities for the upcoming (or current) epoch.
@@ -93,6 +110,15 @@ pub trait PixelCanvasContract {
             self.epoch_charity_addrs(epoch).push(&addrs.get(i));
             self.epoch_vote_counts(epoch).push(&0u64);
         }
+    }
+
+    // ─── Phase 3: NFT collection configuration ────────────────────────────────
+
+    #[endpoint(setNftCollection)]
+    fn set_nft_collection(&self, token_id: TokenIdentifier) {
+        self.require_owner();
+        require!(token_id.is_valid_esdt_identifier(), "Invalid token identifier");
+        self.nft_collection_id().set(&token_id);
     }
 
     // ─── Charity voting ───────────────────────────────────────────────────────
@@ -128,18 +154,39 @@ pub trait PixelCanvasContract {
     #[endpoint(startEpoch)]
     fn start_epoch(&self) {
         self.require_owner();
-        let new_epoch = self.current_epoch().get() + 1u64;
-        self.current_epoch().set(new_epoch);
-        self.epoch_start_timestamp().set(self.blockchain().get_block_timestamp());
-        self.epoch_top_painter().clear();
-        self.epoch_top_paint_count().set(0u64);
-        self.epoch_started_event(new_epoch, self.blockchain().get_block_timestamp());
+        self.start_epoch_internal();
+    }
+
+    /// Start a new epoch AND open a 24h auction for the given 20×20 zone.
+    #[endpoint(startEpochWithAuction)]
+    fn start_epoch_with_auction(&self, section_x: u32, section_y: u32) {
+        self.require_owner();
+        require!(
+            section_x + AUCTION_SIZE <= 100u32,
+            "Auction zone exceeds canvas width"
+        );
+        require!(
+            section_y + AUCTION_SIZE <= 100u32,
+            "Auction zone exceeds canvas height"
+        );
+
+        let new_epoch = self.start_epoch_internal();
+        let duration = self.auction_duration_seconds().get();
+        let end_ts = self.blockchain().get_block_timestamp() + duration;
+
+        self.auction_section_x(new_epoch).set(section_x);
+        self.auction_section_y(new_epoch).set(section_y);
+        self.auction_active(new_epoch).set(true);
+        self.auction_end_timestamp(new_epoch).set(end_ts);
+
+        self.auction_started_event(new_epoch, section_x, section_y, end_ts);
     }
 
     /// End the current epoch. Distributes accumulated PIXEL to the default charity
     /// and accumulated EGLD to the vote-winning charity (or default if no votes).
+    /// Optionally accepts a canvas PNG URI for NFT metadata (passed as hex by admin UI).
     #[endpoint(endEpoch)]
-    fn end_epoch(&self) {
+    fn end_epoch(&self, nft_uri: OptionalValue<ManagedBuffer>) {
         self.require_owner();
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch to end");
@@ -172,6 +219,172 @@ pub trait PixelCanvasContract {
         let top_count = self.epoch_top_paint_count().get();
 
         self.epoch_ended_event(epoch, &top_painter, top_count);
+
+        // ── Phase 3: Snapshot top painter history ─────────────────────────────
+        self.epoch_top_painter_history(epoch).set(&top_painter);
+
+        // ── Phase 3: Mint NFTs if collection is configured ────────────────────
+        if !self.nft_collection_id().is_empty() {
+            let token_id = self.nft_collection_id().get();
+            let royalties = BigUint::zero();
+            let hash = ManagedBuffer::new();
+            let amount = BigUint::from(1u64);
+
+            // Build URI list
+            let mut uris: ManagedVec<ManagedBuffer> = ManagedVec::new();
+            if let OptionalValue::Some(uri) = nft_uri {
+                if uri.len() > 0 {
+                    uris.push(uri);
+                }
+            }
+
+            // Mint NFT for top painter
+            if !top_painter.is_zero() {
+                let name = sc_format!("Painter of Epoch {}", epoch);
+                let attributes = sc_format!(
+                    "epoch:{};type:painter;pixels:{}",
+                    epoch,
+                    top_count
+                );
+                let nft_nonce = self.send().esdt_nft_create(
+                    &token_id,
+                    &amount,
+                    &name,
+                    &royalties,
+                    &hash,
+                    &attributes,
+                    &uris,
+                );
+                self.send().direct_esdt(&top_painter, &token_id, nft_nonce, &amount);
+            }
+
+            // Mint NFT for auction zone winner
+            let auction_winner = if self.zone_unlocked_for(epoch).is_empty() {
+                ManagedAddress::zero()
+            } else {
+                self.zone_unlocked_for(epoch).get()
+            };
+            if !auction_winner.is_zero() {
+                let sx = self.auction_section_x(epoch).get();
+                let sy = self.auction_section_y(epoch).get();
+                let name = sc_format!("Auction Winner Epoch {}", epoch);
+                let attributes = sc_format!(
+                    "epoch:{};type:auction;section:{},{}",
+                    epoch,
+                    sx,
+                    sy
+                );
+                let nft_nonce = self.send().esdt_nft_create(
+                    &token_id,
+                    &amount,
+                    &name,
+                    &royalties,
+                    &hash,
+                    &attributes,
+                    &uris,
+                );
+                self.send().direct_esdt(&auction_winner, &token_id, nft_nonce, &amount);
+            }
+        }
+    }
+
+    // ─── Phase 3: Auction endpoints ───────────────────────────────────────────
+
+    /// Place a bid in the current epoch's auction.
+    #[payable("EGLD")]
+    #[endpoint(placeBid)]
+    fn place_bid(&self) {
+        let epoch = self.current_epoch().get();
+        require!(epoch > 0u64, "No active epoch");
+        require!(self.auction_active(epoch).get(), "No active auction this epoch");
+
+        let now = self.blockchain().get_block_timestamp();
+        let end_ts = self.auction_end_timestamp(epoch).get();
+        require!(now < end_ts, "Auction has ended");
+
+        let payment = self.call_value().egld().clone_value();
+        require!(payment > BigUint::zero(), "Bid must be > 0");
+
+        let caller = self.blockchain().get_caller();
+
+        // Accumulate caller's total bid
+        self.auction_bid(epoch, &caller).update(|b| *b += &payment);
+        let new_total = self.auction_bid(epoch, &caller).get();
+
+        // Register bidder if first time
+        if !self.auction_has_bid(epoch, &caller).get() {
+            self.auction_has_bid(epoch, &caller).set(true);
+            self.auction_bidders(epoch).push(&caller);
+        }
+
+        // Update highest bidder
+        let current_highest = self.auction_highest_bid(epoch).get();
+        if new_total > current_highest {
+            self.auction_highest_bid(epoch).set(&new_total);
+            self.auction_highest_bidder(epoch).set(&caller);
+        }
+
+        self.bid_placed_event(epoch, &caller, &payment, &new_total);
+    }
+
+    /// Withdraw a non-winning bid (or any bid once auction is closed).
+    #[endpoint(withdrawBid)]
+    fn withdraw_bid(&self) {
+        let epoch = self.current_epoch().get();
+        require!(epoch > 0u64, "No active epoch");
+
+        let caller = self.blockchain().get_caller();
+
+        // Highest bidder cannot withdraw while auction is still active
+        if self.auction_active(epoch).get() {
+            let now = self.blockchain().get_block_timestamp();
+            let end_ts = self.auction_end_timestamp(epoch).get();
+            if now < end_ts && !self.auction_highest_bidder(epoch).is_empty() {
+                let highest = self.auction_highest_bidder(epoch).get();
+                require!(caller != highest, "Highest bidder cannot withdraw during active auction");
+            }
+        }
+
+        let bid = self.auction_bid(epoch, &caller).get();
+        require!(bid > BigUint::zero(), "No bid to withdraw");
+
+        self.auction_bid(epoch, &caller).set(BigUint::zero());
+        self.send().direct_egld(&caller, &bid);
+    }
+
+    /// Close the current epoch's auction (owner only). Sets the winner and
+    /// commits the winning bid to the charity accumulator.
+    #[endpoint(closeAuction)]
+    fn close_auction(&self) {
+        self.require_owner();
+        let epoch = self.current_epoch().get();
+        require!(epoch > 0u64, "No active epoch");
+        require!(self.auction_active(epoch).get(), "Auction is not active");
+
+        let now = self.blockchain().get_block_timestamp();
+        let end_ts = self.auction_end_timestamp(epoch).get();
+        require!(now >= end_ts, "Auction has not ended yet");
+
+        self.auction_active(epoch).set(false);
+
+        // Set winner and commit winning bid to charity pool
+        if !self.auction_highest_bidder(epoch).is_empty() {
+            let winner = self.auction_highest_bidder(epoch).get();
+            let winning_bid = self.auction_highest_bid(epoch).get();
+
+            self.zone_unlocked_for(epoch).set(&winner);
+
+            // Commit to charity accumulator (EGLD stays in contract until endEpoch)
+            self.total_egld_for_charity().update(|t| *t += &winning_bid);
+
+            // Clear the winner's bid so they cannot also call withdrawBid
+            self.auction_bid(epoch, &winner).set(BigUint::zero());
+
+            self.auction_closed_event(epoch, &winner, &winning_bid);
+        } else {
+            // No bids — auction closed with no winner
+            self.auction_closed_event(epoch, &ManagedAddress::zero(), &BigUint::zero());
+        }
     }
 
     // ─── Buy PIXEL tokens with EGLD ───────────────────────────────────────────
@@ -214,6 +427,39 @@ pub trait PixelCanvasContract {
         );
 
         let caller = self.blockchain().get_caller();
+
+        // ── Phase 3: Auction zone restriction check ───────────────────────────
+        let epoch = self.current_epoch().get();
+        if epoch > 0u64 {
+            let auction_is_active = self.auction_active(epoch).get();
+            let zone_x = self.auction_section_x(epoch).get();
+            let zone_y = self.auction_section_y(epoch).get();
+            let end_ts = self.auction_end_timestamp(epoch).get();
+            let now = self.blockchain().get_block_timestamp();
+            let winner = if self.zone_unlocked_for(epoch).is_empty() {
+                ManagedAddress::zero()
+            } else {
+                self.zone_unlocked_for(epoch).get()
+            };
+
+            let len = pixels.len();
+            for i in 0..len {
+                let pixel = pixels.get(i);
+                let in_zone = pixel.x >= zone_x
+                    && pixel.x < zone_x + AUCTION_SIZE
+                    && pixel.y >= zone_y
+                    && pixel.y < zone_y + AUCTION_SIZE;
+                if in_zone {
+                    if auction_is_active && now < end_ts {
+                        require!(false, "Zone is locked during active auction");
+                    } else if !winner.is_zero() && caller != winner {
+                        require!(false, "This zone is reserved for the auction winner");
+                    }
+                }
+            }
+        }
+        // ── End auction zone check ────────────────────────────────────────────
+
         let denomination = self.pixel_denomination().get();
         let len = pixels.len();
 
@@ -338,6 +584,11 @@ pub trait PixelCanvasContract {
         self.epoch_duration_seconds().get()
     }
 
+    #[view(getAuctionDurationSeconds)]
+    fn get_auction_duration_seconds(&self) -> u64 {
+        self.auction_duration_seconds().get()
+    }
+
     /// Returns the top painter's address and pixel count for the current epoch.
     #[view(getEpochTopPainter)]
     fn get_epoch_top_painter(&self) -> MultiValue2<ManagedAddress, u64> {
@@ -397,6 +648,54 @@ pub trait PixelCanvasContract {
         self.total_egld_for_charity().get()
     }
 
+    // ─── Phase 3: Auction views ───────────────────────────────────────────────
+
+    /// Returns full auction state for the given epoch.
+    #[view(getAuctionState)]
+    fn get_auction_state(
+        &self,
+        epoch: u64,
+    ) -> MultiValue7<bool, u32, u32, u64, ManagedAddress, BigUint, ManagedAddress> {
+        let active = self.auction_active(epoch).get();
+        let x = self.auction_section_x(epoch).get();
+        let y = self.auction_section_y(epoch).get();
+        let end_ts = self.auction_end_timestamp(epoch).get();
+        let highest_bidder = if self.auction_highest_bidder(epoch).is_empty() {
+            ManagedAddress::zero()
+        } else {
+            self.auction_highest_bidder(epoch).get()
+        };
+        let highest_bid = self.auction_highest_bid(epoch).get();
+        let winner = if self.zone_unlocked_for(epoch).is_empty() {
+            ManagedAddress::zero()
+        } else {
+            self.zone_unlocked_for(epoch).get()
+        };
+        (active, x, y, end_ts, highest_bidder, highest_bid, winner).into()
+    }
+
+    /// Returns a specific address's total bid for the given epoch.
+    #[view(getMyBid)]
+    fn get_my_bid(&self, epoch: u64, addr: ManagedAddress) -> BigUint {
+        self.auction_bid(epoch, &addr).get()
+    }
+
+    /// Returns the NFT collection token identifier.
+    #[view(getNftCollectionId)]
+    fn get_nft_collection_id(&self) -> OptionalValue<TokenIdentifier> {
+        if self.nft_collection_id().is_empty() {
+            OptionalValue::None
+        } else {
+            OptionalValue::Some(self.nft_collection_id().get())
+        }
+    }
+
+    /// Returns whether the auction is currently active for the given epoch.
+    #[view(isAuctionActive)]
+    fn is_auction_active(&self, epoch: u64) -> bool {
+        self.auction_active(epoch).get()
+    }
+
     // ─── Storage mappers ──────────────────────────────────────────────────────
 
     #[storage_mapper("pixelTokenId")]
@@ -430,6 +729,9 @@ pub trait PixelCanvasContract {
     #[storage_mapper("epochDurationSeconds")]
     fn epoch_duration_seconds(&self) -> SingleValueMapper<u64>;
 
+    #[storage_mapper("auctionDurationSeconds")]
+    fn auction_duration_seconds(&self) -> SingleValueMapper<u64>;
+
     #[storage_mapper("epochPixelCount")]
     fn epoch_pixel_count(&self, epoch: u64, painter: &ManagedAddress) -> SingleValueMapper<u64>;
 
@@ -454,6 +756,44 @@ pub trait PixelCanvasContract {
 
     #[storage_mapper("epochVoterChoice")]
     fn epoch_voter_choice(&self, epoch: u64, voter: &ManagedAddress) -> SingleValueMapper<u32>;
+
+    // ─── Phase 3: Auction storage ─────────────────────────────────────────────
+
+    #[storage_mapper("auctionSectionX")]
+    fn auction_section_x(&self, epoch: u64) -> SingleValueMapper<u32>;
+
+    #[storage_mapper("auctionSectionY")]
+    fn auction_section_y(&self, epoch: u64) -> SingleValueMapper<u32>;
+
+    #[storage_mapper("auctionActive")]
+    fn auction_active(&self, epoch: u64) -> SingleValueMapper<bool>;
+
+    #[storage_mapper("auctionEndTimestamp")]
+    fn auction_end_timestamp(&self, epoch: u64) -> SingleValueMapper<u64>;
+
+    #[storage_mapper("auctionBid")]
+    fn auction_bid(&self, epoch: u64, addr: &ManagedAddress) -> SingleValueMapper<BigUint>;
+
+    #[storage_mapper("auctionBidders")]
+    fn auction_bidders(&self, epoch: u64) -> VecMapper<ManagedAddress>;
+
+    #[storage_mapper("auctionHasBid")]
+    fn auction_has_bid(&self, epoch: u64, addr: &ManagedAddress) -> SingleValueMapper<bool>;
+
+    #[storage_mapper("auctionHighestBidder")]
+    fn auction_highest_bidder(&self, epoch: u64) -> SingleValueMapper<ManagedAddress>;
+
+    #[storage_mapper("auctionHighestBid")]
+    fn auction_highest_bid(&self, epoch: u64) -> SingleValueMapper<BigUint>;
+
+    #[storage_mapper("zoneUnlockedFor")]
+    fn zone_unlocked_for(&self, epoch: u64) -> SingleValueMapper<ManagedAddress>;
+
+    #[storage_mapper("nftCollectionId")]
+    fn nft_collection_id(&self) -> SingleValueMapper<TokenIdentifier>;
+
+    #[storage_mapper("epochTopPainterHistory")]
+    fn epoch_top_painter_history(&self, epoch: u64) -> SingleValueMapper<ManagedAddress>;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -495,7 +835,47 @@ pub trait PixelCanvasContract {
         #[indexed] charity_index: u32,
     );
 
+    // ─── Phase 3: Auction events ──────────────────────────────────────────────
+
+    #[event("auctionStarted")]
+    fn auction_started_event(
+        &self,
+        #[indexed] epoch: u64,
+        #[indexed] section_x: u32,
+        #[indexed] section_y: u32,
+        #[indexed] end_ts: u64,
+    );
+
+    #[event("bidPlaced")]
+    fn bid_placed_event(
+        &self,
+        #[indexed] epoch: u64,
+        #[indexed] bidder: &ManagedAddress,
+        #[indexed] amount: &BigUint,
+        #[indexed] total: &BigUint,
+    );
+
+    #[event("auctionClosed")]
+    fn auction_closed_event(
+        &self,
+        #[indexed] epoch: u64,
+        #[indexed] winner: &ManagedAddress,
+        #[indexed] winning_bid: &BigUint,
+    );
+
     // ─── Internal helpers ─────────────────────────────────────────────────────
+
+    /// Increments epoch, resets painter tracking, records timestamp.
+    /// Returns the new epoch number.
+    fn start_epoch_internal(&self) -> u64 {
+        let new_epoch = self.current_epoch().get() + 1u64;
+        self.current_epoch().set(new_epoch);
+        self.epoch_start_timestamp().set(self.blockchain().get_block_timestamp());
+        self.epoch_top_painter().clear();
+        self.epoch_top_paint_count().set(0u64);
+        self.epoch_started_event(new_epoch, self.blockchain().get_block_timestamp());
+        new_epoch
+    }
 
     fn find_winning_charity(&self, epoch: u64) -> ManagedAddress {
         let n = self.epoch_charity_names(epoch).len();

@@ -6,9 +6,9 @@
 
 // Init:                                 1
 // Upgrade:                              1
-// Endpoints:                           25
+// Endpoints:                           36
 // Async Callback (empty):               1
-// Total number of exported functions:  28
+// Total number of exported functions:  39
 
 #![no_std]
 
@@ -23,10 +23,16 @@ multiversx_sc_wasm_adapter::endpoints! {
         setPixelToken => set_pixel_token
         setCharityAddress => set_charity_address_endpoint
         setEpochDuration => set_epoch_duration
+        setAuctionDuration => set_auction_duration
         setEpochCharities => set_epoch_charities
+        setNftCollection => set_nft_collection
         vote => vote
         startEpoch => start_epoch
+        startEpochWithAuction => start_epoch_with_auction
         endEpoch => end_epoch
+        placeBid => place_bid
+        withdrawBid => withdraw_bid
+        closeAuction => close_auction
         buyPixels => buy_pixels
         paintPixels => paint_pixels
         distributePixelToCharity => distribute_pixel_to_charity
@@ -39,12 +45,17 @@ multiversx_sc_wasm_adapter::endpoints! {
         getCurrentEpoch => get_current_epoch
         getEpochStartTimestamp => get_epoch_start_timestamp
         getEpochDuration => get_epoch_duration
+        getAuctionDurationSeconds => get_auction_duration_seconds
         getEpochTopPainter => get_epoch_top_painter
         getEpochPixelCount => get_epoch_pixel_count
         getEpochCharities => get_epoch_charities
         getVoteTallies => get_vote_tallies
         getMyVote => get_my_vote
         getTotalEgldForCharity => get_total_egld_for_charity
+        getAuctionState => get_auction_state
+        getMyBid => get_my_bid
+        getNftCollectionId => get_nft_collection_id
+        isAuctionActive => is_auction_active
     )
 }
 

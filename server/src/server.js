@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { renderCanvasPng } from './canvasPng.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -118,11 +119,6 @@ io.on('connection', (socket) => {
         return;
       }
 
-      if (userManager.isRateLimited(address)) {
-        socket.emit('error', { message: 'Rate limit exceeded. Max 10 pixels per second.' });
-        return;
-      }
-
       if (!pixelGrid.isValidCoordinate(x, y)) {
         socket.emit('error', { message: 'Invalid coordinates' });
         return;
@@ -132,7 +128,7 @@ io.on('connection', (socket) => {
         return;
       }
 
-      if (!pixelGrid.setPixel(x, y, color)) {
+      if (!pixelGrid.setPixel(x, y, color, address)) {
         socket.emit('error', { message: 'Failed to update pixel' });
         return;
       }
@@ -168,11 +164,6 @@ io.on('connection', (socket) => {
         return;
       }
 
-      if (userManager.isRateLimited(address)) {
-        socket.emit('error', { message: 'Rate limit exceeded. Max 10 pixels per second.' });
-        return;
-      }
-
       for (const pixel of pixels) {
         if (!pixelGrid.isValidCoordinate(pixel.x, pixel.y)) {
           socket.emit('error', { message: `Invalid coordinates: (${pixel.x}, ${pixel.y})` });
@@ -184,13 +175,8 @@ io.on('connection', (socket) => {
         }
       }
 
-      const paintedPixels = [];
-      for (const pixel of pixels) {
-        if (pixelGrid.setPixel(pixel.x, pixel.y, pixel.color)) {
-          paintedPixels.push(pixel);
-          userManager.recordPaint(address, pixel.x, pixel.y, pixel.color);
-        }
-      }
+      const paintedPixels = pixelGrid.setPixelsBatch(pixels, address);
+      for (const p of paintedPixels) userManager.recordPaint(address, p.x, p.y, p.color);
 
       io.emit('pixels:update', { pixels: paintedPixels, address });
 
@@ -211,6 +197,43 @@ io.on('connection', (socket) => {
     console.log(`💰 PIXEL tx submitted by ${address.slice(0, 10)}...: ${txHash}`);
     // Optimistic acknowledgement — the contract handles actual ownership enforcement.
     socket.emit('pixels:committed', { txHash });
+  });
+
+  /**
+   * pixels:confirm — client polled the explorer and confirmed the paintPixels
+   * ESDT tx succeeded on-chain. THIS is the only path that writes pixels to
+   * SQLite. Until this fires, painted pixels live only in volatile memory
+   * and disappear on server restart.
+   *
+   * Idempotent: re-emitting the same payload is safe (upsert by x,y).
+   */
+  socket.on('pixels:confirm', ({ pixels, txHash } = {}) => {
+    const address = socket.walletAddress;
+    if (!address || !Array.isArray(pixels) || pixels.length === 0) return;
+    const n = pixelGrid.persistPixels(pixels, address);
+    if (n > 0) {
+      console.log(`✅ Persisted ${n} pixels for ${address.slice(0, 10)}... (tx ${txHash ?? 'n/a'})`);
+    }
+  });
+
+  /**
+   * pixels:rollback — client polled the explorer and learned the paintPixels
+   * tx failed (or timed out). Revert the optimistic pixels in MEMORY ONLY
+   * and broadcast the reset so every connected client redraws. DB is not
+   * touched because the failed pixels were never persisted in the first
+   * place — touching DB here would risk wiping someone else's confirmed
+   * pixel at the same coordinate.
+   *
+   * Devnet trust model: server does not re-verify the tx hash. The user has
+   * no incentive to fake their own rollback.
+   */
+  socket.on('pixels:rollback', ({ pixels, txHash } = {}) => {
+    const address = socket.walletAddress;
+    if (!address || !Array.isArray(pixels) || pixels.length === 0) return;
+    const reverted = pixelGrid.revertPixels(pixels);
+    if (reverted.length === 0) return;
+    console.log(`↩  Rolled back ${reverted.length} pixels for ${address.slice(0, 10)}... (tx ${txHash ?? 'n/a'})`);
+    io.emit('pixels:update', { pixels: reverted, address: null });
   });
 
   /**
@@ -249,6 +272,81 @@ app.get('/stats', async (req, res) => {
   }
 });
 
+app.get('/canvas/png', async (req, res) => {
+  try {
+    const buf = await renderCanvasPng(pixelGrid.getGrid());
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=60');
+    res.send(buf);
+  } catch (err) {
+    console.error('PNG render error:', err);
+    res.status(500).json({ error: 'Failed to render canvas PNG' });
+  }
+});
+
+/**
+ * POST /canvas/upload
+ * Renders the current canvas as a PNG and uploads it to catbox.moe
+ * (free permanent hosting, no auth required).
+ * Returns { url: "https://files.catbox.moe/xxxxxx.png" }
+ *
+ * Called automatically by the admin client just before endEpoch so the
+ * NFT URI points to a publicly accessible image on devnet.
+ */
+app.post('/canvas/upload', async (req, res) => {
+  try {
+    console.log('📤 Uploading canvas PNG to catbox.moe…');
+    const buf = await renderCanvasPng(pixelGrid.getGrid());
+
+    const formData = new FormData();
+    formData.append('reqtype', 'fileupload');
+    formData.append(
+      'fileToUpload',
+      new Blob([buf], { type: 'image/png' }),
+      `canvas-${Date.now()}.png`,
+    );
+
+    const upload = await fetch('https://catbox.moe/user.php', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!upload.ok) {
+      throw new Error(`catbox.moe responded ${upload.status}`);
+    }
+
+    const url = (await upload.text()).trim();
+    if (!url.startsWith('https://')) {
+      throw new Error(`Unexpected response from catbox.moe: ${url}`);
+    }
+
+    console.log(`✅ Canvas uploaded: ${url}`);
+    res.json({ url });
+  } catch (err) {
+    console.error('Canvas upload error:', err);
+    res.status(500).json({ error: err.message ?? 'Upload failed' });
+  }
+});
+
+app.get('/canvas/section-png', async (req, res) => {
+  try {
+    const x = parseInt(req.query.x ?? '0', 10);
+    const y = parseInt(req.query.y ?? '0', 10);
+    const w = parseInt(req.query.w ?? '100', 10);
+    const h = parseInt(req.query.h ?? '100', 10);
+    if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > 100 || y + h > 100) {
+      return res.status(400).json({ error: 'Invalid section bounds' });
+    }
+    const buf = await renderCanvasPng(pixelGrid.getGrid(), { x, y, w, h });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=60');
+    res.send(buf);
+  } catch (err) {
+    console.error('Section PNG render error:', err);
+    res.status(500).json({ error: 'Failed to render section PNG' });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -258,7 +356,34 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Rehydrate the grid from SQLite before opening the port so the very first
+// client connection sees the persisted canvas, not an empty grid.
+pixelGrid.hydrateFromDb();
+
+// Tracks the last on-chain epoch we observed. When it increments we wipe the
+// canvas (memory + DB) and broadcast canvas:init with a blank grid so every
+// connected client redraws — each epoch starts fresh.
+let lastSeenEpoch = null;
+
+async function pollEpochAndMaybeResetCanvas() {
+  try {
+    const { currentEpoch } = await getContractStats();
+    if (lastSeenEpoch !== null && currentEpoch > lastSeenEpoch) {
+      console.log(`🎬 Epoch ${lastSeenEpoch} → ${currentEpoch}: clearing canvas for all clients`);
+      pixelGrid.clearAll();
+      io.emit('canvas:init', { gridState: pixelGrid.getGrid() });
+    }
+    lastSeenEpoch = currentEpoch;
+  } catch (err) {
+    console.error('❌ Epoch poll error:', err?.message);
+  }
+}
+
 httpServer.listen(PORT, () => {
+  // Prime the epoch tracker once at boot so the very first poll after this
+  // doesn't false-positive a reset.
+  pollEpochAndMaybeResetCanvas();
+
   setInterval(async () => {
     try {
       io.emit('stats:data', await collectStats());
@@ -266,6 +391,9 @@ httpServer.listen(PORT, () => {
       console.error('❌ Periodic stats broadcast error:', err);
     }
   }, 10_000);
+
+  // Detect epoch increment ~every 30s.
+  setInterval(pollEpochAndMaybeResetCanvas, 30_000);
 
   console.log(`
 ╔══════════════════════════════════════════════════════════╗

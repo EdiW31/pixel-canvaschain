@@ -129,6 +129,52 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  /**
+   * Poll the devnet API for a paintPixels tx's outcome. If it fails or is
+   * invalid, ask the server to revert the optimistic pixels so they vanish
+   * from the canvas (and stay gone after a refresh).
+   *
+   * Returns a promise that resolves to 'success' | 'failed' | 'timeout'.
+   */
+  const watchPaintTx = async (txHash, pixels) => {
+    if (!txHash || !Array.isArray(pixels) || pixels.length === 0) return 'timeout';
+    const apiBase = import.meta.env.VITE_DEVNET_API_URL ?? 'https://devnet-api.multiversx.com';
+    const deadline = Date.now() + 90_000; // 90s
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3_000));
+      try {
+        const res = await fetch(`${apiBase}/transactions/${txHash}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const status = data?.status;
+        if (status === 'success') {
+          // Tell the server it's safe to persist these pixels to SQLite.
+          if (socket && isConnected) {
+            socket.emit('pixels:confirm', { pixels, txHash });
+          }
+          return 'success';
+        }
+        if (status === 'fail' || status === 'failed' || status === 'invalid') {
+          if (socket && isConnected) {
+            socket.emit('pixels:rollback', { pixels, txHash });
+          }
+          showToast('Transaction failed — your pixels were reverted.', 'error');
+          return 'failed';
+        }
+        // 'pending' / unknown → keep polling
+      } catch (err) {
+        // network blip; keep trying
+        console.warn('[watchPaintTx]', err?.message);
+      }
+    }
+    // Timeout: treat as failure so memory reverts and the pixels don't ghost.
+    if (socket && isConnected) {
+      socket.emit('pixels:rollback', { pixels, txHash });
+    }
+    showToast('Transaction timed out — your pixels were reverted.', 'error');
+    return 'timeout';
+  };
+
   const requestCanvas = () => {
     if (socket && isConnected) socket.emit('canvas:request');
   };
@@ -143,6 +189,7 @@ export const SocketProvider = ({ children }) => {
     paintPixel,
     paintPixels,
     notifyPixelsSubmitted,
+    watchPaintTx,
     requestCanvas,
     requestStats,
     liveStats,

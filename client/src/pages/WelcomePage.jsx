@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
 import EpochBanner from '../components/EpochBanner';
 import { Dot, Stroke, PaintChip, PaletteStrip } from '../components/PaintDecorations';
@@ -7,6 +7,8 @@ import { useApp } from '../context/AppContext';
 import { useSocket } from '../hooks/useSocket';
 import VotingSection from '../components/VotingSection';
 import PixelMan from '../components/PixelMan';
+import AuctionFloatingCta from '../components/AuctionFloatingCta';
+import charityPhoto from '../../images/charity_photo.jpg';
 
 /* ─── Pixel art canvas data (24 cols × 13 rows) ──────────────────────────── */
 /* eslint-disable no-unused-vars */
@@ -41,11 +43,11 @@ const STEP_COLORS = [
 ];
 
 const CHARITIES = [
-  { name: 'Save the Children',       mission: 'Emergency education & medical care for children in conflict zones.', color: '#E53E3E', icon: '🧒' },
-  { name: 'UNICEF',                  mission: 'Clean water, vaccines, and nutrition for children worldwide.',       color: '#4299E1', icon: '💧' },
-  { name: 'Doctors Without Borders', mission: 'Critical healthcare in regions affected by crisis and disaster.',    color: '#48BB78', icon: '🏥' },
-  { name: 'Room to Read',            mission: 'Literacy programs and girls\' education in low-income communities.', color: '#ED8936', icon: '📚' },
-  { name: 'Plan International',      mission: 'Ending child marriage and advancing girls\' rights globally.',       color: '#9F7AEA', icon: '✊' },
+  { name: 'Save the Children',       mission: 'Emergency education & medical care for children in conflict zones.', color: '#E53E3E', icon: '🧒', link: 'https://www.savethechildren.org' },
+  { name: 'UNICEF',                  mission: 'Clean water, vaccines, and nutrition for children worldwide.',       color: '#4299E1', icon: '💧', link: 'https://www.unicef.org' },
+  { name: 'Doctors Without Borders', mission: 'Critical healthcare in regions affected by crisis and disaster.',    color: '#48BB78', icon: '🏥', link: 'https://www.msf.org' },
+  { name: 'Room to Read',            mission: 'Literacy programs and girls\' education in low-income communities.', color: '#ED8936', icon: '📚', link: 'https://www.roomtoread.org' },
+  { name: 'Plan International',      mission: 'Ending child marriage and advancing girls\' rights globally.',       color: '#9F7AEA', icon: '✊', link: 'https://plan-international.org' },
 ];
 
 /* ─── Smooth scroll helper ───────────────────────────────────────────────── */
@@ -54,8 +56,9 @@ const scrollTo = (id) =>
 
 /* ─── WelcomePage ────────────────────────────────────────────────────────── */
 const WelcomePage = () => {
-  const { epochInfo, votingState, totalDonatedEgld } = useApp();
+  const { epochInfo, votingState, totalDonatedEgld, auctionState, wallet, showToast } = useApp();
   const { liveStats } = useSocket();
+  const navigate = useNavigate();
   const navRef = useRef(null);
   const [activeSection, setActiveSection] = useState('hero');
   const [isDark, setIsDark] = useState(false);
@@ -132,6 +135,15 @@ const WelcomePage = () => {
 
   return (
   <div className="h-screen flex flex-col overflow-hidden bg-background text-textPrimary">
+    <style>{`
+      @keyframes live-pulse { 0%,100% { opacity:1; } 50% { opacity:0.55; } }
+    `}</style>
+
+    {/* Section-aware auction CTA — hidden on hero, vote, and bidding demo */}
+    <AuctionFloatingCta
+      activeSection={activeSection}
+      hideOnSections={['hero', 'vote', 'bidding']}
+    />
 
     {/* ─── Nav ─────────────────────────────────────────────────────── */}
     <nav
@@ -145,52 +157,87 @@ const WelcomePage = () => {
       }}
     >
       <div
-        className="max-w-6xl mx-auto flex items-center justify-between"
-        style={{ height: 82, paddingLeft: 112, paddingRight: 32, position: 'relative' }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
+          alignItems: 'center',
+          height: 80, paddingLeft: 24, paddingRight: 20,
+          width: '100%', boxSizing: 'border-box',
+        }}
       >
-        {/* Circle logo — half protrudes below nav bottom */}
+        {/* ── Logo + brand (left grid cell) ── */}
         <button
           onClick={() => scrollTo('hero')}
-          title="Home"
           style={{
-            position: 'absolute', left: 32, bottom: -28,
-            width: 56, height: 56, borderRadius: '50%',
-            background: navBg,
-            border: `2px solid ${navCircBorder}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22, color: navLogoClr,
-            zIndex: 20,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.16)',
-            transition: 'background 0.45s ease, border-color 0.45s ease, color 0.45s ease',
-            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
           }}
         >
-          🎨
+          <div
+            style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: isVoteSec ? 'rgba(255,255,255,0.20)' : (isDark ? 'rgba(229,181,71,0.12)' : 'rgba(229,181,71,0.10)'),
+              border: `1.5px solid ${navCircBorder}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 20,
+              transition: 'background 0.45s, border-color 0.45s',
+            }}
+          >
+            🎨
+          </div>
+          <div className="hidden sm:block text-left">
+            <div
+              className="font-heading font-semibold tracking-tight"
+              style={{ fontSize: 15, color: navBrandClr, lineHeight: 1.2, transition: 'color 0.45s' }}
+            >
+              Pixel CanvasChain
+            </div>
+            <div style={{ fontSize: 10, letterSpacing: '0.10em', textTransform: 'uppercase', color: navSubClr, transition: 'color 0.45s' }}>
+              Painting for a cause
+            </div>
+          </div>
         </button>
 
-        {/* Brand name */}
-        <button onClick={() => scrollTo('hero')} className="hidden sm:flex flex-col text-left flex-shrink-0">
-          <div className="font-heading text-[16px] font-semibold tracking-tight" style={{ color: navBrandClr, transition: 'color 0.45s ease' }}>
-            Pixel CanvasChain
-          </div>
-          <div className="text-[11px] tracking-widest uppercase" style={{ color: navSubClr, transition: 'color 0.45s ease' }}>
-            Painting for a cause
-          </div>
-        </button>
-
-        {/* Center nav links */}
-        <div className="flex items-center gap-7">
+        {/* ── Center links (center grid cell — auto-centred by 1fr/1fr columns) ── */}
+        <div className="hidden md:flex items-center" style={{ gap: 36 }}>
           <NavLink sectionId="mission"   linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>Mission</NavLink>
           <HowItWorksNavLinks            linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov} />
           <NavLink sectionId="nft"       linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>NFT</NavLink>
           <NavLink sectionId="split"     linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>The Split</NavLink>
+          {/* Auction link — goes to /auction route; shows LIVE badge when active */}
+          <button
+            onClick={() => {
+              if (wallet.isConnected) navigate('/auction');
+              else { showToast('Connect your wallet to bid', 'info'); navigate('/login'); }
+            }}
+            className="inline-flex items-center gap-1.5 text-sm font-medium tracking-wide whitespace-nowrap"
+            style={{ color: navLinkClr, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+          >
+            Auction
+            {auctionState?.active && (
+              <span style={{
+                padding: '1px 6px', borderRadius: 999,
+                background: 'linear-gradient(135deg, #F5C842, #E8872A)',
+                color: '#1B1A17', fontSize: 9, fontWeight: 800,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+                animation: 'live-pulse 2s ease-in-out infinite',
+              }}>LIVE</span>
+            )}
+          </button>
         </div>
 
-        {/* Right side */}
-        <div className="flex items-center gap-5">
+        {/* ── Right side: epoch + theme + CTA (right grid cell) ── */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
           <EpochBanner className="hidden md:inline-flex" />
+          <div style={{ width: 1, height: 22, background: navBorderClr, flexShrink: 0 }} />
           <ThemeToggle />
-          <Link to="/login" className="btn-primary px-5 py-2 text-sm">Open the app</Link>
+          <Link
+            to="/login"
+            className="btn-primary text-sm font-semibold"
+            style={{ padding: '7px 20px', borderRadius: 10, whiteSpace: 'nowrap', marginLeft: 4 }}
+          >
+            Open
+          </Link>
         </div>
       </div>
     </nav>
@@ -198,7 +245,7 @@ const WelcomePage = () => {
     {/* ─── Scroll container (smooth, no snap) ──────────────────────── */}
     <div
       className="flex-1 min-h-0 overflow-y-scroll"
-      style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}
+      style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth', scrollSnapType: 'y mandatory' }}
     >
 
       {/* ── 1. Hero ───────────────────────────────────────────────── */}
@@ -217,42 +264,6 @@ const WelcomePage = () => {
         <Dot color="#E53E3E" style={{ bottom: 20, right: '2%'   }} />
         <Dot color="#48BB78" style={{ top: 15,    left:  '48%'  }} />
         <Dot color="#4299E1" style={{ bottom: 15, left:  '52%'  }} />
-
-        {/* Pixelman vote CTA — bottom-right corner; message changes after voting */}
-        {epochInfo.epoch > 0 && (
-          <button
-            onClick={() => scrollTo('vote')}
-            className="absolute z-20 flex items-end gap-3 group select-none"
-            style={{ bottom: '6%', right: '6%' }}
-            aria-label={votingState.hasVoted ? 'See voting results' : 'Go to voting section'}
-          >
-            {/* Speech bubble — theme-aware; sage tint when voted, gold when pending */}
-            <div
-              className={`relative bg-surface border-2 rounded-2xl px-4 py-3 group-hover:-translate-y-1 transition-all duration-200 mb-2 ${
-                votingState.hasVoted
-                  ? 'border-charity shadow-[0_4px_20px_rgba(123,158,93,0.45)] group-hover:shadow-[0_6px_28px_rgba(123,158,93,0.65)]'
-                  : 'border-primary shadow-[0_4px_20px_rgba(229,181,71,0.45)] group-hover:shadow-[0_6px_28px_rgba(229,181,71,0.65)]'
-              }`}
-            >
-              <p className="text-xs font-bold text-textPrimary leading-snug whitespace-nowrap">
-                {votingState.hasVoted
-                  ? `✓ You voted for epoch ${epochInfo.epoch}!`
-                  : `🗳 Vote for epoch ${epochInfo.epoch}!`}
-              </p>
-              <p className="text-[10px] text-textSecondary mt-0.5 whitespace-nowrap">
-                {votingState.hasVoted ? 'See the live results ↓' : 'Scroll down to pick a charity →'}
-              </p>
-              {/* Tail — rotated square trick, matches border colour */}
-              <div
-                className={`absolute -right-2 bottom-4 w-3 h-3 bg-surface border-r-2 border-b-2 rotate-45 ${
-                  votingState.hasVoted ? 'border-charity' : 'border-primary'
-                }`}
-              />
-            </div>
-            {/* Pixel mascot */}
-            <PixelManBig />
-          </button>
-        )}
 
         <div className="max-w-6xl mx-auto px-6 py-8 w-full">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
@@ -287,6 +298,57 @@ const WelcomePage = () => {
           </div>
         </div>
 
+        {/* ── Hero pixelman — charity nudge / live-vote nudge after voting ── */}
+        <div
+          className="hidden xl:flex absolute select-none"
+          style={{
+            right: 28, bottom: 32, zIndex: 5,
+            alignItems: 'flex-end', gap: 14,
+            animation:
+              'pixelman-enter 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both, ' +
+              'pixelman-bob 3.2s ease-in-out 0.55s infinite',
+            cursor: 'pointer',
+          }}
+          onClick={() => scrollTo('vote')}
+          title={votingState.hasVoted ? 'See the live votes' : 'Vote for charities this epoch'}
+        >
+          {/* Speech bubble */}
+          <div
+            style={{
+              position: 'relative',
+              background: '#FFFFFF',
+              border: '2.5px solid #1B1A17',
+              borderRadius: 18,
+              padding: '12px 18px',
+              transform: 'rotate(-5deg)',
+              boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
+              maxWidth: 200,
+              marginBottom: 10,
+            }}
+          >
+            <p className="font-heading font-bold text-sm leading-snug" style={{ color: '#1B1A17' }}>
+              {votingState.hasVoted ? 'See the live votes 📊' : 'Vote for charities! ♥'}
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(27,26,23,0.60)' }}>
+              {votingState.hasVoted
+                ? 'Watch which charity the community is rallying behind.'
+                : '50% of every pixel goes to the community-chosen cause.'}
+            </p>
+            {/* Bubble tail points right toward pixelman */}
+            <div
+              style={{
+                position: 'absolute', right: -10, bottom: 16,
+                width: 16, height: 16,
+                background: '#FFFFFF',
+                borderRight: '2.5px solid #1B1A17',
+                borderBottom: '2.5px solid #1B1A17',
+                transform: 'rotate(-45deg)',
+              }}
+            />
+          </div>
+          <PixelMan px={11} tilt={8} />
+        </div>
+
       </AnimatedSection>
 
       {/* ── 2. Voting section ────────────────────────────────────── */}
@@ -294,18 +356,29 @@ const WelcomePage = () => {
         <AnimatedSection
           id="vote"
           data-theme="light"
-          className="flex items-center relative overflow-hidden border-t-2 bg-primary"
-          style={{ height: 'var(--section-h, 100vh)', borderColor: 'rgba(0,0,0,0.08)' }}
+          className="flex flex-col relative overflow-y-auto border-t-2 bg-primary"
+          style={{ minHeight: 'var(--section-h, 100vh)', borderColor: 'rgba(0,0,0,0.08)' }}
         >
           <Dot color="#E53E3E" style={{ top: 24,    left:  '2%'   }} />
           <Dot color="#4299E1" style={{ top: 60,    right: '2%'   }} />
           <Dot color="#48BB78" style={{ bottom: 30, left:  '4%'   }} />
           <Dot color="#9F7AEA" style={{ bottom: 60, right: '3%'   }} />
 
-          {/* Big tilted pixelman on the RIGHT — always visible, message changes after vote */}
+          {/* Big tilted pixelman on the RIGHT — message changes after vote,
+              and the whole thing tucks up to the top-right corner once voted
+              so the three charity cards below stay fully visible. */}
           <div
             className="hidden xl:flex absolute pointer-events-none select-none"
-            style={{ right: '2%', top: votingState.hasVoted ? '55%' : '20%', zIndex: 5, animation: 'pixelman-bob 3s ease-in-out infinite', display: 'flex', alignItems: 'flex-end', gap: 16 }}
+            style={{
+              right: '2%',
+              top: votingState.hasVoted ? '12%' : '20%',
+              zIndex: 5,
+              animation:
+                'pixelman-enter 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both, ' +
+                'pixelman-bob 3s ease-in-out 0.55s infinite',
+              display: 'flex', alignItems: 'flex-end', gap: 16,
+              transition: 'top 0.6s cubic-bezier(0.65, 0, 0.35, 1)',
+            }}
           >
             <div
               className="relative mb-8"
@@ -341,7 +414,7 @@ const WelcomePage = () => {
             <PixelMan px={14} tilt={22} />
           </div>
 
-          <div className="max-w-5xl mx-auto px-6 py-8 w-full">
+          <div className="max-w-5xl mx-auto px-6 py-16 w-full">
             <div className="mb-8">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border-2 text-sm font-bold mb-4"
                 style={{ borderColor: 'rgba(27,26,23,0.3)', color: '#1B1A17', background: 'rgba(255,255,255,0.25)' }}>
@@ -385,22 +458,24 @@ const WelcomePage = () => {
             <Stroke />
           </div>
 
-          <div className="relative w-full h-32 sm:h-40 overflow-hidden rounded-2xl border-2 border-dashed border-border bg-surface shadow-card mb-4">
-            <div className="absolute top-2 left-2 grid grid-cols-8 gap-[3px]" aria-hidden="true">
+          <div className="relative w-full h-52 sm:h-64 overflow-hidden rounded-2xl border border-border shadow-card mb-4">
+            <img
+              src={charityPhoto}
+              alt="Children benefiting from charitable work"
+              className="w-full h-full object-cover"
+            />
+            {/* Subtle pixel-art dot decoration in the corners */}
+            <div className="absolute top-2 left-2 grid grid-cols-8 gap-[3px] pointer-events-none" aria-hidden="true">
               {['#E53E3E','#ED8936','#ECC94B','#48BB78','#4299E1','#9F7AEA','#ED64A6','#E53E3E',
                 '#ED8936','#ECC94B','#48BB78','#4299E1','#9F7AEA','#ED64A6','#E53E3E','#ED8936'].map((c,i) => (
-                <div key={i} style={{ width:6,height:6,background:c,borderRadius:1,opacity:0.5 }} />
+                <div key={i} style={{ width:5,height:5,background:c,borderRadius:1,opacity:0.65 }} />
               ))}
             </div>
-            <div className="absolute bottom-2 right-2 grid grid-cols-8 gap-[3px]" aria-hidden="true">
+            <div className="absolute bottom-2 right-2 grid grid-cols-8 gap-[3px] pointer-events-none" aria-hidden="true">
               {['#4299E1','#9F7AEA','#ED64A6','#E53E3E','#ECC94B','#48BB78','#ED8936','#4299E1',
                 '#9F7AEA','#ED64A6','#E53E3E','#ED8936','#48BB78','#ECC94B','#4299E1','#9F7AEA'].map((c,i) => (
-                <div key={i} style={{ width:6,height:6,background:c,borderRadius:1,opacity:0.5 }} />
+                <div key={i} style={{ width:5,height:5,background:c,borderRadius:1,opacity:0.65 }} />
               ))}
-            </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
-              <div className="w-11 h-11 rounded-xl bg-backgroundAlt border border-border flex items-center justify-center text-2xl shadow-soft">🖼️</div>
-              <p className="text-sm font-medium text-textSecondary">Mission image · 4:3</p>
             </div>
           </div>
 
@@ -466,7 +541,7 @@ const WelcomePage = () => {
             <Step n="4" color={STEP_COLORS[3]} title="Epoch ends"
               body="The community's spending unlocks the selected charity. Funds flow automatically on-chain." />
             <Step n="5" color={STEP_COLORS[4]} title="Win NFT"
-              body="The biggest contributor of the epoch wins a unique generative NFT — no claiming needed." />
+              body="Two NFTs minted at epoch end: one for the top painter, one for the auction winner — both airdropped automatically." />
           </div>
         </div>
 
@@ -503,7 +578,7 @@ const WelcomePage = () => {
               <EpochPhase icon="🗳️" color="#4299E1" label="Day 1"      title="Epoch opens"     body="5 charities announced. NFT design revealed. Bidding opens for the locked zone." />
               <EpochPhase icon="🎨" color="#48BB78" label="Days 2–6"   title="Community paints" body="Every purchase adds to the charity pot and climbs the leaderboard." />
               <EpochPhase icon="🏆" color="#E5B547" label="Day 7"      title="Epoch closes"    body="Leaderboard freezes. The charity with most credit-votes wins." />
-              <EpochPhase icon="✨" color="#9F7AEA" label="Settlement"  title="On-chain payout" body="Funds transfer. Top painter gets NFT. New epoch opens immediately." />
+              <EpochPhase icon="✨" color="#9F7AEA" label="Settlement"  title="On-chain payout" body="Funds transfer. Two NFTs minted: top painter & auction winner. New epoch opens immediately." />
             </div>
           </div>
 
@@ -591,19 +666,41 @@ const WelcomePage = () => {
         <Dot color="#ED64A6" style={{ bottom: 18, left:  '55%' }} />
         <Dot color="#E53E3E" style={{ top: 80,    right: '22%' }} />
 
-        <div className="max-w-5xl mx-auto px-6 py-8 w-full">
-          <div className="text-center mb-5">
-            <div className="pill mb-2">Bidding</div>
-            <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight">
-              Bid for the epoch's prime 50×50 zone.
-            </h2>
-            <div className="flex justify-center"><Stroke color="#E53E3E" /></div>
-            <p className="text-textSecondary mt-1 max-w-xl mx-auto text-base">
-              At the start of every epoch, a <strong className="text-textPrimary">50×50 pixel zone</strong> is locked.
-              Painting pauses for the first day while wallets compete. Highest EGLD bid wins exclusive rights for the whole epoch.
+        <div className="max-w-5xl mx-auto px-6 py-4 w-full">
+          {/* Header row */}
+          <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
+            <div>
+              <div className="pill mb-1.5">Bidding</div>
+              <h2 className="font-heading text-3xl sm:text-4xl font-semibold tracking-tight">
+                Bid for the epoch's prime 20×20 zone.
+              </h2>
+              <Stroke color="#E53E3E" />
+            </div>
+            <p className="text-textSecondary max-w-md text-sm leading-relaxed">
+              The highest EGLD bid wins exclusive painting rights for the entire epoch —
+              plus an NFT and royalties.
             </p>
           </div>
-          <BiddingPreview />
+
+          {/* Winner perks — compact horizontal list */}
+          <div className="flex flex-col sm:flex-row gap-2 mb-4">
+            {[
+              { color: '#E53E3E', icon: '🎨', title: 'Exclusive zone rights',     desc: 'Paint freely on the locked 20×20 all epoch. No one else can touch your pixels.' },
+              { color: '#9F7AEA', icon: '🖼️', title: 'Winner NFT — your 20×20',  desc: 'An NFT minted from your own painting is airdropped to you at epoch end.' },
+              { color: '#E5B547', icon: '💎', title: 'Royalties on the epoch NFT', desc: 'Earn a royalty on every future resale of the top-painter NFT for that epoch.' },
+            ].map(({ color, icon, title, desc }) => (
+              <div key={title} className="flex-1 flex items-start gap-2.5 card p-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-base flex-shrink-0 mt-0.5"
+                  style={{ background: color + '20' }}>{icon}</div>
+                <div>
+                  <p className="text-xs font-bold text-textPrimary leading-snug">{title}</p>
+                  <p className="text-xs text-textSecondary leading-relaxed mt-0.5">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <BiddingPreview onPlaceBid={() => navigate('/auction')} />
         </div>
 
       </AnimatedSection>
@@ -629,19 +726,42 @@ const WelcomePage = () => {
             <div>
               <div className="pill mb-2">NFT Rewards</div>
               <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight mb-2">
-                Paint the most. Win a one-of-a-kind NFT.
+                Two NFTs minted every epoch.
               </h2>
               <Stroke color="#9F7AEA" />
-              <p className="text-textSecondary leading-relaxed mb-5 text-base">
-                At epoch end, the wallet that spent the most credits receives a{' '}
-                <strong className="text-textPrimary">unique generative NFT</strong> minted directly to their address —
-                no claiming transaction, fully automatic.
+              <p className="text-textSecondary leading-relaxed mb-4 text-base">
+                At epoch end, the smart contract automatically mints and airdrops two unique NFTs — no claiming needed.
               </p>
-              <ul className="space-y-2.5 text-base text-textSecondary">
-                <NftFeature color="#E53E3E" text="One NFT per epoch — never repeated, never duplicated." />
-                <NftFeature color="#4299E1" text="Generative art derived from the epoch's canvas snapshot." />
+
+              <div className="space-y-3 mb-4">
+                {/* Top-painter NFT */}
+                <div className="rounded-xl border border-border p-3 flex items-start gap-3 bg-backgroundAlt">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ background: '#9F7AEA22' }}>🏆</div>
+                  <div>
+                    <p className="font-heading text-sm font-bold text-textPrimary">Top Painter NFT</p>
+                    <p className="text-xs text-textSecondary leading-relaxed mt-0.5">
+                      Goes to the wallet that painted the most pixels. Generative art from the full epoch canvas snapshot.
+                    </p>
+                  </div>
+                </div>
+                {/* Auction-winner NFT */}
+                <div className="rounded-xl border border-border p-3 flex items-start gap-3 bg-backgroundAlt">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ background: '#E5B54722' }}>🔨</div>
+                  <div>
+                    <p className="font-heading text-sm font-bold text-textPrimary">Auction Winner NFT</p>
+                    <p className="text-xs text-textSecondary leading-relaxed mt-0.5">
+                      Goes to the highest bidder. Minted directly from <strong className="text-textPrimary">their own 20×20 zone painting</strong> — plus royalties on every future resale of the top-painter NFT.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <ul className="space-y-2 text-sm text-textSecondary">
+                <NftFeature color="#E53E3E" text="One of each per epoch — never repeated, never duplicated." />
                 <NftFeature color="#48BB78" text="Automatically airdropped — no claim transaction needed." />
-                <NftFeature color="#9F7AEA" text="Epoch number, charity name, and top-painter address in metadata." />
+                <NftFeature color="#9F7AEA" text="Epoch number, charity name, and winner address in metadata." />
               </ul>
             </div>
             <div className="flex flex-col items-center gap-3">
@@ -887,55 +1007,24 @@ const ScrollDownButton = ({ targetId }) => (
 );
 
 /* ─── AnimatedSection ────────────────────────────────────────────────────── */
-const AnimatedSection = ({ children, className = '', style, id, scrollTarget }) => {
-  const ref = useRef(null);
-  const [visible, setVisible] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.top < window.innerHeight && rect.bottom > 0) setVisible(true);
-  }, []);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
-      { threshold: 0.5 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  return (
-    <section
-      id={id}
-      ref={ref}
-      className={className}
-      style={{
-        ...style,
-        transition: 'opacity 0.5s cubic-bezier(0.4,0,0.2,1), transform 0.5s cubic-bezier(0.4,0,0.2,1)',
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(10px)',
-      }}
-    >
-      {children}
-      {scrollTarget && (
-        <div style={{
-          position: 'absolute', bottom: 32, right: 40,
-          transition: 'opacity 0.4s ease, transform 0.4s ease',
-          opacity: visible ? 1 : 0,
-          transform: visible ? 'translateY(0)' : 'translateY(8px)',
-          pointerEvents: visible ? 'auto' : 'none',
-        }}>
-          <ScrollDownButton targetId={scrollTarget} />
-        </div>
-      )}
-    </section>
-  );
-};
+const AnimatedSection = ({ children, className = '', style, id, scrollTarget }) => (
+  <section
+    id={id}
+    className={className}
+    style={{
+      scrollSnapAlign: 'start',
+      scrollSnapStop: 'always',
+      ...style,
+    }}
+  >
+    {children}
+    {scrollTarget && (
+      <div style={{ position: 'absolute', bottom: 32, right: 40 }}>
+        <ScrollDownButton targetId={scrollTarget} />
+      </div>
+    )}
+  </section>
+);
 
 /* ─── HeroCanvasPreview ──────────────────────────────────────────────────── */
 const HeroCanvasPreview = ({ onlineUsers }) => (
@@ -970,36 +1059,39 @@ const HeroCanvasPreview = ({ onlineUsers }) => (
 );
 
 /* ─── BiddingPreview ─────────────────────────────────────────────────────── */
-const BiddingPreview = () => (
-  <div className="card p-5 bg-backgroundAlt relative overflow-hidden">
+const BiddingPreview = ({ onPlaceBid }) => (
+  <div className="card p-3 bg-backgroundAlt relative overflow-hidden">
     <div className="absolute top-0 left-0 right-0 h-0.5"
       style={{ background: 'linear-gradient(90deg,#E53E3E,#ED8936,#ECC94B,#48BB78,#4299E1,#9F7AEA)' }} />
-    <div className="flex items-center gap-2 mb-4">
+    <div className="flex items-center gap-2 mb-3">
       <div className="w-2 h-2 rounded-full bg-error" style={{ animation: 'subtle-pulse 2s ease-in-out infinite' }} />
       <span className="text-xs font-semibold uppercase tracking-wider text-textMuted">Live auction — Epoch #1</span>
       <div className="ml-auto flex items-center gap-1.5 text-sm font-semibold" style={{ color: '#ED8936' }}>
         ⏱ 23h 14m left
       </div>
     </div>
-    <div className="grid md:grid-cols-2 gap-5 items-start">
+    <div className="grid md:grid-cols-2 gap-3 items-start">
       <div>
-        <p className="text-[10px] text-textMuted uppercase tracking-wider font-medium mb-2">Canvas — locked 50×50 zone</p>
+        <p className="text-[10px] text-textMuted uppercase tracking-wider font-medium mb-1.5">Canvas — locked 20×20 zone</p>
         <AuctionCanvasZone />
       </div>
       <div>
-        <p className="text-[10px] text-textMuted uppercase tracking-wider font-medium mb-3">Current bids</p>
-        <div className="space-y-2 mb-4">
+        <p className="text-[10px] text-textMuted uppercase tracking-wider font-medium mb-2">Current bids</p>
+        <div className="space-y-1.5 mb-3">
           <AuctionBid rank={1} address="erd1…9f3a" amount="0.85 EGLD" leading />
           <AuctionBid rank={2} address="erd1…a3f2" amount="0.72 EGLD" />
           <AuctionBid rank={3} address="erd1…7c1e" amount="0.50 EGLD" />
           <AuctionBid rank={4} address="erd1…2b4d" amount="0.31 EGLD" />
         </div>
-        <div className="p-3 rounded-lg border border-border bg-surface text-xs text-textSecondary mb-3">
+        <div className="p-2 rounded-lg border border-border bg-surface text-xs text-textSecondary mb-2">
           <span className="text-textPrimary font-semibold">Min. next bid: </span>
           0.935 EGLD <span className="text-textMuted">(+10% above leader)</span>
         </div>
-        <button disabled className="w-full btn-primary text-sm py-2 opacity-50 cursor-not-allowed">
-          Place bid ↗ (demo preview)
+        <button
+          onClick={onPlaceBid}
+          className="w-full btn-primary text-sm py-2"
+        >
+          Go to live auction →
         </button>
       </div>
     </div>
@@ -1031,7 +1123,7 @@ const AuctionCanvasZone = () => {
            style={{ top:'18%', left:'30%', width:'40%', height:'56%', border:'2px solid #E5B547', borderRadius:3, background:'rgba(229,181,71,0.07)' }}>
         <span style={{ fontSize:22 }}>🔒</span>
         <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color:'#E5B547' }}>Auction Zone</span>
-        <span className="text-[8px] text-textMuted">50 × 50 px</span>
+        <span className="text-[8px] text-textMuted">20 × 20 px</span>
       </div>
       <div aria-hidden="true" className="absolute pointer-events-none"
            style={{ top:'16%', left:'28%', width:'44%', height:'60%', border:'1px solid rgba(229,181,71,0.25)', borderRadius:4, animation:'ping 2.5s cubic-bezier(0,0,0.2,1) infinite' }} />
@@ -1117,6 +1209,17 @@ const CharityCard = ({ charity, isHighlighted, votePct }) => (
         <div className="h-full rounded-full" style={{ background: charity.color, width: `${votePct}%` }} />
       </div>
     </div>
+    {charity.link && (
+      <a
+        href={charity.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+        style={{ background: charity.color + '18', color: charity.color }}
+      >
+        Visit website ↗
+      </a>
+    )}
   </div>
 );
 
