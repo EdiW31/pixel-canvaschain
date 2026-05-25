@@ -318,6 +318,11 @@ pub trait PixelCanvasContract {
         // which is what triggers the server-side canvas wipe.)
         self.epoch_top_painter().clear();
         self.epoch_top_paint_count().set(0u64);
+
+        // Signal to clients that the epoch is over: set duration to 1 second
+        // so that endsAt = (startTimestamp + 1) * 1000 is always in the past.
+        // The admin must call setEpochDuration again before the next startEpoch.
+        self.epoch_duration_seconds().set(1u64);
     }
 
     // ─── Phase 3: Auction endpoints ───────────────────────────────────────────

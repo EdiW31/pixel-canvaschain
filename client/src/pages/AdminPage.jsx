@@ -328,6 +328,10 @@ const AdminPage = () => {
       setEndEpochState('done');
       setEndEpochStep('');
       setTimeout(() => { setEndEpochState('idle'); fetchStats(); refetchEpochInfo(); }, 3000);
+      // Devnet confirmation takes ~6–15s — refetch again to catch the updated
+      // epoch_duration_seconds=1 that endEpoch writes, which makes the
+      // epoch-ended banner appear.
+      setTimeout(() => { refetchEpochInfo(); fetchStats(); }, 15_000);
     } catch (err) {
       showToast(err?.message ?? 'Transaction failed', 'error');
       setEndEpochState('idle');
