@@ -16,6 +16,13 @@ class PixelGrid {
       .fill(null)
       .map(() => Array(CANVAS_WIDTH).fill(DEFAULT_PIXEL_COLOR));
 
+    // Mirror grid containing only DB-confirmed (on-chain-paid-for) pixels.
+    // Served on canvas:request so reconnecting clients don't see ghost pixels
+    // from unconfirmed/failed paintPixels transactions.
+    this.confirmedGrid = Array(CANVAS_HEIGHT)
+      .fill(null)
+      .map(() => Array(CANVAS_WIDTH).fill(DEFAULT_PIXEL_COLOR));
+
     this.lastModified = new Date();
     console.log(`✅ Pixel grid initialized: ${CANVAS_WIDTH}x${CANVAS_HEIGHT}`);
   }
@@ -29,6 +36,7 @@ class PixelGrid {
     for (const { x, y, color } of rows) {
       if (this.isValidCoordinate(x, y) && this.isValidColor(color)) {
         this.grid[y][x] = color;
+        this.confirmedGrid[y][x] = color;
       }
     }
     this.lastModified = new Date();
@@ -37,6 +45,15 @@ class PixelGrid {
 
   getGrid() {
     return this.grid;
+  }
+
+  /**
+   * Returns the grid containing ONLY pixels confirmed on-chain (i.e. persisted
+   * to SQLite via persistPixels()). Used for canvas:request so refreshed clients
+   * never see pixels from a failed or in-flight paintPixels transaction.
+   */
+  getConfirmedGrid() {
+    return this.confirmedGrid;
   }
 
   // Gets the color of a specific pixel
@@ -100,6 +117,14 @@ class PixelGrid {
     if (enriched.length === 0) return 0;
     try { dbSavePixels(enriched); }
     catch (e) { console.error('[db] persistPixels failed:', e.message); return 0; }
+    // Mirror the persisted pixels into confirmedGrid so canvas:request
+    // (which serves confirmedGrid) shows them to refreshing clients.
+    for (const p of enriched) {
+      this.confirmedGrid[p.y][p.x] = p.color;
+      // Also ensure the live grid agrees, in case persistPixels was called
+      // from a server-side watcher path that bypassed setPixel*.
+      this.grid[p.y][p.x] = p.color;
+    }
     return enriched.length;
   }
 
@@ -118,6 +143,7 @@ class PixelGrid {
     for (let y = 0; y < CANVAS_HEIGHT; y++) {
       for (let x = 0; x < CANVAS_WIDTH; x++) {
         this.grid[y][x] = DEFAULT_PIXEL_COLOR;
+        this.confirmedGrid[y][x] = DEFAULT_PIXEL_COLOR;
       }
     }
     this.lastModified = new Date();
@@ -126,13 +152,20 @@ class PixelGrid {
     console.log('🎬 Canvas cleared (memory + DB)');
   }
 
+  /**
+   * Revert a list of optimistic pixels back to their CONFIRMED color (the
+   * color stored in DB, or white if never confirmed). This prevents wiping
+   * another user's confirmed pixel at the same coords when an unrelated
+   * paintPixels tx fails.
+   */
   revertPixels(pixels) {
     if (!Array.isArray(pixels) || pixels.length === 0) return [];
     const reverted = [];
     for (const { x, y } of pixels) {
       if (this.isValidCoordinate(x, y)) {
-        this.grid[y][x] = DEFAULT_PIXEL_COLOR;
-        reverted.push({ x, y, color: DEFAULT_PIXEL_COLOR });
+        const restored = this.confirmedGrid[y][x] ?? DEFAULT_PIXEL_COLOR;
+        this.grid[y][x] = restored;
+        reverted.push({ x, y, color: restored });
       }
     }
     if (reverted.length) this.lastModified = new Date();

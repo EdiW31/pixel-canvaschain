@@ -118,8 +118,9 @@ const Toolbar = () => {
       clearPendingPixels();
       showToast(`${pixels.length} pixel${pixels.length !== 1 ? 's' : ''} submitted!`, 'success');
 
-      // Notify server (optional — server can verify on-chain ownership)
-      if (txHash) notifyPixelsSubmitted(txHash);
+      // Notify server with the pixel list so its own watcher persists/reverts
+      // independently of whether this tab stays open.
+      if (txHash) notifyPixelsSubmitted(txHash, pixels);
 
       // Poll devnet API for tx outcome — if it fails, revert pixels client + server.
       // Run in background so the UI stays responsive.

@@ -10,6 +10,58 @@ import userManager from './userManager.js';
 const API_URL = process.env.DEVNET_API_URL || 'https://devnet-api.multiversx.com';
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 
+/**
+ * Pending paintPixels transactions awaiting on-chain confirmation.
+ *   key:   txHash
+ *   value: { address, pixels: [{x,y,color}], expiresAt }
+ *
+ * On `pixels:submit` the server starts polling devnet for the tx outcome.
+ * Success → persist the pixels to SQLite (so they survive refresh).
+ * Failure/timeout → revert in memory + broadcast the rollback to all clients.
+ *
+ * This makes pixel ownership server-authoritative: even if the user closes
+ * the tab right after signing, ghost pixels can't survive.
+ */
+const pendingTxs = new Map();
+
+async function watchTxOnDevnet(io, txHash) {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5_000));
+    const entry = pendingTxs.get(txHash);
+    if (!entry) return; // resolved elsewhere (e.g. client-side pixels:confirm)
+    try {
+      const res = await fetch(`${API_URL}/transactions/${txHash}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const status = data?.status;
+      if (status === 'success') {
+        const n = pixelGrid.persistPixels(entry.pixels, entry.address);
+        pendingTxs.delete(txHash);
+        console.log(`✅ [server-watch] Persisted ${n} pixels (tx ${txHash})`);
+        return;
+      }
+      if (status === 'fail' || status === 'failed' || status === 'invalid') {
+        const reverted = pixelGrid.revertPixels(entry.pixels);
+        pendingTxs.delete(txHash);
+        io.emit('pixels:update', { pixels: reverted, address: null });
+        console.log(`↩  [server-watch] Reverted ${reverted.length} pixels (tx ${txHash})`);
+        return;
+      }
+    } catch (e) {
+      console.warn('[watchTxOnDevnet]', e?.message ?? e);
+    }
+  }
+  // Timeout — treat as failure so pixels don't ghost forever.
+  const entry = pendingTxs.get(txHash);
+  if (entry) {
+    const reverted = pixelGrid.revertPixels(entry.pixels);
+    pendingTxs.delete(txHash);
+    io.emit('pixels:update', { pixels: reverted, address: null });
+    console.log(`⌛ [server-watch] Timeout, reverted ${reverted.length} pixels (tx ${txHash})`);
+  }
+}
+
 function decodeBase64BigUint(base64) {
   if (!base64) return BigInt(0);
   const buf = Buffer.from(base64, 'base64');
@@ -98,7 +150,9 @@ io.on('connection', (socket) => {
 
       socket.emit('wallet:joined', {
         address,
-        gridState: pixelGrid.getGrid(),
+        // Initial state sent on join uses the confirmed grid (DB truth) so
+        // a fresh session never inherits ghost pixels from in-flight txs.
+        gridState: pixelGrid.getConfirmedGrid(),
       });
 
       console.log(`💼 Wallet joined: ${address.slice(0, 10)}...`);
@@ -191,10 +245,30 @@ io.on('connection', (socket) => {
    * pixels:submit — client notifies us that a paintPixels ESDT tx was signed.
    * Acknowledges with pixels:committed so the client can clear its pending list.
    */
-  socket.on('pixels:submit', ({ txHash } = {}) => {
+  socket.on('pixels:submit', ({ txHash, pixels } = {}) => {
     const address = socket.walletAddress;
-    if (!address) return;
+    if (!address || !txHash) return;
     console.log(`💰 PIXEL tx submitted by ${address.slice(0, 10)}...: ${txHash}`);
+
+    // Register the pending tx so the server polls devnet for its outcome
+    // independently of whether the user's tab stays open.
+    if (Array.isArray(pixels) && pixels.length > 0) {
+      const sanitized = pixels
+        .filter((p) => pixelGrid.isValidCoordinate(p.x, p.y) && pixelGrid.isValidColor(p.color))
+        .map((p) => ({ x: p.x, y: p.y, color: p.color }));
+      if (sanitized.length > 0 && !pendingTxs.has(txHash)) {
+        pendingTxs.set(txHash, {
+          address,
+          pixels: sanitized,
+          expiresAt: Date.now() + 120_000,
+        });
+        // Fire-and-forget — the watcher self-reports and self-cleans.
+        watchTxOnDevnet(io, txHash).catch((e) =>
+          console.warn('[watchTxOnDevnet] rejected:', e?.message ?? e)
+        );
+      }
+    }
+
     // Optimistic acknowledgement — the contract handles actual ownership enforcement.
     socket.emit('pixels:committed', { txHash });
   });
@@ -241,7 +315,11 @@ io.on('connection', (socket) => {
    */
   socket.on('canvas:request', () => {
     try {
-      socket.emit('canvas:init', { gridState: pixelGrid.getGrid() });
+      // Serve the CONFIRMED grid (DB-persisted pixels only) so a client
+      // refreshing after a failed paintPixels tx never sees ghost pixels.
+      // Live `pixel:update` broadcasts continue to layer optimistic pixels
+      // on top during the session.
+      socket.emit('canvas:init', { gridState: pixelGrid.getConfirmedGrid() });
     } catch (error) {
       console.error('❌ Canvas request error:', error);
       socket.emit('error', { message: 'Failed to load canvas' });

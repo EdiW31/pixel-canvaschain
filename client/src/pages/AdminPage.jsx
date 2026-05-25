@@ -270,6 +270,10 @@ const AdminPage = () => {
   };
 
   const handleEndEpoch = async () => {
+    // Defend against UI race conditions (button held / double-click) that
+    // could fire endEpoch twice and mint duplicate NFT pairs. The contract
+    // also has an `epoch_ended` guard for safety.
+    if (endEpochState === 'pending') return;
     setEndEpochState('pending');
     setEndEpochStep('uploading-painter');
     setLastNftUrl('');

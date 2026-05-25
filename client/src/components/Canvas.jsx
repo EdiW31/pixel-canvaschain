@@ -309,28 +309,52 @@ const Canvas = () => {
     const drawZone = (borderAlpha) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // ── World-space pass: overlay fill + border ──────────────────────
+      // ── World-space pass ─────────────────────────────────────────────
       ctx.save();
       ctx.translate(offset.x, offset.y);
       ctx.scale(zoom, zoom);
 
-      // Semi-transparent warm overlay over the locked zone
-      ctx.fillStyle = auctionLive
-        ? 'rgba(229, 181, 71, 0.28)'   // gold tint during live auction
-        : 'rgba(160, 80, 255, 0.20)';  // purple tint after winner set
-      ctx.fillRect(sectionX, sectionY, ZONE, ZONE);
+      if (auctionLive) {
+        // Live auction: gold fill + animated gold border (existing behavior)
+        ctx.fillStyle = 'rgba(229, 181, 71, 0.28)';
+        ctx.fillRect(sectionX, sectionY, ZONE, ZONE);
 
-      // Animated / static border
-      ctx.strokeStyle = auctionLive
-        ? `rgba(255, 200, 0, ${borderAlpha})`
-        : `rgba(160, 80, 255, 0.90)`;
-      ctx.lineWidth = 4 / zoom;
-      ctx.strokeRect(sectionX + 0.5 / zoom, sectionY + 0.5 / zoom, ZONE, ZONE);
+        ctx.strokeStyle = `rgba(255, 200, 0, ${borderAlpha})`;
+        ctx.lineWidth = 4 / zoom;
+        ctx.strokeRect(sectionX + 0.5 / zoom, sectionY + 0.5 / zoom, ZONE, ZONE);
+      } else if (zoneWon) {
+        // Zone won: margin only — NO fill (so the winner's painted pixels
+        // remain fully visible), NO lock icon, NO "AUCTION ZONE" label.
+        ctx.strokeStyle = 'rgba(160, 80, 255, 1.0)';
+        ctx.lineWidth = 3 / zoom;
+        ctx.strokeRect(sectionX, sectionY, ZONE, ZONE);
+
+        // Gold L-shaped corner ticks for emphasis
+        const tick = 3;
+        ctx.lineWidth = 5 / zoom;
+        ctx.strokeStyle = 'rgba(229, 181, 71, 1.0)';
+        const corners = [
+          [0,    0,     1,  1],
+          [ZONE, 0,    -1,  1],
+          [0,    ZONE,  1, -1],
+          [ZONE, ZONE, -1, -1],
+        ];
+        for (const [dx, dy, sxDir, syDir] of corners) {
+          ctx.beginPath();
+          ctx.moveTo(sectionX + dx + tick * sxDir, sectionY + dy);
+          ctx.lineTo(sectionX + dx, sectionY + dy);
+          ctx.lineTo(sectionX + dx, sectionY + dy + tick * syDir);
+          ctx.stroke();
+        }
+      }
 
       ctx.restore();
 
       // ── Screen-space pass: lock icon + labels ────────────────────────
-      // Only render text when the zone is large enough to be legible
+      // ONLY rendered during the live auction. Once the zone is won, the
+      // winner's artwork lives inside that frame — no lock, no label.
+      if (!auctionLive) return;
+
       const zoneScreenW = ZONE * zoom;
       if (zoneScreenW < 64) return;
 
@@ -341,12 +365,10 @@ const Canvas = () => {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      // Lock emoji — size scales with zoom, capped so it never gets silly large
       const lockPx = Math.min(Math.max(zoneScreenW * 0.22, 14), 40);
       ctx.font = `${lockPx}px serif`;
       ctx.fillText('🔒', cx, cy - zoneScreenW * 0.09);
 
-      // "AUCTION ZONE" label
       const labelPx = Math.min(Math.max(zoneScreenW * 0.10, 8), 14);
       if (labelPx >= 8) {
         ctx.font = `bold ${labelPx}px system-ui, -apple-system, sans-serif`;
@@ -354,7 +376,6 @@ const Canvas = () => {
         ctx.fillText('AUCTION ZONE', cx, cy + zoneScreenW * 0.12);
       }
 
-      // Dimensions label
       const dimPx = Math.min(Math.max(zoneScreenW * 0.075, 6), 11);
       if (dimPx >= 6) {
         ctx.font = `${dimPx}px system-ui, -apple-system, sans-serif`;

@@ -198,6 +198,8 @@ pub trait PixelCanvasContract {
         self.require_owner();
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch to end");
+        // Guard against double-minting: an epoch can only be ended once.
+        require!(!self.epoch_ended(epoch).get(), "Epoch already ended");
 
         // Flush accumulated PIXEL to default charity address
         if !self.pixel_token_id().is_empty() {
@@ -301,6 +303,21 @@ pub trait PixelCanvasContract {
                 self.send().direct_esdt(&auction_winner, &token_id, nft_nonce, &amount);
             }
         }
+
+        // ── Finalize the epoch ───────────────────────────────────────────
+        // Mark this epoch as ended so further endEpoch calls are rejected.
+        self.epoch_ended(epoch).set(true);
+
+        // Force-close the auction if it was still flagged active.
+        if self.auction_active(epoch).get() {
+            self.auction_active(epoch).set(false);
+        }
+
+        // Reset epoch-scoped painter accumulators so the next epoch starts
+        // clean. (`current_epoch` is bumped by the next startEpoch call,
+        // which is what triggers the server-side canvas wipe.)
+        self.epoch_top_painter().clear();
+        self.epoch_top_paint_count().set(0u64);
     }
 
     // ─── Phase 3: Auction endpoints ───────────────────────────────────────────
@@ -810,6 +827,13 @@ pub trait PixelCanvasContract {
     #[storage_mapper("epochTopPainterHistory")]
     fn epoch_top_painter_history(&self, epoch: u64) -> SingleValueMapper<ManagedAddress>;
 
+    /// Per-epoch "this epoch has been ended" flag. Prevents `endEpoch` from
+    /// being called twice on the same epoch (which would re-mint duplicate
+    /// NFT pairs) and gates the next `startEpoch` so it can't begin until
+    /// the prior epoch has been properly closed.
+    #[storage_mapper("epochEnded")]
+    fn epoch_ended(&self, epoch: u64) -> SingleValueMapper<bool>;
+
     // ─── Events ───────────────────────────────────────────────────────────────
 
     #[event("buyPixels")]
@@ -883,7 +907,18 @@ pub trait PixelCanvasContract {
     /// Increments epoch, resets painter tracking, records timestamp.
     /// Returns the new epoch number.
     fn start_epoch_internal(&self) -> u64 {
-        let new_epoch = self.current_epoch().get() + 1u64;
+        // If a previous epoch exists, it must have been formally ended via
+        // endEpoch before a new one can begin. Otherwise the canvas isn't
+        // wiped, the prior auction state leaks, and NFTs for the prior
+        // epoch never get minted.
+        let prev = self.current_epoch().get();
+        if prev > 0u64 {
+            require!(
+                self.epoch_ended(prev).get(),
+                "Previous epoch must be ended first",
+            );
+        }
+        let new_epoch = prev + 1u64;
         self.current_epoch().set(new_epoch);
         self.epoch_start_timestamp().set(self.blockchain().get_block_timestamp());
         self.epoch_top_painter().clear();

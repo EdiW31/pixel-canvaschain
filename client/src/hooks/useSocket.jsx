@@ -123,9 +123,12 @@ export const SocketProvider = ({ children }) => {
   /**
    * Notify server that a paintPixels ESDT tx was confirmed on-chain.
    */
-  const notifyPixelsSubmitted = (txHash) => {
+  const notifyPixelsSubmitted = (txHash, pixels) => {
     if (socket && isConnected) {
-      socket.emit('pixels:submit', { txHash });
+      // Forward the pixel list so the server can register the tx with its
+      // own poller (resilient to the user closing the tab before
+      // watchPaintTx resolves).
+      socket.emit('pixels:submit', { txHash, pixels });
     }
   };
 
