@@ -275,7 +275,7 @@ const AdminPage = () => {
     // also has an `epoch_ended` guard for safety.
     if (endEpochState === 'pending') return;
     setEndEpochState('pending');
-    setEndEpochStep('uploading-painter');
+    setEndEpochStep('snapshotting');
     setLastNftUrl('');
     try {
       // Auction zone coords — sx/sy come from getAuctionState (set in fetchStats).
@@ -283,11 +283,48 @@ const AdminPage = () => {
       const sx = Number.isFinite(auctionInfo?.sx) ? auctionInfo.sx : 40;
       const sy = Number.isFinite(auctionInfo?.sy) ? auctionInfo.sy : 40;
 
-      // Default fallback URIs (devnet-only — admin server must be reachable)
-      let painterUri = `${SERVER_URL}/canvas/png`;
-      let auctionUri = `${SERVER_URL}/canvas/section-png?x=${sx}&y=${sy}&w=20&h=20`;
+      // Current epoch number — used to name the per-epoch snapshot. If for
+      // some reason we don't have a fresh value, refuse rather than guess.
+      const epoch = Number(stats?.epoch ?? 0);
+      if (!epoch || epoch <= 0) {
+        showToast('Cannot determine current epoch number — refresh and retry', 'error');
+        setEndEpochState('idle');
+        setEndEpochStep('');
+        return;
+      }
 
-      // Upload both images in parallel to catbox.moe for permanent hosting
+      // STEP 1 — Write the immutable per-epoch snapshot to the server's
+      // local `snapshots/` dir. Always-succeeds path that gives us a
+      // PER-EPOCH stable URL even when the public-host upload fails.
+      // This is also our fallback URI for the NFT — much better than the
+      // old `${SERVER_URL}/canvas/png` (a live endpoint that changes after
+      // every paint and every canvas wipe).
+      const snapRes = await fetch(`${SERVER_URL}/snapshots/epoch/${epoch}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sx, sy, w: 20, h: 20, scale: 32 }),
+      });
+      // Fallbacks default to the per-epoch snapshot URL (local only — won't
+      // render on devnet explorer, but the website does via NftPage's
+      // resolveImageUrl which substitutes snapshot paths). Caller still
+      // gets a meaningful, per-epoch-frozen URI.
+      let painterUri = `${SERVER_URL}/snapshots/epoch/${epoch}/canvas.png`;
+      let auctionUri = `${SERVER_URL}/snapshots/epoch/${epoch}/zone.png`;
+      if (!snapRes.ok) {
+        const txt = await snapRes.text().catch(() => '');
+        console.warn('[endEpoch] snapshot write failed — keeping default fallback URIs:', snapRes.status, txt.slice(0, 200));
+        showToast(`Snapshot write failed (${snapRes.status}) — continuing with live URL fallback`, 'info');
+        // Drop back to the very old live-endpoint URLs since snapshots
+        // aren't on disk; at least the demo works locally.
+        painterUri = `${SERVER_URL}/canvas/png`;
+        auctionUri = `${SERVER_URL}/canvas/section-png?x=${sx}&y=${sy}&w=20&h=20`;
+      }
+
+      // STEP 2 — TRY to upload both images to a public host (catbox →
+      // 0x0.st inside the server). If either succeeds, prefer its https
+      // URL over the local fallback. If both fail, we still ship the
+      // local URI — broken on the explorer, but the website renders fine.
+      setEndEpochStep('uploading-painter');
       const [painterRes, auctionRes] = await Promise.allSettled([
         fetch(`${SERVER_URL}/canvas/upload`, { method: 'POST' }),
         fetch(`${SERVER_URL}/canvas/upload-section`, {
@@ -298,21 +335,19 @@ const AdminPage = () => {
       ]);
 
       if (painterRes.status === 'fulfilled' && painterRes.value.ok) {
-        const { url } = await painterRes.value.json();
+        const { url } = await painterRes.value.json().catch(() => ({}));
         if (url?.startsWith('https://')) painterUri = url;
+        else console.warn('[endEpoch] painter upload returned non-https URL — using snapshot fallback');
       } else {
-        console.warn('[endEpoch] Painter canvas upload failed — falling back to server URL');
-        showToast('Painter image upload failed — using server URL', 'info');
+        console.warn('[endEpoch] painter upload failed — using snapshot fallback');
       }
-
       setEndEpochStep('uploading-auction');
-
       if (auctionRes.status === 'fulfilled' && auctionRes.value.ok) {
-        const { url } = await auctionRes.value.json();
+        const { url } = await auctionRes.value.json().catch(() => ({}));
         if (url?.startsWith('https://')) auctionUri = url;
+        else console.warn('[endEpoch] auction upload returned non-https URL — using snapshot fallback');
       } else {
-        console.warn('[endEpoch] Auction zone upload failed — falling back to server URL');
-        showToast('Auction zone upload failed — using server URL', 'info');
+        console.warn('[endEpoch] auction upload failed — using snapshot fallback');
       }
 
       setLastNftUrl({ painter: painterUri, auction: auctionUri });
@@ -1060,6 +1095,12 @@ const EndEpochTab = ({
             {endEpochState === 'pending' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))', marginBottom: 14, fontSize: 12, flexWrap: 'wrap' }}>
                 <ProgStep
+                  active={endEpochStep === 'snapshotting'}
+                  done={['uploading-painter', 'uploading-auction', 'signing'].includes(endEpochStep) || endEpochState === 'done'}
+                  label="Snapshot"
+                />
+                <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
+                <ProgStep
                   active={endEpochStep === 'uploading-painter'}
                   done={['uploading-auction', 'signing'].includes(endEpochStep) || endEpochState === 'done'}
                   label="Upload painter"
@@ -1096,6 +1137,7 @@ const EndEpochTab = ({
               <PrimaryBtn disabled={endEpochState !== 'idle' || !hasActiveEpoch} pending={endEpochState === 'pending'} onClick={handleEndEpoch}>
                 {endEpochState === 'pending' ? (
                   <Spinner label={
+                    endEpochStep === 'snapshotting'      ? 'Saving snapshot…' :
                     endEpochStep === 'uploading-painter' ? 'Uploading canvas…' :
                     endEpochStep === 'uploading-auction' ? 'Uploading zone…' :
                     'Signing…'

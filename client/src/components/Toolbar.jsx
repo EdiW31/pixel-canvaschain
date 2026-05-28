@@ -25,7 +25,7 @@ const Toolbar = () => {
   const { zoom, hoverPixel, zoomIn, zoomOut, resetView, minZoom, MAX_ZOOM } = useCanvas();
   const {
     brushSize, setBrushSize, selectedColor,
-    pendingPixels, pendingCount, clearPendingPixels, undoPendingPixels,
+    pendingPixels, pendingCount, undoPendingPixels,
     wallet, showToast, refetchPixelBalance,
   } = useApp();
   const { notifyPixelsSubmitted, watchPaintTx, socket, isConnected } = useSocket();
@@ -114,8 +114,10 @@ const Toolbar = () => {
 
       const txHash = signedTxs[0].getHash?.().toString() ?? '';
 
-      // Optimistic clear — the canvas is already visually updated
-      clearPendingPixels();
+      // NOTE: pendingPixels is NOT cleared here. The server's `pixels:submit`
+      // ack (which fires `pixels:committed` on the client → clearPendingPixels)
+      // handles that. Clearing here too early loses the pending list before
+      // the server has a chance to confirm or rollback.
       showToast(`${pixels.length} pixel${pixels.length !== 1 ? 's' : ''} submitted!`, 'success');
 
       // Notify server with the pixel list so its own watcher persists/reverts
@@ -124,8 +126,12 @@ const Toolbar = () => {
 
       // Poll devnet API for tx outcome — if it fails, revert pixels client + server.
       // Run in background so the UI stays responsive.
+      // IMPORTANT: pass the full pixels (including color), not a stripped {x,y}.
+      // The success path emits `pixels:confirm` with these objects, which the
+      // server uses to write to SQLite — colorless pixels fail validation and
+      // never persist (the original cause of the "pixels don't save" bug).
       if (txHash) {
-        watchPaintTx(txHash, pixels.map((p) => ({ x: p.x, y: p.y }))).catch((err) => {
+        watchPaintTx(txHash, pixels).catch((err) => {
           console.warn('[watchPaintTx] error:', err?.message);
         });
       }

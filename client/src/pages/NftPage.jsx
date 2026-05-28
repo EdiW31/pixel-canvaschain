@@ -25,8 +25,51 @@ import { Link } from 'react-router-dom';
 import MarketingNav from '../components/MarketingNav';
 
 const COLLECTION = import.meta.env.VITE_NFT_COLLECTION;
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5001';
 const DEVNET_API = 'https://devnet-api.multiversx.com';
 const EXPLORER  = 'https://devnet-explorer.multiversx.com';
+
+/**
+ * Resolve the best displayable image URL for a given NFT.
+ *
+ * The on-chain URI for epochs 4–8 historically points to
+ * `http://localhost:5001/canvas/png`, which is a) unreachable from any
+ * external viewer and b) a LIVE endpoint that renders the *current*
+ * canvas — not the snapshot at that epoch's end. So even the user's own
+ * browser sees the wrong image once the canvas wipes for the next epoch.
+ *
+ * Recovery strategy: if the on-chain URI looks broken (localhost / no
+ * URI / live endpoint), substitute the server's per-epoch snapshot route
+ * `/snapshots/epoch/:n/canvas.png` (or `.../zone.png`) derived from the
+ * NFT's `attributes` field. The snapshot is the SAME content the NFT
+ * meant to capture — just hosted from the user's machine instead of
+ * the dead catbox URL. Future epochs (after the upload guard lands)
+ * will already have correct https URIs and bypass this fallback.
+ */
+function resolveImageUrl(nft, attrs) {
+  const onChainUrl =
+    nft.url ||
+    nft.media?.[0]?.url ||
+    nft.assets?.pngUrl ||
+    (nft.uris?.[0] ? atob(nft.uris[0]) : null);
+
+  // If we have a real https URL that ISN'T pointing at the live
+  // `/canvas/png` endpoint, use it directly.
+  if (
+    onChainUrl &&
+    onChainUrl.startsWith('https://') &&
+    !onChainUrl.includes('/canvas/png') &&
+    !onChainUrl.includes('/canvas/section-png')
+  ) {
+    return onChainUrl;
+  }
+
+  // Otherwise fall back to the local per-epoch snapshot.
+  const epoch = attrs.epoch;
+  if (!epoch) return onChainUrl ?? null; // no way to derive snapshot path
+  const kind = attrs.type === 'auction' ? 'zone' : 'canvas';
+  return `${SERVER_URL}/snapshots/epoch/${epoch}/${kind}.png`;
+}
 
 function truncate(addr) {
   if (!addr) return '';
@@ -81,14 +124,10 @@ function NftCard({ nft }) {
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const imageUrl =
-    nft.url ||
-    nft.media?.[0]?.url ||
-    nft.assets?.pngUrl ||
-    null;
-
   const attrs = parseAttributes(nft.attributes);
   const nftType = attrs.type ?? (nft.name?.toLowerCase().includes('auction') ? 'auction' : 'painter');
+  // Pass `type` into attrs lookup so resolveImageUrl picks zone vs canvas correctly.
+  const imageUrl = resolveImageUrl(nft, { ...attrs, type: nftType });
   const isAuction = nftType === 'auction';
 
   const accentColor = isAuction ? '#7c3aed' : '#b45309';

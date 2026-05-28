@@ -63,7 +63,11 @@ const EpochBanner = ({ className = '' }) => {
 
   if (!epochInfo.epoch) return null;
 
-  const epochEnded = epochInfo.endsAt > 0 && msLeft <= 0;
+  // Two end signals, both authoritative:
+  //   1. `ended` — contract's per-epoch `epoch_ended` flag (set by endEpoch).
+  //   2. timer expired — the natural duration ran out but admin hasn't
+  //      called endEpoch yet ("waiting for finalization").
+  const epochEnded = epochInfo.ended || (epochInfo.endsAt > 0 && msLeft <= 0);
 
   return (
     <>

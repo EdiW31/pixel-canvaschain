@@ -124,7 +124,20 @@ export const AppProvider = ({ children }) => {
     const endsAt = startTimestamp > 0 && durationSeconds > 0
       ? (startTimestamp + durationSeconds) * 1000  // convert to ms
       : 0;
-    setEpochInfo({ epoch, startTimestamp, durationSeconds, endsAt });
+    // Authoritative end signal — the contract sets `epoch_ended[epoch] = true`
+    // inside endEpoch. Timer-based detection alone is unreliable because
+    // endEpoch can fire before the natural end OR the admin might bump
+    // setEpochDuration mid-epoch.
+    let ended = false;
+    if (epoch > 0) {
+      try {
+        const epochHex = epoch.toString(16).padStart(2, '0');
+        const raw = await queryContractRaw('isEpochEnded', [epochHex]);
+        // Contract returns `true` as a single non-zero byte; missing/empty = false.
+        ended = !!(raw && raw[0] && atob(raw[0]).charCodeAt(0) === 1);
+      } catch { /* view may not exist on older contract — treat as not-ended */ }
+    }
+    setEpochInfo({ epoch, startTimestamp, durationSeconds, endsAt, ended });
   }, []);
 
   // Fetch epoch on mount and every 5 minutes

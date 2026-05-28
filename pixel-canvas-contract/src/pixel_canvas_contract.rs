@@ -172,7 +172,15 @@ pub trait PixelCanvasContract {
 
         let new_epoch = self.start_epoch_internal();
         let duration = self.auction_duration_seconds().get();
+        require!(duration > 0u64, "Auction duration must be > 0");
         let end_ts = self.blockchain().get_block_timestamp() + duration;
+
+        // Defensive clears: the new epoch index *should* start empty, but if
+        // there's ever any leak (failed prior start, partial upgrade), wipe
+        // it explicitly so we don't inherit stale state.
+        self.auction_highest_bid(new_epoch).clear();
+        self.auction_highest_bidder(new_epoch).clear();
+        self.zone_unlocked_for(new_epoch).clear();
 
         self.auction_section_x(new_epoch).set(section_x);
         self.auction_section_y(new_epoch).set(section_y);
@@ -319,10 +327,11 @@ pub trait PixelCanvasContract {
         self.epoch_top_painter().clear();
         self.epoch_top_paint_count().set(0u64);
 
-        // Signal to clients that the epoch is over: set duration to 1 second
-        // so that endsAt = (startTimestamp + 1) * 1000 is always in the past.
-        // The admin must call setEpochDuration again before the next startEpoch.
-        self.epoch_duration_seconds().set(1u64);
+        // NOTE: epoch_duration_seconds is intentionally NOT modified here.
+        // Previously we set it to 1 as a "this epoch is over" signal for the
+        // client timer — but that polluted the next epoch's duration because
+        // start_epoch_internal doesn't reset it. Use the per-epoch
+        // `isEpochEnded(epoch)` view instead (exposed in the views section).
     }
 
     // ─── Phase 3: Auction endpoints ───────────────────────────────────────────
@@ -333,11 +342,11 @@ pub trait PixelCanvasContract {
     fn place_bid(&self) {
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch");
-        require!(self.auction_active(epoch).get(), "No active auction this epoch");
-
-        let now = self.blockchain().get_block_timestamp();
-        let end_ts = self.auction_end_timestamp(epoch).get();
-        require!(now < end_ts, "Auction has ended");
+        // Single source of truth: an auction is "live" only if both the flag
+        // is set AND we haven't passed the end timestamp. Previously these
+        // two checks were separate which allowed `placeBid` to disagree with
+        // the read path (a known footgun when `closeAuction` hadn't fired yet).
+        require!(self.is_auction_live(epoch), "Auction is not live");
 
         let payment = self.call_value().egld().clone_value();
         require!(payment > BigUint::zero(), "Bid must be > 0");
@@ -391,16 +400,23 @@ pub trait PixelCanvasContract {
 
     /// Close the current epoch's auction (owner only). Sets the winner and
     /// commits the winning bid to the charity accumulator.
+    ///
+    /// Owner may close at any time while the auction flag is set — either
+    /// early (administrative decision) or after natural expiry. The prior
+    /// `now >= end_ts` requirement created a half-open state where an
+    /// expired auction kept `auction_active = true` until the owner
+    /// remembered to flip it, causing `paintPixels` to keep blocking the
+    /// zone. Auto-expire on read (`is_auction_live`) plus letting the
+    /// owner close at will eliminates both bugs.
     #[endpoint(closeAuction)]
     fn close_auction(&self) {
         self.require_owner();
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch");
+        // Idempotency: closing an already-closed auction is rejected so the
+        // admin sees "no-op vs. effective" feedback instead of silently
+        // double-distributing the winning bid.
         require!(self.auction_active(epoch).get(), "Auction is not active");
-
-        let now = self.blockchain().get_block_timestamp();
-        let end_ts = self.auction_end_timestamp(epoch).get();
-        require!(now >= end_ts, "Auction has not ended yet");
 
         self.auction_active(epoch).set(false);
 
@@ -419,7 +435,9 @@ pub trait PixelCanvasContract {
 
             self.auction_closed_event(epoch, &winner, &winning_bid);
         } else {
-            // No bids — auction closed with no winner
+            // No bids — `zone_unlocked_for(epoch)` is intentionally left
+            // unset. Downstream consumers (paintPixels zone-check, endEpoch
+            // NFT mint) treat empty as "no winner / unrestricted zone".
             self.auction_closed_event(epoch, &ManagedAddress::zero(), &BigUint::zero());
         }
     }
@@ -466,13 +484,16 @@ pub trait PixelCanvasContract {
         let caller = self.blockchain().get_caller();
 
         // ── Phase 3: Auction zone restriction check ───────────────────────────
+        // Uses `is_auction_live` (flag + timestamp) so an expired-but-not-yet-
+        // closed auction does NOT keep blocking paints. Previously this branch
+        // checked `auction_active && now < end_ts` inline, which combined with
+        // `closeAuction`'s old `now >= end_ts` requirement produced a window
+        // where the zone was stuck locked.
         let epoch = self.current_epoch().get();
         if epoch > 0u64 {
-            let auction_is_active = self.auction_active(epoch).get();
             let zone_x = self.auction_section_x(epoch).get();
             let zone_y = self.auction_section_y(epoch).get();
-            let end_ts = self.auction_end_timestamp(epoch).get();
-            let now = self.blockchain().get_block_timestamp();
+            let auction_live = self.is_auction_live(epoch);
             let winner = if self.zone_unlocked_for(epoch).is_empty() {
                 ManagedAddress::zero()
             } else {
@@ -487,7 +508,7 @@ pub trait PixelCanvasContract {
                     && pixel.y >= zone_y
                     && pixel.y < zone_y + AUCTION_SIZE;
                 if in_zone {
-                    if auction_is_active && now < end_ts {
+                    if auction_live {
                         require!(false, "Zone is locked during active auction");
                     } else if !winner.is_zero() && caller != winner {
                         require!(false, "This zone is reserved for the auction winner");
@@ -727,10 +748,32 @@ pub trait PixelCanvasContract {
         }
     }
 
-    /// Returns whether the auction is currently active for the given epoch.
+    /// Returns whether the auction flag is set for the given epoch. NOTE:
+    /// this does not account for time-based expiry — use `isAuctionLive`
+    /// instead if you need "currently accepting bids".
     #[view(isAuctionActive)]
     fn is_auction_active(&self, epoch: u64) -> bool {
         self.auction_active(epoch).get()
+    }
+
+    /// Returns true iff the auction is BOTH flagged active AND has not yet
+    /// passed its end timestamp. This is the single source of truth used by
+    /// `placeBid` and the `paintPixels` zone-gating — exposing it lets the
+    /// UI render the same state without re-deriving the rule.
+    #[view(isAuctionLive)]
+    fn is_auction_live(&self, epoch: u64) -> bool {
+        if !self.auction_active(epoch).get() {
+            return false;
+        }
+        self.blockchain().get_block_timestamp() < self.auction_end_timestamp(epoch).get()
+    }
+
+    /// Returns true if `endEpoch` has already been called for the given
+    /// epoch. Lets the admin UI pre-check before submitting and surface a
+    /// clearer error than the on-chain `require!` rejection.
+    #[view(isEpochEnded)]
+    fn is_epoch_ended_view(&self, epoch: u64) -> bool {
+        self.epoch_ended(epoch).get()
     }
 
     // ─── Storage mappers ──────────────────────────────────────────────────────
@@ -925,6 +968,14 @@ pub trait PixelCanvasContract {
         }
         let new_epoch = prev + 1u64;
         self.current_epoch().set(new_epoch);
+
+        // Self-heal: if epoch_duration_seconds was left at an absurdly small
+        // value (e.g. 1 from an old endEpoch bug), reset it to the default so
+        // the new epoch doesn't show as ended the moment it starts.
+        if self.epoch_duration_seconds().get() < 30u64 {
+            self.epoch_duration_seconds().set(DEFAULT_EPOCH_DURATION);
+        }
+
         self.epoch_start_timestamp().set(self.blockchain().get_block_timestamp());
         self.epoch_top_painter().clear();
         self.epoch_top_paint_count().set(0u64);

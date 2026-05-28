@@ -200,7 +200,15 @@
         {
             "docs": [
                 "Close the current epoch's auction (owner only). Sets the winner and",
-                "commits the winning bid to the charity accumulator."
+                "commits the winning bid to the charity accumulator.",
+                "",
+                "Owner may close at any time while the auction flag is set — either",
+                "early (administrative decision) or after natural expiry. The prior",
+                "`now >= end_ts` requirement created a half-open state where an",
+                "expired auction kept `auction_active = true` until the owner",
+                "remembered to flip it, causing `paintPixels` to keep blocking the",
+                "zone. Auto-expire on read (`is_auction_live`) plus letting the",
+                "owner close at will eliminates both bugs."
             ],
             "name": "closeAuction",
             "mutability": "mutable",
@@ -526,9 +534,52 @@
         },
         {
             "docs": [
-                "Returns whether the auction is currently active for the given epoch."
+                "Returns whether the auction flag is set for the given epoch. NOTE:",
+                "this does not account for time-based expiry — use `isAuctionLive`",
+                "instead if you need \"currently accepting bids\"."
             ],
             "name": "isAuctionActive",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "bool"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns true iff the auction is BOTH flagged active AND has not yet",
+                "passed its end timestamp. This is the single source of truth used by",
+                "`placeBid` and the `paintPixels` zone-gating — exposing it lets the",
+                "UI render the same state without re-deriving the rule."
+            ],
+            "name": "isAuctionLive",
+            "mutability": "readonly",
+            "inputs": [
+                {
+                    "name": "epoch",
+                    "type": "u64"
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "bool"
+                }
+            ]
+        },
+        {
+            "docs": [
+                "Returns true if `endEpoch` has already been called for the given",
+                "epoch. Lets the admin UI pre-check before submitting and surface a",
+                "clearer error than the on-chain `require!` rejection."
+            ],
+            "name": "isEpochEnded",
             "mutability": "readonly",
             "inputs": [
                 {

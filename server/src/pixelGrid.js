@@ -32,15 +32,25 @@ class PixelGrid {
    * Called once on server boot, before HTTP listen.
    */
   hydrateFromDb() {
+    // Errors here intentionally propagate to the server bootstrap so we
+    // don't silently start with an empty canvas — see server.js boot block.
     const rows = loadAllPixels();
+    let applied = 0;
+    let invalid = 0;
     for (const { x, y, color } of rows) {
       if (this.isValidCoordinate(x, y) && this.isValidColor(color)) {
         this.grid[y][x] = color;
         this.confirmedGrid[y][x] = color;
+        applied++;
+      } else {
+        invalid++;
       }
     }
     this.lastModified = new Date();
-    console.log(`✅ Hydrated ${rows.length} pixels from SQLite (db rows: ${pixelCount()})`);
+    if (invalid > 0) {
+      console.warn(`[hydrateFromDb] skipped ${invalid} malformed rows (out of ${rows.length})`);
+    }
+    console.log(`✅ Hydrated ${applied} pixels from SQLite (db rows: ${pixelCount()})`);
   }
 
   getGrid() {
@@ -109,22 +119,46 @@ class PixelGrid {
   persistPixels(pixels, address = null) {
     if (!Array.isArray(pixels) || pixels.length === 0) return 0;
     const enriched = [];
+    const skipped = [];
     for (const p of pixels) {
       if (this.isValidCoordinate(p.x, p.y) && this.isValidColor(p.color)) {
         enriched.push({ x: p.x, y: p.y, color: p.color, address });
+      } else {
+        skipped.push(p);
       }
     }
+    if (skipped.length > 0) {
+      // Loud warning: if we're getting here, an upstream call is sending
+      // colorless or otherwise malformed pixel records. The old code
+      // silently swallowed these as "0 written" with no diagnostic.
+      console.warn(
+        `[persistPixels] skipped ${skipped.length}/${pixels.length} invalid records`,
+        JSON.stringify(skipped.slice(0, 3)),
+      );
+    }
     if (enriched.length === 0) return 0;
-    try { dbSavePixels(enriched); }
-    catch (e) { console.error('[db] persistPixels failed:', e.message); return 0; }
-    // Mirror the persisted pixels into confirmedGrid so canvas:request
-    // (which serves confirmedGrid) shows them to refreshing clients.
+
+    // DB write is the atomicity boundary. better-sqlite3 is synchronous, so
+    // either it returns cleanly or throws. We do NOT swallow the error here —
+    // the caller (server.js handlers) gets to decide whether to alert/rollback.
+    // Previously a silent catch returned 0, leaving confirmedGrid stale and
+    // future reconnecting clients seeing wrong state.
+    try {
+      dbSavePixels(enriched);
+    } catch (e) {
+      console.error('[persistPixels] DB write failed:', e?.message ?? e);
+      console.error('[persistPixels] sample row:', JSON.stringify(enriched[0]));
+      throw e;
+    }
+
+    // Only after DB write succeeds: mirror into confirmedGrid (canonical
+    // truth served on reconnect) AND the live grid (for currently-connected
+    // clients that may have missed the broadcast).
     for (const p of enriched) {
       this.confirmedGrid[p.y][p.x] = p.color;
-      // Also ensure the live grid agrees, in case persistPixels was called
-      // from a server-side watcher path that bypassed setPixel*.
       this.grid[p.y][p.x] = p.color;
     }
+    this.lastModified = new Date();
     return enriched.length;
   }
 

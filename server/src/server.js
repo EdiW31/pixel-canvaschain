@@ -4,11 +4,27 @@ import { renderCanvasPng } from './canvasPng.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pixelGrid from './pixelGrid.js';
 import userManager from './userManager.js';
 
 const API_URL = process.env.DEVNET_API_URL || 'https://devnet-api.multiversx.com';
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+
+// Per-epoch snapshot directory — captures canvas + auction zone as they were
+// at endEpoch time. These files are immutable per epoch, survive canvas
+// wipes, and back the NFT image both on the website (served from /snapshots)
+// and as a fallback when the public-host upload fails.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SNAPSHOTS_DIR = path.resolve(__dirname, '../snapshots');
+try {
+  fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+  console.log(`📸 Snapshots dir: ${SNAPSHOTS_DIR}`);
+} catch (e) {
+  console.error('Failed to create snapshots dir:', e);
+}
 
 /**
  * Pending paintPixels transactions awaiting on-chain confirmation.
@@ -36,9 +52,17 @@ async function watchTxOnDevnet(io, txHash) {
       const data = await res.json();
       const status = data?.status;
       if (status === 'success') {
-        const n = pixelGrid.persistPixels(entry.pixels, entry.address);
-        pendingTxs.delete(txHash);
-        console.log(`✅ [server-watch] Persisted ${n} pixels (tx ${txHash})`);
+        try {
+          const n = pixelGrid.persistPixels(entry.pixels, entry.address);
+          pendingTxs.delete(txHash);
+          console.log(`✅ [server-watch] Persisted ${n} pixels (tx ${txHash})`);
+        } catch (persistErr) {
+          // DB write failed. Keep the pending entry — a retry on next poll
+          // tick will attempt again. If it never recovers, the watcher
+          // timeout below will eventually revert.
+          console.error('[server-watch] persist failed, will retry:', persistErr?.message ?? persistErr);
+          continue;
+        }
         return;
       }
       if (status === 'fail' || status === 'failed' || status === 'invalid') {
@@ -49,7 +73,7 @@ async function watchTxOnDevnet(io, txHash) {
         return;
       }
     } catch (e) {
-      console.warn('[watchTxOnDevnet]', e?.message ?? e);
+      console.warn('[watchTxOnDevnet] poll error:', e?.message ?? e);
     }
   }
   // Timeout — treat as failure so pixels don't ghost forever.
@@ -262,10 +286,19 @@ io.on('connection', (socket) => {
           pixels: sanitized,
           expiresAt: Date.now() + 120_000,
         });
-        // Fire-and-forget — the watcher self-reports and self-cleans.
-        watchTxOnDevnet(io, txHash).catch((e) =>
-          console.warn('[watchTxOnDevnet] rejected:', e?.message ?? e)
-        );
+        // Fire-and-forget — the watcher self-reports and self-cleans. If it
+        // ever rejects unexpectedly (vs. handling its own poll errors inside),
+        // force a rollback so pixels can't ghost forever in pendingTxs.
+        watchTxOnDevnet(io, txHash).catch((e) => {
+          console.error('[watchTxOnDevnet] rejected unexpectedly:', e?.message ?? e);
+          const stranded = pendingTxs.get(txHash);
+          if (stranded) {
+            const reverted = pixelGrid.revertPixels(stranded.pixels);
+            pendingTxs.delete(txHash);
+            io.emit('pixels:update', { pixels: reverted, address: null });
+            console.log(`↩  [watcher-reject-rollback] Reverted ${reverted.length} pixels (tx ${txHash})`);
+          }
+        });
       }
     }
 
@@ -283,10 +316,32 @@ io.on('connection', (socket) => {
    */
   socket.on('pixels:confirm', ({ pixels, txHash } = {}) => {
     const address = socket.walletAddress;
-    if (!address || !Array.isArray(pixels) || pixels.length === 0) return;
-    const n = pixelGrid.persistPixels(pixels, address);
-    if (n > 0) {
-      console.log(`✅ Persisted ${n} pixels for ${address.slice(0, 10)}... (tx ${txHash ?? 'n/a'})`);
+    if (!address || !Array.isArray(pixels) || pixels.length === 0) {
+      console.warn(`[pixels:confirm] rejected — addr=${!!address} pixels=${Array.isArray(pixels) ? pixels.length : 'n/a'}`);
+      return;
+    }
+    // Defense-in-depth: a colorless payload here means the client regressed
+    // the Toolbar.jsx fix that passes full pixels to watchPaintTx. We log
+    // loudly so the bug shows up immediately instead of silently filtering.
+    const colorlessCount = pixels.filter((p) => !p || typeof p.color !== 'string').length;
+    if (colorlessCount > 0) {
+      console.warn(
+        `[pixels:confirm] ${colorlessCount}/${pixels.length} pixels missing color — client bug; will be skipped by persistPixels`,
+      );
+    }
+    try {
+      const n = pixelGrid.persistPixels(pixels, address);
+      if (n > 0) {
+        console.log(`✅ Persisted ${n} pixels for ${address.slice(0, 10)}... (tx ${txHash ?? 'n/a'})`);
+        // Server-side watcher may have the same tx pending; clear it so we
+        // don't double-process or timeout-revert what's already saved.
+        if (txHash) pendingTxs.delete(txHash);
+      } else {
+        console.warn(`[pixels:confirm] persistPixels returned 0 for ${pixels.length} input pixels (tx ${txHash ?? 'n/a'})`);
+      }
+    } catch (e) {
+      console.error('[pixels:confirm] persist failed:', e?.message ?? e);
+      socket.emit('error', { message: 'Failed to persist confirmed pixels' });
     }
   });
 
@@ -363,45 +418,73 @@ app.get('/canvas/png', async (req, res) => {
 });
 
 /**
+ * uploadToPublicHost(buf, filename)
+ * Tries catbox.moe first, then 0x0.st as a fallback. Returns an https:// URL
+ * on success, throws with the full diagnostic on failure. Both attempts log
+ * status / response-body so we can see WHY one failed (the previous silent
+ * fallback to a localhost URI is what produced unviewable NFTs for epochs
+ * 4–8 in the historical mint set).
+ */
+async function uploadToPublicHost(buf, filename) {
+  // ── Attempt 1: catbox.moe ──────────────────────────────────────────────
+  try {
+    const fd = new FormData();
+    fd.append('reqtype', 'fileupload');
+    fd.append('fileToUpload', new Blob([buf], { type: 'image/png' }), filename);
+    const r = await fetch('https://catbox.moe/user.php', { method: 'POST', body: fd });
+    const text = (await r.text()).trim();
+    if (r.ok && text.startsWith('https://')) {
+      console.log(`✅ catbox: ${text}`);
+      return text;
+    }
+    console.warn(`[catbox] status=${r.status} content-type=${r.headers.get('content-type')} body=${text.slice(0, 250)}`);
+  } catch (e) {
+    console.warn(`[catbox] threw: ${e?.message ?? e}`);
+  }
+
+  // ── Attempt 2: 0x0.st ──────────────────────────────────────────────────
+  // 0x0.st is simpler — a plain POST with a `file` field, returns the URL
+  // as plain text. Used widely as a backup of catbox for binary uploads.
+  try {
+    const fd = new FormData();
+    fd.append('file', new Blob([buf], { type: 'image/png' }), filename);
+    const r = await fetch('https://0x0.st', {
+      method: 'POST',
+      body: fd,
+      // 0x0.st requires a User-Agent or it returns 403.
+      headers: { 'User-Agent': 'pixel-canvaschain/1.0 (devnet)' },
+    });
+    const text = (await r.text()).trim();
+    if (r.ok && text.startsWith('https://')) {
+      console.log(`✅ 0x0.st: ${text}`);
+      return text;
+    }
+    console.error(`[0x0.st] status=${r.status} content-type=${r.headers.get('content-type')} body=${text.slice(0, 250)}`);
+    throw new Error(`Both hosts failed. 0x0.st last: status=${r.status} ${text.slice(0, 100)}`);
+  } catch (e) {
+    console.error(`[0x0.st] threw: ${e?.message ?? e}`);
+    throw new Error(`Public host upload failed: ${e?.message ?? e}`);
+  }
+}
+
+/**
  * POST /canvas/upload
- * Renders the current canvas as a PNG and uploads it to catbox.moe
- * (free permanent hosting, no auth required).
- * Returns { url: "https://files.catbox.moe/xxxxxx.png" }
+ * Renders the current canvas as a PNG and uploads it to a free public host
+ * (catbox.moe → 0x0.st fallback). Returns { url: 'https://...' }.
  *
- * Called automatically by the admin client just before endEpoch so the
- * NFT URI points to a publicly accessible image on devnet.
+ * Called by AdminPage.handleEndEpoch BEFORE signing endEpoch so the NFT
+ * URI points to a publicly accessible image viewable on devnet explorer.
+ * If both hosts fail, returns 500 — the client then aborts endEpoch
+ * (no more silent localhost fallback minting broken NFTs).
  */
 app.post('/canvas/upload', async (req, res) => {
   try {
-    console.log('📤 Uploading canvas PNG to catbox.moe…');
+    console.log('📤 Uploading full canvas PNG…');
     const buf = await renderCanvasPng(pixelGrid.getGrid());
-
-    const formData = new FormData();
-    formData.append('reqtype', 'fileupload');
-    formData.append(
-      'fileToUpload',
-      new Blob([buf], { type: 'image/png' }),
-      `canvas-${Date.now()}.png`,
-    );
-
-    const upload = await fetch('https://catbox.moe/user.php', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!upload.ok) {
-      throw new Error(`catbox.moe responded ${upload.status}`);
-    }
-
-    const url = (await upload.text()).trim();
-    if (!url.startsWith('https://')) {
-      throw new Error(`Unexpected response from catbox.moe: ${url}`);
-    }
-
-    console.log(`✅ Canvas uploaded: ${url}`);
+    const url = await uploadToPublicHost(buf, `canvas-${Date.now()}.png`);
     res.json({ url });
   } catch (err) {
-    console.error('Canvas upload error:', err);
+    console.error('Canvas upload error:', err?.message ?? err);
     res.status(500).json({ error: err.message ?? 'Upload failed' });
   }
 });
@@ -424,32 +507,98 @@ app.post('/canvas/upload-section', express.json(), async (req, res) => {
     if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > 100 || y + h > 100) {
       return res.status(400).json({ error: 'Invalid bounds' });
     }
-    console.log(`📤 Uploading section (${x},${y}) ${w}×${h} @${scale}× to catbox.moe…`);
+    console.log(`📤 Uploading section (${x},${y}) ${w}×${h} @${scale}×…`);
     const buf = await renderCanvasPng(pixelGrid.getGrid(), { x, y, w, h, scale });
-
-    const formData = new FormData();
-    formData.append('reqtype', 'fileupload');
-    formData.append(
-      'fileToUpload',
-      new Blob([buf], { type: 'image/png' }),
-      `zone-${x}-${y}-${Date.now()}.png`,
-    );
-
-    const upload = await fetch('https://catbox.moe/user.php', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!upload.ok) throw new Error(`catbox.moe responded ${upload.status}`);
-    const url = (await upload.text()).trim();
-    if (!url.startsWith('https://')) {
-      throw new Error(`Unexpected response from catbox.moe: ${url}`);
-    }
-    console.log(`✅ Section uploaded: ${url}`);
+    const url = await uploadToPublicHost(buf, `zone-${x}-${y}-${Date.now()}.png`);
     res.json({ url });
   } catch (err) {
-    console.error('Section upload error:', err);
+    console.error('Section upload error:', err?.message ?? err);
     res.status(500).json({ error: err.message ?? 'Upload failed' });
+  }
+});
+
+/**
+ * POST /snapshots/epoch/:n
+ * Body: { sx, sy, w?, h?, scale? }
+ *
+ * Writes TWO immutable PNGs to disk capturing the current canvas state +
+ * auction zone for epoch N. Returns the URLs to serve them:
+ *   { canvasUrl: '/snapshots/epoch/3/canvas.png',
+ *     zoneUrl:   '/snapshots/epoch/3/zone.png' }
+ *
+ * Called by AdminPage.handleEndEpoch BEFORE attempting the public-host upload.
+ * Snapshots persist across canvas wipes (clearAll), so the website's NFT
+ * gallery can always render the canvas as it was at that epoch's end —
+ * even if catbox/0x0.st fails. The on-chain NFT URI still wants a
+ * publicly-reachable URL (next layer), but these local files guarantee
+ * the website never shows a stale or blank image for an old epoch.
+ */
+app.post('/snapshots/epoch/:n', express.json(), async (req, res) => {
+  try {
+    const n = parseInt(req.params.n, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      return res.status(400).json({ error: 'Invalid epoch number' });
+    }
+    const sx    = Number(req.body?.sx ?? 0);
+    const sy    = Number(req.body?.sy ?? 0);
+    const w     = Number(req.body?.w ?? 20);
+    const h     = Number(req.body?.h ?? 20);
+    const scale = Number(req.body?.scale ?? 32);
+    if (sx < 0 || sy < 0 || sx + w > 100 || sy + h > 100) {
+      return res.status(400).json({ error: 'Invalid zone bounds' });
+    }
+
+    // Render BOTH from the same in-memory grid in the same tick so they
+    // represent a coherent moment (the live grid — by this point all paint
+    // pixels for this epoch are reflected in both `grid` and the
+    // server's view of the canvas).
+    const grid = pixelGrid.getGrid();
+    const [canvasBuf, zoneBuf] = await Promise.all([
+      renderCanvasPng(grid),
+      renderCanvasPng(grid, { x: sx, y: sy, w, h, scale }),
+    ]);
+
+    const canvasPath = path.join(SNAPSHOTS_DIR, `epoch-${n}-canvas.png`);
+    const zonePath   = path.join(SNAPSHOTS_DIR, `epoch-${n}-zone.png`);
+    fs.writeFileSync(canvasPath, canvasBuf);
+    fs.writeFileSync(zonePath, zoneBuf);
+    console.log(`📸 Snapshot written for epoch ${n}: ${canvasBuf.length}B canvas, ${zoneBuf.length}B zone`);
+
+    res.json({
+      canvasUrl: `/snapshots/epoch/${n}/canvas.png`,
+      zoneUrl:   `/snapshots/epoch/${n}/zone.png`,
+    });
+  } catch (err) {
+    console.error('Snapshot write error:', err);
+    res.status(500).json({ error: err.message ?? 'Snapshot failed' });
+  }
+});
+
+/**
+ * GET /snapshots/epoch/:n/canvas.png   (and .../zone.png)
+ *
+ * Serves the immutable snapshot PNGs written by POST /snapshots/epoch/:n.
+ * 404 if the epoch was never snapshotted (e.g. epochs 4–8 in the old data,
+ * which the NftPage handles by falling through to `null` image).
+ */
+app.get('/snapshots/epoch/:n/:kind.png', (req, res) => {
+  try {
+    const n = parseInt(req.params.n, 10);
+    const kind = req.params.kind;
+    if (!Number.isFinite(n) || n <= 0 || !['canvas', 'zone'].includes(kind)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    const filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-${kind}.png`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: `No ${kind} snapshot for epoch ${n}` });
+    }
+    res.set('Content-Type', 'image/png');
+    // Snapshots are immutable per epoch — aggressive caching is safe.
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Snapshot serve error:', err);
+    res.status(500).json({ error: 'Failed to serve snapshot' });
   }
 });
 
@@ -482,8 +631,16 @@ app.get('/health', (req, res) => {
 });
 
 // Rehydrate the grid from SQLite before opening the port so the very first
-// client connection sees the persisted canvas, not an empty grid.
-pixelGrid.hydrateFromDb();
+// client connection sees the persisted canvas, not an empty grid. If the DB
+// is unreadable we DO NOT silently start with a blank canvas — that's worse
+// than a crash because clients then write over what should be the canonical
+// confirmed state. Fail loud so a supervisor restarts and an operator looks.
+try {
+  pixelGrid.hydrateFromDb();
+} catch (e) {
+  console.error('💥 hydrateFromDb FAILED — refusing to start with empty grid:', e?.message ?? e);
+  process.exit(1);
+}
 
 // Tracks the last on-chain epoch we observed. When it increments we wipe the
 // canvas (memory + DB) and broadcast canvas:init with a blank grid so every

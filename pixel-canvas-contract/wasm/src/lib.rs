@@ -6,9 +6,9 @@
 
 // Init:                                 1
 // Upgrade:                              1
-// Endpoints:                           36
+// Endpoints:                           38
 // Async Callback (empty):               1
-// Total number of exported functions:  39
+// Total number of exported functions:  41
 
 #![no_std]
 
@@ -56,6 +56,8 @@ multiversx_sc_wasm_adapter::endpoints! {
         getMyBid => get_my_bid
         getNftCollectionId => get_nft_collection_id
         isAuctionActive => is_auction_active
+        isAuctionLive => is_auction_live
+        isEpochEnded => is_epoch_ended_view
     )
 }
 
