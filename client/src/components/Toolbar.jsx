@@ -180,14 +180,19 @@ const Toolbar = () => {
                 'Submit & Pay'
               )}
             </button>
-            <button
-              onClick={handleUndo}
-              disabled={isSubmitting}
-              className="w-full text-xs py-2 rounded-lg border border-border text-textSecondary hover:text-error hover:border-error/50 hover:bg-error/5 transition-colors flex items-center justify-center gap-1.5"
-            >
-              <UndoIcon />
-              Undo all
-            </button>
+            {/* Undo is only available BEFORE the user signs. Once Submit is
+                clicked the tx is broadcast — undoing client-side wouldn't
+                refund the tokens, so we hide the button entirely to avoid
+                misleading the user. */}
+            {!isSubmitting && (
+              <button
+                onClick={handleUndo}
+                className="w-full text-xs py-2 rounded-lg border border-border text-textSecondary hover:text-error hover:border-error/50 hover:bg-error/5 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <UndoIcon />
+                Undo all
+              </button>
+            )}
           </div>
         </Section>
       )}

@@ -357,7 +357,7 @@ const AdminPage = () => {
       await sendTxWithData(
         wallet,
         `endEpoch@${toHex(painterUri)}@${toHex(auctionUri)}`,
-        10_000_000n,
+        100_000_000n,
       );
       showToast('Epoch ended — PIXEL & EGLD distributed, NFTs minted, canvas resetting…', 'success');
       setEndEpochState('done');

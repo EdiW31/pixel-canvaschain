@@ -17,7 +17,7 @@ export const SocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [liveStats, setLiveStats] = useState(null);
 
-  const { updatePixel, showToast, setGridState, addPendingPixels, clearPendingPixels } = useApp();
+  const { updatePixel, showToast, setGridState, addPendingPixels, clearPendingPixels, refetchPixelBalance } = useApp();
   const isLoggedIn = useGetIsLoggedIn();
   const { address } = useGetAccountInfo();
 
@@ -64,9 +64,14 @@ export const SocketProvider = ({ children }) => {
       setGridState(gridState);
     });
 
-    // pixels:committed — server acknowledged PIXEL tx, clear pending
+    // pixels:committed — server acknowledged PIXEL tx, clear pending.
+    // Also kick the PIXEL balance fetcher so the displayed balance drops
+    // immediately instead of waiting up to 20s for the next poll tick.
+    // Retry after 8s to catch devnet API once the tx is reflected on-chain.
     socketInstance.on('pixels:committed', () => {
       clearPendingPixels();
+      try { refetchPixelBalance?.(); } catch (_) {}
+      setTimeout(() => { try { refetchPixelBalance?.(); } catch (_) {} }, 8_000);
     });
 
     socketInstance.on('error', ({ message }) => {
@@ -155,6 +160,8 @@ export const SocketProvider = ({ children }) => {
           if (socket && isConnected) {
             socket.emit('pixels:confirm', { pixels, txHash });
           }
+          // Tokens have left the wallet for real — refresh balance now.
+          try { refetchPixelBalance?.(); } catch (_) {}
           return 'success';
         }
         if (status === 'fail' || status === 'failed' || status === 'invalid') {

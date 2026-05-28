@@ -40,49 +40,69 @@ try {
  */
 const pendingTxs = new Map();
 
+// Status strings reported by the MultiversX devnet API. We accept multiple
+// success/fail spellings because the API has historically alternated between
+// them across versions. Anything not matched falls through to "keep polling".
+const TX_STATUS_SUCCESS = new Set(['success', 'successful', 'executed']);
+const TX_STATUS_FAIL = new Set(['fail', 'failed', 'invalid', 'rejected']);
+
 async function watchTxOnDevnet(io, txHash) {
-  const deadline = Date.now() + 120_000;
+  // 5-minute deadline (was 2). Devnet occasionally takes longer than 120s to
+  // reflect a successful tx; we'd rather hold pixels in-memory than revert
+  // a paint the user actually paid for.
+  const deadline = Date.now() + 300_000;
+  let pollCount = 0;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 5_000));
     const entry = pendingTxs.get(txHash);
     if (!entry) return; // resolved elsewhere (e.g. client-side pixels:confirm)
+    pollCount++;
     try {
       const res = await fetch(`${API_URL}/transactions/${txHash}`);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        if (pollCount === 1 || pollCount % 6 === 0) {
+          console.warn(`[server-watch] tx ${txHash.slice(0, 10)}… fetch ${res.status} (poll #${pollCount})`);
+        }
+        continue;
+      }
       const data = await res.json();
       const status = data?.status;
-      if (status === 'success') {
+      // Log every status value at least once so unexpected spellings show up
+      // in logs instead of silently being treated as "pending".
+      if (pollCount === 1 || pollCount % 6 === 0) {
+        console.log(`[server-watch] tx ${txHash.slice(0, 10)}… status="${status}" (poll #${pollCount})`);
+      }
+      if (TX_STATUS_SUCCESS.has(status)) {
         try {
           const n = pixelGrid.persistPixels(entry.pixels, entry.address);
           pendingTxs.delete(txHash);
           console.log(`✅ [server-watch] Persisted ${n} pixels (tx ${txHash})`);
         } catch (persistErr) {
-          // DB write failed. Keep the pending entry — a retry on next poll
-          // tick will attempt again. If it never recovers, the watcher
-          // timeout below will eventually revert.
           console.error('[server-watch] persist failed, will retry:', persistErr?.message ?? persistErr);
           continue;
         }
         return;
       }
-      if (status === 'fail' || status === 'failed' || status === 'invalid') {
+      if (TX_STATUS_FAIL.has(status)) {
         const reverted = pixelGrid.revertPixels(entry.pixels);
         pendingTxs.delete(txHash);
         io.emit('pixels:update', { pixels: reverted, address: null });
-        console.log(`↩  [server-watch] Reverted ${reverted.length} pixels (tx ${txHash})`);
+        console.log(`↩  [server-watch] Reverted ${reverted.length} pixels (tx ${txHash}, status=${status})`);
         return;
       }
     } catch (e) {
       console.warn('[watchTxOnDevnet] poll error:', e?.message ?? e);
     }
   }
-  // Timeout — treat as failure so pixels don't ghost forever.
+  // Timeout. Previously we auto-reverted, which destroyed pixels the user
+  // had actually paid for if devnet was just slow. Now we leave the in-memory
+  // pixels alone and just log loudly — the user can refresh and the
+  // confirmedGrid (DB-backed) will tell the truth once the tx eventually
+  // settles via the client-side watchPaintTx → pixels:confirm path.
   const entry = pendingTxs.get(txHash);
   if (entry) {
-    const reverted = pixelGrid.revertPixels(entry.pixels);
     pendingTxs.delete(txHash);
-    io.emit('pixels:update', { pixels: reverted, address: null });
-    console.log(`⌛ [server-watch] Timeout, reverted ${reverted.length} pixels (tx ${txHash})`);
+    console.warn(`⌛ [server-watch] Timeout after 5min for tx ${txHash} — leaving optimistic pixels in place, NOT reverting. Manually check devnet explorer.`);
   }
 }
 
