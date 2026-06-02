@@ -1,5 +1,5 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_PIXEL_COLOR } from './constants.js';
-import { loadAllPixels, savePixels as dbSavePixels, pixelCount, clearAllPixels } from './db.js';
+import { loadAllPixels, savePixel as dbSavePixel, savePixels as dbSavePixels, pixelCount, clearAllPixels } from './db.js';
 
 /**
  * PixelGrid - Manages the 100x100 pixel canvas state.
@@ -75,11 +75,11 @@ class PixelGrid {
   }
 
   /**
-   * Set a single pixel's color IN MEMORY ONLY.
-   * DB persistence happens later via persistPixels() once the user's
-   * paintPixels tx is confirmed on-chain.
+   * Set a single pixel's color. Writes to in-memory grid AND SQLite immediately
+   * so the pixel survives a server restart. DB errors are logged but don't fail
+   * the paint (in-memory state still updates and broadcasts).
    */
-  setPixel(x, y, color, _address = null) {
+  setPixel(x, y, color, address = null) {
     if (!this.isValidCoordinate(x, y)) {
       console.error(`❌ Invalid coordinates: (${x}, ${y})`);
       return false;
@@ -92,12 +92,20 @@ class PixelGrid {
 
     this.grid[y][x] = color;
     this.lastModified = new Date();
+    try {
+      dbSavePixel(x, y, color, address);
+      this.confirmedGrid[y][x] = color;
+    } catch (e) {
+      console.error('[setPixel] DB write failed (pixel in memory only):', e?.message ?? e);
+    }
     return true;
   }
 
   /**
-   * Validate and apply a batch of pixels IN MEMORY ONLY.
-   * DB persistence happens later via persistPixels() on tx confirmation.
+   * Validate and apply a batch of pixels. Writes to in-memory grid AND SQLite
+   * immediately so pixels survive a server restart without requiring ESDT tx
+   * confirmation. The blockchain still enforces token payment for ownership;
+   * the DB is the canvas display source of truth.
    */
   setPixelsBatch(batch, address = null) {
     const enriched = [];
@@ -107,7 +115,17 @@ class PixelGrid {
         enriched.push({ x: p.x, y: p.y, color: p.color, address });
       }
     }
-    if (enriched.length) this.lastModified = new Date();
+    if (enriched.length === 0) return enriched;
+    this.lastModified = new Date();
+    // Persist immediately so pixels survive restart.
+    // DB errors are logged but do NOT abort the paint — in-memory state is
+    // still updated so the broadcast goes out to all connected clients.
+    try {
+      dbSavePixels(enriched);
+      for (const p of enriched) this.confirmedGrid[p.y][p.x] = p.color;
+    } catch (e) {
+      console.error('[setPixelsBatch] DB write failed (pixel in memory only):', e?.message ?? e);
+    }
     return enriched;
   }
 
@@ -251,6 +269,28 @@ class PixelGrid {
     for (let row = y; row < y + h; row++) {
       for (let col = x; col < x + w; col++) {
         const hex = this.grid[row][col] || DEFAULT_PIXEL_COLOR;
+        buf[i++] = parseInt(hex.slice(1, 3), 16);
+        buf[i++] = parseInt(hex.slice(3, 5), 16);
+        buf[i++] = parseInt(hex.slice(5, 7), 16);
+        buf[i++] = 255;
+      }
+    }
+    return buf;
+  }
+
+  /**
+   * Same as getRawRgbaBytes but pulls from confirmedGrid — i.e. only
+   * pixels that have actually been persisted to SQLite (= paid for
+   * on-chain). Used by the per-epoch snapshot endpoint so that the
+   * frozen NFT image is the on-chain truth: optimistic-painted
+   * unconfirmed pixels can NEVER bleed into an epoch's NFT artwork.
+   */
+  getConfirmedRawRgbaBytes(x = 0, y = 0, w = CANVAS_WIDTH, h = CANVAS_HEIGHT) {
+    const buf = new Uint8Array(w * h * 4);
+    let i = 0;
+    for (let row = y; row < y + h; row++) {
+      for (let col = x; col < x + w; col++) {
+        const hex = this.confirmedGrid[row][col] || DEFAULT_PIXEL_COLOR;
         buf[i++] = parseInt(hex.slice(1, 3), 16);
         buf[i++] = parseInt(hex.slice(3, 5), 16);
         buf[i++] = parseInt(hex.slice(5, 7), 16);

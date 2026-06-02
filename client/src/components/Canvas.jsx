@@ -16,7 +16,7 @@ import { useSocket } from '../hooks/useSocket';
  */
 
 const Canvas = () => {
-  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect, wallet, auctionState } = useApp();
+  const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect, wallet, auctionState, paintLocked } = useApp();
   const { socket } = useSocket();
   const {
     zoom,
@@ -480,6 +480,23 @@ const Canvas = () => {
           <div className="text-center">
             <div className="w-10 h-10 border-[3px] border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
             <p className="text-textSecondary text-sm">Loading canvas…</p>
+          </div>
+        </div>
+      )}
+
+      {/* Epoch-locked overlay — between endEpoch and the next
+          startEpochWithAuction. Semi-opaque so the previous epoch's
+          artwork stays partly visible underneath. `pointer-events-auto`
+          swallows clicks so the canvas can't be reached, and useCanvas
+          still emits a one-shot warning toast if the user does try. */}
+      {paintLocked && gridState && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[2px] pointer-events-auto cursor-not-allowed">
+          <div className="card px-6 py-5 max-w-sm text-center space-y-2">
+            <div className="text-2xl">⏸</div>
+            <p className="text-sm font-semibold text-textPrimary">Canvas locked</p>
+            <p className="text-xs text-textSecondary">
+              Wait for the next epoch to start so you can paint.
+            </p>
           </div>
         </div>
       )}

@@ -25,12 +25,13 @@ const Toolbar = () => {
   const { zoom, hoverPixel, zoomIn, zoomOut, resetView, minZoom, MAX_ZOOM } = useCanvas();
   const {
     brushSize, setBrushSize, selectedColor,
-    pendingPixels, pendingCount, undoPendingPixels,
+    pendingPixels, pendingCount, undoPendingPixels, clearPendingPixels,
     wallet, showToast, refetchPixelBalance,
   } = useApp();
   const { notifyPixelsSubmitted, watchPaintTx, socket, isConnected } = useSocket();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [txSent, setTxSent] = useState(false);
 
   const handleUndo = () => {
     const reverts = undoPendingPixels(); // reverts local gridState + clears pending
@@ -42,6 +43,11 @@ const Toolbar = () => {
       showToast(`${reverts.length} pixel${reverts.length !== 1 ? 's' : ''} undone.`, 'info');
     }
   };
+
+  // Reset txSent once the pending section fully clears (pixels:committed fired)
+  useEffect(() => {
+    if (pendingCount === 0) setTxSent(false);
+  }, [pendingCount]);
 
   // Keyboard shortcuts: [/] cycle brush, R reset view, +/- zoom
   useEffect(() => {
@@ -111,13 +117,19 @@ const Toolbar = () => {
 
       const signedTxs = await dappProvider.signTransactions([tx]);
       await TransactionManager.getInstance().send(signedTxs);
+      setTxSent(true);
 
       const txHash = signedTxs[0].getHash?.().toString() ?? '';
 
-      // NOTE: pendingPixels is NOT cleared here. The server's `pixels:submit`
-      // ack (which fires `pixels:committed` on the client → clearPendingPixels)
-      // handles that. Clearing here too early loses the pending list before
-      // the server has a chance to confirm or rollback.
+      // Clear pending optimistically the moment the tx is broadcast. The
+      // tx is irreversible at this point — the user has signed and the
+      // wallet has handed it back — so leaving "Submit & Pay" visible
+      // would mislead the user (and let them double-sign on the next
+      // click). The server's `pixels:committed` ack used to be the only
+      // path that cleared this list; that's now redundant insurance —
+      // critical because some wallet variants return a signed tx whose
+      // `.getHash()` is missing, so the server-side ack flow never runs.
+      clearPendingPixels();
       showToast(`${pixels.length} pixel${pixels.length !== 1 ? 's' : ''} submitted!`, 'success');
 
       // Notify server with the pixel list so its own watcher persists/reverts
@@ -184,7 +196,7 @@ const Toolbar = () => {
                 clicked the tx is broadcast — undoing client-side wouldn't
                 refund the tokens, so we hide the button entirely to avoid
                 misleading the user. */}
-            {!isSubmitting && (
+            {!isSubmitting && !txSent && (
               <button
                 onClick={handleUndo}
                 className="w-full text-xs py-2 rounded-lg border border-border text-textSecondary hover:text-error hover:border-error/50 hover:bg-error/5 transition-colors flex items-center justify-center gap-1.5"

@@ -1,1280 +1,1260 @@
-# Pixel CanvasChain - Complete Developer Guide
-
-## Project Overview
-
-**Pixel CanvasChain** is a full-stack collaborative pixel art canvas application inspired by r/place. It's built as a Phase 1 prototype with mock blockchain features, preparing for future MultiversX blockchain integration.
-
-### Tech Stack
-- **Backend**: Node.js + Express + Socket.io (WebSocket real-time communication)
-- **Frontend**: React 18 + Vite + TailwindCSS
-- **Communication**: Socket.io (bidirectional real-time events)
-- **State Management**: React Context API
-- **Routing**: React Router v6
+# UNIVERSITATEA "LUCIAN BLAGA" DIN SIBIU
+## Facultatea de Inginerie
+### Specializarea: Calculatoare și Tehnologia Informației
 
 ---
 
-## Architecture: How Everything Connects
+<br><br><br>
 
-```
-┌─────────────┐         WebSocket          ┌─────────────┐
-│   Client    │◄─────────────────────────►│   Server    │
-│  (React)    │    Socket.io Events       │  (Node.js)  │
-│  Port 5173  │                           │  Port 5001  │
-└─────────────┘                           └─────────────┘
-       │                                          │
-       │                                          │
-       ▼                                          ▼
- [AppContext]                              [pixelGrid]
- [useSocket]                               [userManager]
- [Pages/Components]                        [constants]
-```
-
-### Data Flow Example: Painting a Pixel
-
-1. User clicks canvas at (500, 500)
-2. **Client**: `useCanvas` hook calculates coordinates
-3. **Client**: Calls `paintPixel(500, 500, '#FF0000')` from `useSocket`
-4. **Socket.io**: Emits `pixel:paint` event to server
-5. **Server**: Receives event in `server.js` line 154
-6. **Server**: Validates credits, coordinates, color, rate limit
-7. **Server**: Updates `pixelGrid` at (500, 500)
-8. **Server**: Deducts 1 credit from `userManager`
-9. **Server**: Broadcasts `pixel:update` to ALL clients (line 201)
-10. **All Clients**: Receive event in `useSocket.jsx` line 62
-11. **All Clients**: Update local `gridState` via `updatePixel()`
-12. **All Clients**: Canvas re-renders showing the red pixel
+# LUCRARE DE LICENȚĂ
 
 ---
 
-## Backend (Server) - File by File
+<br><br>
 
-### 📁 `server/src/constants.js`
+# PIXEL CANVASCHAIN
+## Platformă Colaborativă de Artă Pixelată pe Blockchain MultiversX cu Mecanisme NFT și Sistem de Donații
 
-**Purpose**: Single source of truth for all configuration
-
-**Key Exports**:
-- `TIERS`: Array of 5 tier objects with pricing and bonus structure
-  ```javascript
-  {
-    name: 'Artisan',
-    cost: 100,           // EGLD price
-    basePixels: 10000,   // Base credits
-    bonusPixels: 2000,   // Bonus (20%)
-    total: 12000,        // Total received
-    bonusPercent: 20,
-    color: '#a855f7'     // UI color
-  }
-  ```
-- `INITIAL_EGLD`: 100 (fake EGLD given to new users)
-- `CANVAS_WIDTH/HEIGHT`: 1000 (canvas dimensions)
-- `MAX_PIXELS_PER_SECOND`: 10 (rate limiting)
-- `COST_PER_PIXEL`: 1 (credit cost per pixel)
-
-**How to Modify**:
-- Change tier prices: Edit `cost` property
-- Change bonus amounts: Edit `bonusPixels` and `bonusPercent`
-- Change canvas size: Edit `CANVAS_WIDTH` and `CANVAS_HEIGHT` (affects memory!)
+<br><br><br>
 
 ---
 
-### 📁 `server/src/pixelGrid.js`
+**Student:** [NUMELE STUDENTULUI]
 
-**Purpose**: Manages the 1000x1000 pixel canvas in memory
-
-**Data Structure**:
-```javascript
-this.grid = [
-  [color, color, ...],  // Row 0 (1000 pixels)
-  [color, color, ...],  // Row 1
-  // ... 1000 rows total
-]
-```
-- Each cell stores a hex color string (e.g., `#FF0000`)
-- Initialized with `#FFFFFF` (white)
-- Stored in RAM (volatile - resets on server restart)
-
-**Key Methods**:
-1. **`getGrid()`**: Returns entire 1000x1000 array
-   - Used when client connects to load initial canvas state
-
-2. **`getPixel(x, y)`**: Returns color at specific coordinate
-   - Validates bounds (0-999)
-
-3. **`setPixel(x, y, color)`**: Updates pixel color
-   - Validates coordinates and hex format
-   - Updates `lastModified` timestamp
-
-4. **`isValidCoordinate(x, y)`**: Boundary check
-   - Returns true if 0 ≤ x < 1000 and 0 ≤ y < 1000
-
-5. **`isValidColor(color)`**: Regex validation
-   - Pattern: `/^#[0-9A-Fa-f]{6}$/` (e.g., `#FF0000`)
-
-6. **`getStats()`**: Canvas analytics
-   - Counts painted vs unpainted pixels
-   - Counts unique colors used
-
-7. **`getCompressedGrid()` / `loadCompressedGrid()`**: Future IPFS
-   - Converts grid to Base64 for storage
-   - [FUTURE]: Upload to IPFS every 10 minutes
-
-**Memory Usage**:
-- 1000 x 1000 x 7 bytes (hex color) ≈ 7 MB in memory
-
-**How to Modify**:
-- Change canvas size: Update `CANVAS_WIDTH/HEIGHT` in constants
-- Add persistence: Replace memory storage with database (PostgreSQL/MongoDB)
-- Add IPFS: Implement periodic snapshots in `getCompressedGrid()`
+**Coordonator Științific:** [TITLU ACADEMIC] [NUMELE COORDONATORULUI]
 
 ---
 
-### 📁 `server/src/userManager.js`
+<br><br>
 
-**Purpose**: Tracks user balances and rate limiting
-
-**Data Structure**:
-```javascript
-this.users = Map {
-  'erd1abc...': {
-    address: 'erd1abc...',
-    egld: 100,
-    credits: 12000,
-    paintHistory: [
-      { timestamp: 1234567890, x: 500, y: 500, color: '#FF0000' },
-      // ... last 100 paints
-    ],
-    createdAt: Date
-  }
-}
-```
-- Uses JavaScript `Map` for O(1) lookup
-- Stored in RAM (volatile)
-
-**Key Methods**:
-1. **`createUser(address)`**: Initialize new user
-   - Sets `egld: 100`, `credits: 0`
-   - Returns user object
-
-2. **`getUser(address)`**: Retrieve user data
-   - Returns user object or null
-
-3. **`purchaseCredits(address, cost, credits)`**: Process purchase
-   - Checks if user has enough EGLD
-   - Deducts EGLD, adds credits
-   - Returns `{ success, egld, credits, message }`
-
-4. **`deductCredits(address, amount)`**: Remove credits
-   - Used when painting pixels
-   - Returns `{ success, credits, message }`
-
-5. **`recordPaint(address, x, y, color)`**: Add to history
-   - Stores timestamp and coordinates
-   - Keeps only last 100 paints (memory optimization)
-
-6. **`isRateLimited(address)`**: Anti-spam check
-   - Counts paints in last 1 second
-   - Returns true if ≥ 10 pixels/sec
-   - Prevents bot abuse
-
-7. **`getUserStats(address)`**: Get user analytics
-   - Total painted, balances, join date
-
-**How to Modify**:
-- Change initial balance: Edit `INITIAL_EGLD` in constants
-- Change rate limit: Edit `MAX_PIXELS_PER_SECOND`
-- Add persistence: Store users in database
-- Add authentication: Verify wallet signatures
+**Sibiu, 2026**
 
 ---
 
-### 📁 `server/src/server.js` ⭐ MAIN SERVER FILE
-
-**Purpose**: HTTP server + Socket.io event handling
-
-**Structure**:
-```javascript
-1-9:    Imports
-10-26:  Express + CORS + Socket.io setup
-28:     PORT = 5001 (was 5000, changed due to conflict)
-35-39:  generateMockWalletAddress() - Creates random erd1...
-45-47:  simulateTransactionDelay() - 2 second Promise
-49-257: Socket.io event handlers
-259-267: Health check endpoint
-269-285: Server startup
-```
-
-**Socket.io Events - Detailed Breakdown**:
-
-#### 1. **`wallet:connect`** (Lines 60-86)
-**Flow**:
-```
-Client emits: wallet:connect
-Server receives → generates erd1... address
-Server creates user (100 EGLD, 0 credits)
-Server loads canvas grid
-Server emits: wallet:connected { address, egld, credits, gridState }
-```
-
-**Mock Wallet Generation**:
-```javascript
-crypto.randomBytes(31) → 31 bytes
-.toString('hex') → 62 hex characters
-'erd1' + hex → erd1abc...xyz (66 chars total)
-```
-- Mimics MultiversX bech32 format
-- [FUTURE]: Replace with real wallet authentication
-
-#### 2. **`credits:purchase`** (Lines 96-145)
-**Flow**:
-```
-Client emits: credits:purchase { tierName: 'Artisan' }
-Server validates: tier exists, user has EGLD
-Server simulates 2-second blockchain delay
-Server calls: userManager.purchaseCredits()
-Server emits: credits:purchased { newEgld, newCredits }
-```
-
-**Transaction Simulation**:
-```javascript
-await simulateTransactionDelay(); // setTimeout(2000)
-```
-- Mimics blockchain confirmation time
-- [FUTURE]: Real transaction via MultiversX SDK
-
-**Revenue Split** (Not implemented yet):
-- [FUTURE]: 50% → Charity
-- [FUTURE]: 25% → Token burn
-- [FUTURE]: 25% → Treasury
-
-#### 3. **`pixel:paint`** (Lines 154-211) ⭐ MOST CRITICAL
-**Flow**:
-```
-Client emits: pixel:paint { x: 500, y: 500, color: '#FF0000' }
-Server validates:
-  1. Wallet connected?
-  2. Rate limited? (max 10/sec)
-  3. Valid coordinates? (0-999)
-  4. Valid color? (#RRGGBB)
-  5. Has credits? (≥1)
-Server updates: pixelGrid.setPixel(x, y, color)
-Server deducts: 1 credit from user
-Server records: paint action in history
-Server broadcasts: pixel:update to ALL clients
-Server emits: credits:updated to painter
-```
-
-**Broadcast vs Emit**:
-```javascript
-io.emit('pixel:update', data);     // To ALL clients
-socket.emit('credits:updated', data); // Only to sender
-```
-
-**Rate Limiting Logic** (Lines 164-169):
-- Check: Count paints in last 1000ms
-- If ≥ 10 → Reject with error
-- Prevents spam/bots
-
-#### 4. **`canvas:request`** (Lines 218-226)
-- Used when client reconnects or loads page
-- Sends full 1000x1000 grid (7MB)
-- [FUTURE]: Send only changed pixels (delta updates)
-
-#### 5. **`stats:request`** (Lines 232-246)
-- Returns canvas stats (painted pixels, unique colors)
-- Returns user stats (total painted, join date)
-- Used for leaderboards/analytics
-
-**Health Check Endpoint** (Lines 260-267):
-```javascript
-GET /health → { status, timestamp, users, gridStats }
-```
-- Used for monitoring/load balancing
-
-**How to Modify Server**:
-- Add new event: Add `socket.on('event:name', handler)` block
-- Change port: Edit line 28 (update client too!)
-- Add authentication: Verify signatures in event handlers
-- Add database: Replace in-memory storage with DB calls
+<div style="page-break-after: always;"></div>
 
 ---
 
-## Frontend (Client) - File by File
+# CUPRINS
 
-### 📁 `client/src/App.jsx`
-
-**Purpose**: Root component with routing
-
-**Structure**:
-```jsx
-<Router>
-  <AppProvider>          {/* Global state */}
-    <SocketProvider>     {/* Socket.io connection */}
-      <Routes>
-        <Route path="/" element={<WelcomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/shop" element={<ShopPage />} />
-        <Route path="/canvas" element={<CanvasPage />} />
-      </Routes>
-    </SocketProvider>
-  </AppProvider>
-</Router>
-```
-
-**Provider Order Matters**:
-1. `AppProvider` → Must wrap `SocketProvider` (socket needs app context)
-2. `SocketProvider` → Must wrap pages (pages need socket methods)
-
-**Route Protection**:
-- `/shop` and `/canvas` check `wallet.isConnected`
-- Redirect to `/login` if not connected (in page's `useEffect`)
-
-**How to Modify**:
-- Add new page: Add `<Route path="/new" element={<NewPage />} />`
-- Change default page: Edit `path="/"` route
+- [Introducere](#introducere)
+- [Capitolul 1: Fundamente Teoretice](#capitolul-1-fundamente-teoretice)
+  - [1.1 Tehnologii Blockchain — Fundamente](#11-tehnologii-blockchain--fundamente)
+  - [1.2 MultiversX — Ecosistemul Blockchain](#12-multiversx--ecosistemul-blockchain)
+  - [1.3 Tokenomics și Modelul Economic al Proiectului](#13-tokenomics-și-modelul-economic-al-proiectului)
+  - [1.4 NFT-uri și Semi-Fungible Tokens pe MultiversX](#14-nft-uri-și-semi-fungible-tokens-pe-multiversx)
+  - [1.5 Arhitectura Hibridă Web2/Web3](#15-arhitectura-hibridă-web2web3)
+  - [1.6 WebSockets și Comunicare în Timp Real](#16-websockets-și-comunicare-în-timp-real)
+  - [1.7 React și Arhitectura Frontend Modernă](#17-react-și-arhitectura-frontend-modernă)
+  - [1.8 Persistența Datelor — SQLite](#18-persistența-datelor--sqlite)
+  - [1.9 Proiecte Similare și Poziționare](#19-proiecte-similare-și-poziționare)
+- [Capitolul 2: Implementare](#capitolul-2-implementare)
+  - [2.1 Arhitectura Generală a Sistemului](#21-arhitectura-generală-a-sistemului)
+  - [2.2 Smart Contract — Rust pe MultiversX](#22-smart-contract--rust-pe-multiversx)
+  - [2.3 Backend — Node.js cu Express și Socket.io](#23-backend--nodejs-cu-express-și-socketio)
+  - [2.4 Frontend — React 18 cu Vite](#24-frontend--react-18-cu-vite)
+  - [2.5 Fluxuri de Date Principale](#25-fluxuri-de-date-principale)
+  - [2.6 Securitate și Validare](#26-securitate-și-validare)
+- [Capitolul 3: Rezultate și Testare](#capitolul-3-rezultate-și-testare)
+  - [3.1 Funcționalități Implementate](#31-funcționalități-implementate)
+  - [3.2 Testare pe MultiversX Devnet](#32-testare-pe-multiversx-devnet)
+  - [3.3 Performanță și Caracteristici Tehnice](#33-performanță-și-caracteristici-tehnice)
+  - [3.4 Limitări Identificate](#34-limitări-identificate)
+- [Concluzii](#concluzii)
+- [Bibliografie](#bibliografie)
 
 ---
 
-### 📁 `client/src/context/AppContext.jsx`
-
-**Purpose**: Global state management (React Context API)
-
-**State Variables**:
-```javascript
-wallet: {
-  address: 'erd1...',
-  isConnected: true,
-  egld: 100,
-  credits: 12000
-}
-gridState: [[color, ...], ...] // 1000x1000 array
-selectedColor: '#FF0000'        // Current paint color
-colorHistory: ['#FF0000', ...]  // Last 5 colors
-toast: { message, type }        // Notification
-isLoading: false                // Global loading state
-```
-
-**Key Methods**:
-
-1. **`connectWallet(address, egld, credits, grid)`**
-   - Sets wallet state
-   - Loads grid from server
-   - Shows success toast
-
-2. **`updateBalances(egld, credits)`**
-   - Updates after purchase or paint
-
-3. **`changeColor(color)`**
-   - Sets selected color
-   - Adds to history (max 5)
-   - Saves to localStorage
-
-4. **`updatePixel(x, y, color)`**
-   - Updates single pixel in grid (real-time)
-   - Creates new array (immutability)
-   ```javascript
-   newGrid[y] = [...newGrid[y]];
-   newGrid[y][x] = color;
-   ```
-
-5. **`showToast(message, type)`**
-   - Displays notification (3 second auto-dismiss)
-   - Types: 'success', 'error', 'info'
-
-**localStorage Persistence**:
-- Saves `selectedColor` and `colorHistory`
-- Restores on page refresh
-- Keeps user's color preferences
-
-**How to Use in Components**:
-```javascript
-import { useApp } from '../context/AppContext';
-
-function MyComponent() {
-  const { wallet, selectedColor, changeColor, showToast } = useApp();
-
-  return <button onClick={() => changeColor('#FF0000')}>
-    Select Red
-  </button>;
-}
-```
+<div style="page-break-after: always;"></div>
 
 ---
 
-### 📁 `client/src/hooks/useSocket.jsx` ⭐ CRITICAL
+# INTRODUCERE
 
-**Purpose**: Socket.io connection management
+## Contextul și Motivația Lucrării
 
-**Connection Setup** (Lines 36-43):
-```javascript
-const socketInstance = io('http://localhost:5001', {
-  transports: ['websocket', 'polling'],  // Try WebSocket first
-  reconnection: true,                    // Auto-reconnect
-  reconnectionDelay: 1000,               // Wait 1s before retry
-  reconnectionAttempts: 5                // Max 5 retries
-});
-```
+În ultimii ani, tehnologiile blockchain au evoluat de la simple sisteme de transfer de valoare la platforme complexe capabile să găzduiască logică de afaceri, contracte auto-executabile și active digitale unice. Simultan, arta digitală colaborativă a câștigat un loc important în cultura online, culminând cu experimente sociale precum *r/place* — un experiment al platformei Reddit în care milioane de utilizatori au colaborat (și s-au confruntat) pentru a desena imagini pe un canvas partajat, folosind un simplu sistem bazat pe timp.
 
-**Why Port 5001?**
-- Originally 5000, but macOS AirPlay uses that port
-- Changed in 3 places: server.js, useSocket.jsx, vite.config.js
+Această lucrare documentează proiectarea și implementarea **Pixel CanvasChain**, o platformă care combină conceptele de artă colaborativă în timp real cu puterea blockchain-ului MultiversX. Motivația centrală este de a rezolva o problemă fundamentală a artei digitale online: **lipsa proprietății verificabile și a transparenței**. Cine a desenat ce? Cine deține un pixel? Cum putem garanta că regulile jocului sunt respectate fără a ne baza pe o autoritate centrală?
 
-**Event Listeners** (Lines 46-89):
+Răspunsul propus este un sistem hibrid care îmbină viteza și experiența de utilizare a aplicațiilor Web2 tradiționale cu imutabilitatea și transparența unui blockchain public. Utilizatorii pictează pe un canvas partajat în timp real, iar fiecare acțiune este ancorată în blockchain prin tranzacții cu token-ul nativ al platformei, `$PIXEL`.
 
-1. **`connect`**: Socket connected successfully
-2. **`disconnect`**: Connection lost (show warning)
-3. **`connect_error`**: Failed to connect (check server)
-4. **`pixel:update`**: Someone else painted
-   - Calls `updatePixel(x, y, color)` from AppContext
-   - Updates local grid instantly (no lag!)
-5. **`canvas:init`**: Full canvas loaded
-   - Sets entire grid state
-6. **`credits:updated`**: Your credits changed (after painting)
-7. **`credits:purchased`**: Purchase successful
-   - Shows toast with tier name and credits
-8. **`error`**: Server error message
+## Scopul și Contribuțiile Proiectului
 
-**Provided Methods**:
+Obiectivele principale ale lucrării sunt:
 
-1. **`purchaseCredits(tierName)`**
-   ```javascript
-   socket.emit('credits:purchase', { tierName: 'Artisan' });
-   ```
+1. **Proiectarea și implementarea** unui sistem hibrid Web2/Web3 capabil să suporte interacțiune în timp real la nivel de sub-secundă, combinată cu settlement on-chain verificabil.
+2. **Crearea unui ecosistem economic** sustenabil bazat pe token-ul ESDT `$PIXEL`, cu un mecanism de distribuire a veniturilor care susține donații caritabile (50% din venituri), deflaționare prin ardere (25%) și acoperire a costurilor operaționale (25%).
+3. **Implementarea unui smart contract complex** în limbajul Rust, folosind framework-ul MultiversX, care gestionează epoci de joc, licitații pentru zone speciale ale canvas-ului, votul democratic pentru charitate și mintarea de NFT-uri ca recompense.
+4. **Demonstrarea fezabilității** unui model de aplicație descentralizată (dApp) care nu sacrifică experiența de utilizare pentru a obține garanțiile criptografice ale blockchain-ului.
 
-2. **`paintPixel(x, y, color)`**
-   ```javascript
-   socket.emit('pixel:paint', { x: 500, y: 500, color: '#FF0000' });
-   ```
+Contribuția originală față de proiectele existente constă în combinarea inedită a mai multor mecanisme: sistemul de epoci cu reset periodic, licitațiile pentru zone premium de canvas, votul on-chain pentru direcționarea donațiilor caritabile și generarea automată de NFT-uri ca dovezi de participare la finalul fiecărei epoci.
 
-3. **`requestCanvas()`**: Fetch full grid (on reconnect)
-4. **`requestStats()`**: Get analytics
+## Structura Lucrării
 
-**Why `.jsx` Extension?**
-- Contains JSX: `<SocketContext.Provider>`
-- Vite requires `.jsx` for JSX syntax
-- Originally `.js` → caused build error
+**Capitolul 1** prezintă fundamentele teoretice necesare înțelegerii proiectului: conceptele blockchain, ecosistemul MultiversX, tokenomics, NFT-uri, arhitectura hibridă Web2/Web3, WebSockets, React și SQLite.
+
+**Capitolul 2** descrie în detaliu implementarea fiecărui strat al sistemului: smart contract-ul Rust, backend-ul Node.js și frontend-ul React, însoțite de diagrame arhitecturale, de clase și de secvență.
+
+**Capitolul 3** prezintă rezultatele obținute, testarea pe devnet-ul MultiversX, caracteristicile de performanță și limitările identificate.
+
+**Concluziile** sintetizează realizările proiectului și propun direcții de dezvoltare ulterioară.
 
 ---
 
-### 📁 `client/src/hooks/useMockWallet.js`
-
-**Purpose**: Mock wallet connection logic
-
-**Flow**:
-```
-1. User clicks "Connect Wallet"
-2. Call connectWallet()
-3. Emit socket: wallet:connect
-4. Wait for response (10 second timeout)
-5. Receive: wallet:connected { address, egld, credits, gridState }
-6. Update AppContext
-7. Navigate to /shop
-```
-
-**Why Mock?**
-- Phase 1 prototype (no blockchain yet)
-- Server generates random erd1... addresses
-- [FUTURE]: Replace with `@multiversx/sdk-dapp`
-
-**Future Implementation** (Comments in file):
-```javascript
-import { useGetAccountInfo, useGetLoginInfo } from '@multiversx/sdk-dapp/hooks';
-
-export const useWallet = () => {
-  const { address, balance } = useGetAccountInfo();
-  const { isLoggedIn } = useGetLoginInfo();
-  return { address, balance, isConnected: isLoggedIn };
-};
-```
-
-**Helper Methods**:
-- `getTruncatedAddress()`: `erd1abc...xyz` (for UI)
-- `getWallet()`: Returns full wallet object
+<div style="page-break-after: always;"></div>
 
 ---
 
-### 📁 `client/src/hooks/useCanvas.js`
+# CAPITOLUL 1: FUNDAMENTE TEORETICE
 
-**Purpose**: Canvas interaction logic (zoom, pan, paint)
+## 1.1 Tehnologii Blockchain — Fundamente
 
-**State**:
-```javascript
-zoom: 1-20              // Zoom level
-offset: { x: 0, y: 0 } // Camera position
-isPanning: false        // Drag mode active?
-hoverPixel: { x, y }    // Cursor position
+### 1.1.1 Concepte de Bază
+
+Un **blockchain** este o structură de date distribuită și imuabilă, compusă dintr-o serie de blocuri legate criptografic. Fiecare bloc conține un set de tranzacții, un marcaj temporal, o referință criptografică (hash) la blocul anterior și un nonce utilizat în procesul de consens. Caracteristicile fundamentale ale unui blockchain sunt:
+
+- **Descentralizarea**: Nu există o autoritate centrală care controlează rețeaua. Validarea tranzacțiilor este realizată de un set distribuit de noduri participante.
+- **Imutabilitatea**: Odată incluse într-un bloc confirmat, datele nu pot fi modificate fără a invalida toate blocurile ulterioare — ceea ce ar necesita un efort computațional impracticabil.
+- **Transparența**: Pe un blockchain public, toate tranzacțiile sunt vizibile oricui, putând fi auditate independent.
+- **Execuția trustless**: Regulile de business sunt codificate în smart contracts, programe care se execută automat pe fiecare nod din rețea, fără posibilitatea de intervenție sau cenzură unilaterală.
+
+### 1.1.2 Smart Contracts
+
+Un **smart contract** este un program stocat pe blockchain care se execută automat atunci când condițiile pre-definite sunt îndeplinite. Conceptul a fost popularizat de platforma Ethereum și este acum disponibil pe majoritatea blockchain-urilor moderne, inclusiv MultiversX.
+
+Smart contract-urile elimină necesitatea unui intermediar de încredere: codul este public, executat identic pe toate nodurile rețelei și produce rezultate deterministe. Odată deploiat, un smart contract nu poate fi modificat (cu excepția mecanismelor de upgrade explicit prevăzute).
+
+### 1.1.3 Tipuri de Token-uri
+
+Pe blockchain-urile moderne există mai multe tipuri de active digitale:
+
+- **Fungible Tokens (FT)**: Token-uri interschimbabile, unde fiecare unitate este identică cu orice altă unitate (similar cu moneda fiat). Exemple: EGLD, PIXEL.
+- **Non-Fungible Tokens (NFT)**: Token-uri unice, fiecare cu un identificator distinct. Utilizate pentru a reprezenta drepturi de proprietate asupra activelor digitale (artă, colecționabile).
+- **Semi-Fungible Tokens (SFT)**: Un hibrid — există mai multe copii ale aceluiași token (un tiraj limitat), dar cantitatea este finită și controlată.
+
+---
+
+## 1.2 MultiversX — Ecosistemul Blockchain
+
+### 1.2.1 Prezentare Generală
+
+**MultiversX** (fostul Elrond) este un blockchain public de generație nouă, proiectat pentru scalabilitate de înaltă performanță. Principala sa inovație arhitecturală este **Adaptive State Sharding** — o tehnologie care partajează atât starea rețelei, cât și procesarea tranzacțiilor în shard-uri paralele, permițând o capacitate teoretică de 15.000+ tranzacții pe secundă cu latență de ~6 secunde per bloc.
+
+Moneda nativă a rețelei este **EGLD** (eGold), utilizată pentru plata taxelor de tranzacție (gas) și ca mijloc de schimb în ecosistem.
+
+### 1.2.2 ESDT — eStandard Digital Token
+
+**ESDT** (eStandard Digital Token) este standardul nativ de token al MultiversX. Spre deosebire de Ethereum (unde token-urile ERC-20 sunt smart contracts separate), token-urile ESDT sunt gestionate direct de protocolul MultiversX. Aceasta aduce avantaje semnificative:
+
+- **Performanță nativă**: Transferurile ESDT sunt procesate la același nivel ca transferurile EGLD, fără overhead suplimentar de contract.
+- **Securitate**: Logica de transfer este auditată și verificată la nivelul protocolului.
+- **Interoperabilitate**: Orice smart contract poate accepta, trimite sau arde token-uri ESDT folosind API-ul standard.
+
+Token-ul `$PIXEL` utilizat în acest proiect este un token ESDT fungibil, creat și administrat prin smart contract.
+
+### 1.2.3 Smart Contracts în Rust
+
+MultiversX oferă un framework dedicat pentru scrierea smart contracts în **Rust**, numit `multiversx-sc`. Rust a fost ales datorită:
+
+- **Siguranței memoriei**: Rust elimină la nivel de compilator clase întregi de bug-uri (null pointer dereferences, buffer overflows, race conditions) fără un garbage collector.
+- **Performanței**: Codul Rust compilat este extrem de eficient, reducând costurile de gas.
+- **Expresivității**: Framework-ul `multiversx-sc` oferă macro-uri și tipuri specializate (ex. `BigUint`, `ManagedVec`, `ManagedBuffer`) care simplifică interacțiunea cu protocolul.
+
+Contractele sunt compilate în WebAssembly (WASM) înainte de deployment pe blockchain.
+
+### 1.2.4 Rețele de Test (Devnet / Testnet)
+
+MultiversX oferă mai multe medii de testare:
+
+- **Devnet**: Mediu de dezvoltare cu funcționalitate completă, unde token-urile nu au valoare reală. Utilizat în acest proiect.
+- **Testnet**: Mediu de testare mai stabil, pentru validare înainte de lansare pe mainnet.
+- **Mainnet**: Rețeaua principală cu valoare economică reală.
+
+---
+
+## 1.3 Tokenomics și Modelul Economic al Proiectului
+
+### 1.3.1 Definiția Tokenomics
+
+**Tokenomics** (token + economics) se referă la designul și analiza sistemelor economice bazate pe token-uri digitale. Un model tokenomic bine proiectat trebuie să răspundă la întrebări precum: Cum sunt create și distribuite token-urile? Care este mecanismul cerere-ofertă? Cum este prevenită inflația excesivă?
+
+### 1.3.2 Sistemul de Tier-uri $PIXEL
+
+Token-ul `$PIXEL` se achiziționează prin schimbul de EGLD în smart contract. Sistemul implementează un model de **tier-uri** cu bonus progresiv pentru a încuraja achizițiile mai mari:
+
+| Tier | Cost (EGLD) | Pixeli de Bază | Bonus Pixeli | Total Pixeli | Bonus % |
+|------|-------------|----------------|--------------|--------------|---------|
+| Novice | 0.05 | 1,000 | 0 | 1,000 | 0% |
+| Apprentice | 0.25 | 5,000 | 500 | 5,500 | 10% |
+| Artisan | 0.50 | 10,000 | 2,000 | 12,000 | 20% |
+| Master | 1.25 | 50,000 | 15,000 | 65,000 | 30% |
+| Legend | 2.50 | 100,000 | 50,000 | 150,000 | 50% |
+
+### 1.3.3 Distribuirea Veniturilor (25/25/50)
+
+Un aspect central al modelului economic este mecanismul de distribuire a veniturilor generat la fiecare achiziție de pixeli, implementat direct în smart contract:
+
+```
+Fiecare plată EGLD → buyPixels()
+    ├── 50% → adresa carității câștigătoare (votul comunității)
+    ├── 25% → adresa "null" (burn — deflaționare)
+    └── 25% → trezoreria proiectului (costuri operaționale)
 ```
 
-**Key Methods**:
+Diagrama de mai jos ilustrează fluxul de token-uri:
 
-1. **`handleWheel(e)`**: Zoom in/out
-   ```javascript
-   deltaY > 0 ? zoom -= 0.5 : zoom += 0.5
-   Clamp: Math.max(1, Math.min(20, zoom))
-   ```
+```mermaid
+flowchart LR
+    U[👤 Utilizator]
+    SC[Smart Contract]
+    C[🏥 Caritate Câștigătoare]
+    B[🔥 Burn Address]
+    T[🏦 Trezorerie]
+    P[💎 Token PIXEL]
 
-2. **`handleMouseDown(e)`**: Start panning
-   - Middle or right mouse button
-   - Records start position
-
-3. **`handleMouseMove(e)`**: Pan or hover
-   - If panning: Update offset
-   - Else: Calculate hover pixel coordinates
-
-4. **`handleClick(e)`**: Paint pixel
-   - Left click only
-   - Validates: wallet connected, credits > 0
-   - Calculates pixel coordinates:
-   ```javascript
-   x = floor((mouseX - rect.left - offset.x) / zoom)
-   y = floor((mouseY - rect.top - offset.y) / zoom)
-   ```
-   - Calls `paintPixel(x, y, selectedColor)`
-
-5. **`zoomIn()` / `zoomOut()`**: Zoom buttons
-6. **`resetView()`**: Reset to zoom 1, center canvas
-7. **`getVisibleArea()`**: Optimization
-   - Calculates which pixels are on screen
-   - Only renders visible pixels (not all 1M!)
-   ```javascript
-   startX = max(0, floor(-offset.x / zoom))
-   endX = min(1000, ceil((width - offset.x) / zoom))
-   ```
-
-**Grid Display**:
-- `shouldShowGrid`: true when zoom ≥ 5
-- Draws cyan grid lines between pixels
-
-**Coordinate Math**:
+    U -- "EGLD (ex: 0.50)" --> SC
+    SC -- "50% EGLD" --> C
+    SC -- "25% EGLD" --> B
+    SC -- "25% EGLD" --> T
+    SC -- "12,000 PIXEL (Artisan tier)" --> P
+    P --> U
 ```
-Screen Space → Canvas Space
-mouseX → (mouseX - offset.x) / zoom
-mouseY → (mouseY - offset.y) / zoom
+
+### 1.3.4 Mecanismul de Ardere (Burn)
+
+Arderea (burn) a 25% din veniturile EGLD contribuie la reducerea treptată a ofertei circulante de EGLD utilizat în ecosistem, creând o presiune deflacionară pe termen lung. Aceasta este o practică comună în proiectele DeFi pentru a menține valoarea token-urilor.
+
+---
+
+## 1.4 NFT-uri și Semi-Fungible Tokens pe MultiversX
+
+### 1.4.1 Standardul NFT pe MultiversX
+
+Pe MultiversX, NFT-urile sunt implementate ca un tip special de ESDT cu:
+- **Nonce unic**: Fiecare NFT are un nonce care îl diferențiază de altele din aceeași colecție.
+- **Atribute on-chain**: Metadate stocate direct pe blockchain (ex: `"epoch:3;type:painter;pixels:1250"`).
+- **URI**: Link către resursa media asociată (imagine stocată pe IPFS sau CDN).
+- **Royalties**: Procentaj de redevențe plătite creatorului la fiecare revânzare.
+
+### 1.4.2 Cazuri de Utilizare în Pixel CanvasChain
+
+Proiectul mintează două tipuri de NFT-uri la finalul fiecărei epoci:
+
+1. **"Painter of Epoch X" NFT**: Acordat utilizatorului care a plasat cel mai mare număr de pixeli în acea epocă. NFT-ul conține imaginea întregului canvas (100×100 pixeli) la momentul încheierii epocii.
+
+2. **"Auction Winner Epoch X" NFT**: Acordat câștigătorului licitației pentru zona premium (20×20 pixeli). NFT-ul conține imaginea zonei licitată, reprezentând un activ digital unic care certifică achiziția zonei respective.
+
+---
+
+## 1.5 Arhitectura Hibridă Web2/Web3
+
+### 1.5.1 Problema Scalabilității On-Chain
+
+Plasarea fiecărui pixel direct pe blockchain ar implica:
+- **Latență**: ~6 secunde per tranzacție pe MultiversX devnet.
+- **Cost**: Fiecare tranzacție consumă gas (taxe de rețea).
+- **Experiență degradată**: Un canvas colaborativ în timp real necesită actualizări sub-secundă.
+
+Dacă 100 de utilizatori simultani ar plasa pixeli, fiecare la 1 pixel/secundă, sistemul ar genera 6.000 de tranzacții pe minut — impracticabil pentru un blockchain public.
+
+### 1.5.2 Modelul Optimistic UI cu Settlement On-Chain
+
+Soluția adoptată este un **model hibrid** în două straturi:
+
+**Stratul rapid (off-chain)**:
+- Utilizatorul pictează un pixel → clientul emite imediat evenimentul Socket.io.
+- Server-ul actualizează starea în memorie și propagă schimbarea tuturor clienților conectați.
+- Latența efectivă: <100ms.
+
+**Stratul de settlement (on-chain)**:
+- Clientul semnează o tranzacție `paintPixels()` cu wallet-ul xPortal.
+- Tranzacția este trimisă către devnet.
+- Server-ul monitorizează confirmarea tranzacției prin polling pe API-ul devnet.
+- La confirmare: pixelii sunt persistați în SQLite (starea "confirmată").
+- La eșec: pixelii sunt reveniți (optimistic rollback).
+
+Această arhitectură este similară cu modelul **optimistic updates** folosit în aplicații Web2 moderne (ex: interfețele social media care afișează like-ul imediat, înaintea confirmării serverului).
+
+### 1.5.3 Comparație cu Alternativele
+
+| Abordare | Latență | Cost | Decentralizare | Utilizabilitate |
+|----------|---------|------|----------------|-----------------|
+| Complet on-chain | ~6s | Ridicat | Maximă | Slabă |
+| Complet off-chain | <100ms | Minim | Zero | Excelentă |
+| **Hibrid (ales)** | **<100ms** | **Moderat** | **Parțială** | **Excelentă** |
+
+---
+
+## 1.6 WebSockets și Comunicare în Timp Real
+
+### 1.6.1 Limitările HTTP Clasic
+
+Protocolul HTTP tradițional este **request-response**: clientul inițiază o cerere, serverul răspunde, conexiunea se închide. Pentru un canvas colaborativ unde sute de utilizatori plasează pixeli simultan, această abordare este inadecvată:
+
+- **HTTP Polling**: Clientul interogă serverul la fiecare N secunde. Consumă resurse inutil și introduce latență artificială.
+- **Long Polling**: Serverul menține conexiunea deschisă până când există date noi. Mai eficient, dar complex de implementat la scară.
+
+### 1.6.2 WebSockets — Conexiune Bidirecțională Persistentă
+
+**WebSocket** este un protocol de comunicare care stabilește o conexiune bidirecțională persistentă între client și server. Odată stabilită, ambele părți pot trimite date oricând, fără overhead de re-conectare.
+
+Avantajele pentru Pixel CanvasChain:
+- **Propagare instantanee**: Când utilizatorul A pictează un pixel, toți ceilalți utilizatori conectați primesc actualizarea în <10ms (latența rețelei).
+- **Eficiență**: O singură conexiune persistentă înlocuiește sute de cereri HTTP pe minut.
+- **Evenimente rich**: Socket.io (biblioteca utilizată) extinde WebSocket cu funcționalități de tip **rooms**, **namespaces** și **reconnection automată**.
+
+### 1.6.3 Socket.io — Arhitectura Event-Driven
+
+**Socket.io** este o bibliotecă JavaScript care abstractizează WebSocket și oferă un API bazat pe evenimente. Funcționează pe principiul **emit/on**:
+
+```
+Client emite "pixel:paint" → Server recepționează → Server emite "pixel:update" → Toți clienții primesc
+```
+
+Socket.io gestionează automat:
+- Degradare gracioasă la long-polling dacă WebSocket nu e disponibil
+- Reconnectare automată la pierderea conexiunii
+- Heartbeat periodic pentru detectarea deconexiunilor
+
+---
+
+## 1.7 React și Arhitectura Frontend Modernă
+
+### 1.7.1 React 18 — Biblioteca UI
+
+**React** este o bibliotecă JavaScript pentru construirea interfețelor utilizator bazată pe conceptul de **component tree**. Interfața este împărțită în componente reutilizabile, fiecare cu propriul state și lifecycle.
+
+React 18 introduce **Concurrent Rendering** — capacitatea de a întrerupe și relua randarea componentelor, permițând aplicațiilor să rămână responsive chiar și în timpul operațiunilor computaționale intensive (ex: actualizarea a sute de pixeli simultan pe canvas).
+
+### 1.7.2 Context API — Gestionarea Stării Globale
+
+**Context API** este mecanismul nativ React pentru partajarea stării între componente fără a pasa props prin fiecare nivel al ierarhiei (prop drilling). În Pixel CanvasChain, `AppContext` expune:
+
+- Starea wallet-ului (adresă, sold EGLD, sold PIXEL)
+- Starea grid-ului (matricea de culori 100×100)
+- Informații despre epoca curentă
+- Starea licitației active
+- Starea votului pentru caritate
+
+### 1.7.3 Custom Hooks — Separarea Responsabilităților
+
+**Custom hooks** sunt funcții React care încapsulează logică cu stare și efecte secundare, putând fi reutilizate în mai multe componente. Proiectul utilizează extensiv acest pattern:
+
+- `useSocket` — gestionează conexiunea Socket.io și evenimentele asociate
+- `useCanvas` — gestionează randarea canvas-ului, zoom/pan, interacțiunile mouse
+- `useWallet` — abstractizează integrarea MultiversX SDK-dapp
+- `usePixelBalance` — interogează periodic soldul de token PIXEL de pe blockchain
+
+### 1.7.4 HTML5 Canvas API
+
+Elementul `<canvas>` HTML5 permite desenarea 2D prin JavaScript, folosind un context grafic. Este folosit în proiect pentru randarea eficientă a celor 10,000 de pixeli (100×100), cu suport pentru:
+- Zoom (0.5x–32x) și pan
+- Randare parțială (culling) pentru performanță
+- Efecte vizuale (flash la actualizare, evidențiere zonă licitație)
+
+---
+
+## 1.8 Persistența Datelor — SQLite
+
+### 1.8.1 Alegerea SQLite
+
+**SQLite** este o bază de date relațională serverless, stocată într-un singur fișier. A fost aleasă pentru backend-ul proiectului din mai multe motive:
+
+- **Simplitate operațională**: Nu necesită un server separat de baze de date.
+- **Performanță**: Pentru un canvas de 10,000 pixeli, SQLite oferă performanță excelentă.
+- **Portabilitate**: Fișierul `canvas.db` poate fi copiat/arhivat trivial.
+
+### 1.8.2 WAL Mode — Acces Concurent
+
+SQLite în modul implicit (journal mode) nu permite citiri concurente cu scrierile. Proiectul activează **WAL (Write-Ahead Logging) mode**, care permite citirile să se desfășoare concurent cu scrierile, esențial pentru un server cu multiple conexiuni WebSocket simultane.
+
+### 1.8.3 Strategia Dual-Grid
+
+Un aspect arhitectural important al backend-ului este menținerea a **două reprezentări** ale canvas-ului:
+
+- **`grid[][]`** — starea "vie", optimistă, în memorie: reflectă toate pixelii plasați, inclusiv cei așteptând confirmarea blockchain.
+- **`confirmedGrid[][]`** — starea "confirmată", bazată exclusiv pe pixelii persistați în SQLite (tranzacții blockchain confirmate).
+
+Când un utilizator nou se conectează, primește `confirmedGrid` — imaginea certă, fără pixeli speculativi. Aceasta previne inconsistențe în cazul în care tranzacțiile pending eșuează.
+
+---
+
+## 1.9 Proiecte Similare și Poziționare
+
+### 1.9.1 r/place (Reddit, 2017, 2022)
+
+**r/place** a fost un experiment social al Reddit în care utilizatorii puteau plasa câte un pixel de culoare pe o grilă partajată, cu un cooldown de câteva minute între plasări. Experimentul a demonstrat puterea colaborării și competiției la scară masivă (milioane de utilizatori).
+
+Limitele r/place din perspectiva Web3:
+- Controlat de o entitate centralizată (Reddit).
+- Nu există proprietate verificabilă sau recompense economice.
+- Canvas-ul este permanent șters după experiment.
+
+### 1.9.2 Proiecte Blockchain Pixel Art Existente
+
+Au existat diverse proiecte de pixel art pe blockchain (MillionDollarHomepage inspirate, Ethereum-based grids), dar marea majoritate suferă de aceeași problemă: plasarea fiecărui pixel ca tranzacție individuală face interacțiunea lentă și costisitoare.
+
+### 1.9.3 Diferențiatorii Pixel CanvasChain
+
+Pixel CanvasChain se diferențiază prin:
+
+1. **Arhitectura hibridă**: Experiență Web2 instantanee cu ancorare Web3.
+2. **Sistemul de epoci**: Canvas reset periodic creează urgență și reînnoire.
+3. **Licitații pentru zone premium**: Mecanism economic inovativ pentru spații vizibile.
+4. **Votul democratic pentru donații**: Comunitatea decide direcția fondurilor caritabile.
+5. **NFT-uri ca dovezi de participare**: Recompense tangibile pentru contribuitorii activi.
+6. **Misiunea socială**: 50% din venituri donate automat prin smart contract.
+
+---
+
+<div style="page-break-after: always;"></div>
+
+---
+
+# CAPITOLUL 2: IMPLEMENTARE
+
+## 2.1 Arhitectura Generală a Sistemului
+
+### 2.1.1 Cele Trei Straturi ale Sistemului
+
+Pixel CanvasChain este structurat în trei straturi distincte, fiecare cu responsabilități clare:
+
+```mermaid
+flowchart TB
+    subgraph CLIENT["🖥️ STRATUL CLIENT (React 18 + Vite | Port 5173)"]
+        direction LR
+        UI[Interfață Utilizator]
+        WS_C[Socket.io Client]
+        SDK[MultiversX SDK-dapp]
+        CANVAS[HTML5 Canvas Renderer]
+    end
+
+    subgraph SERVER["⚙️ STRATUL SERVER (Node.js + Express | Port 5001)"]
+        direction LR
+        WS_S[Socket.io Server]
+        PG[PixelGrid Manager]
+        UM[UserManager]
+        DB_MOD[SQLite Module]
+        TW[Transaction Watcher]
+    end
+
+    subgraph BLOCKCHAIN["⛓️ STRATUL BLOCKCHAIN (MultiversX Devnet)"]
+        direction LR
+        SC[Smart Contract Rust]
+        ESDT[Token PIXEL ESDT]
+        NFT_C[Colecție NFT]
+    end
+
+    subgraph STORAGE["💾 STOCARE"]
+        SQLITE[(SQLite canvas.db)]
+    end
+
+    UI <-->|WebSocket Events| WS_S
+    SDK <-->|Tranzacții semnate| SC
+    TW <-->|Polling API| BLOCKCHAIN
+    DB_MOD <--> SQLITE
+    WS_S --> PG
+    PG --> DB_MOD
+    WS_S --> UM
+    WS_S --> TW
+```
+
+### 2.1.2 Fluxul Principal de Date — Pictura unui Pixel
+
+Fluxul complet al unei acțiuni de pictat un pixel, de la click-ul utilizatorului până la persistența on-chain:
+
+```mermaid
+sequenceDiagram
+    participant U as 👤 Utilizator
+    participant C as React Client
+    participant S as Node.js Server
+    participant MX as MultiversX Devnet
+    participant DB as SQLite
+
+    U->>C: Click pe pixel (x, y, culoare)
+    C->>C: Actualizare locală imediată (optimistic)
+    C->>S: emit("pixels:paint", {pixels})
+    S->>S: Validare coordonate & culoare
+    S->>S: Rate limiting check
+    S->>S: Actualizare grid[][] în memorie
+    S-->>C: broadcast("pixels:update", {pixels}) la TOȚI clienții
+
+    Note over C,MX: Utilizatorul semnează tranzacția în xPortal
+    C->>MX: Trimitere tranzacție paintPixels() cu PIXEL tokens
+    C->>S: emit("pixels:submit", {txHash, pixels})
+    S->>S: Înregistrare txHash pending
+
+    loop Polling la fiecare 5s (max 2 min)
+        S->>MX: GET /transactions/{txHash}
+        MX-->>S: Status tranzacție
+    end
+
+    alt Tranzacție CONFIRMATĂ
+        S->>DB: persistPixels(pixels) - Upsert SQLite
+        S->>S: Actualizare confirmedGrid[][]
+        S-->>C: emit("pixels:committed", {txHash})
+    else Tranzacție EȘUATĂ
+        S->>S: revertPixels(pixels) - Undo în grid[][]
+        S-->>C: broadcast("pixels:update", pixels_reverted)
+    end
 ```
 
 ---
 
-### 📁 `client/src/components/Canvas.jsx`
+## 2.2 Smart Contract — Rust pe MultiversX
 
-**Purpose**: Renders the 1000x1000 pixel canvas
+### 2.2.1 Structuri de Date
 
-**Rendering Process** (Lines 39-103):
+Smart contract-ul este implementat în fișierul `pixel-canvas-contract/src/pixel_canvas_contract.rs` (830+ linii). Structura principală de date pentru reprezentarea unui pixel este:
 
-1. **Setup Canvas**:
-   ```javascript
-   canvas.width = rect.width;   // Match container size
-   canvas.height = rect.height;
-   ctx.clearRect(0, 0, width, height); // Clear
-   ```
-
-2. **Apply Transform**:
-   ```javascript
-   ctx.translate(offset.x, offset.y); // Pan
-   ctx.scale(zoom, zoom);              // Zoom
-   ```
-
-3. **Render Pixels** (Optimized):
-   ```javascript
-   for (y = startY; y < endY; y++) {
-     for (x = startX; x < endX; x++) {
-       color = gridState[y][x];
-       ctx.fillStyle = color;
-       ctx.fillRect(x, y, 1, 1); // 1x1 pixel square
-     }
-   }
-   ```
-   - Only renders visible area (500x500 at zoom 1)
-   - At zoom 1: ~250,000 pixels rendered
-   - At zoom 20: ~2,500 pixels rendered
-
-4. **Draw Grid** (if zoom ≥ 5):
-   ```javascript
-   for (x = startX; x <= endX; x++) {
-     drawLine(x, startY, x, endY);
-   }
-   ```
-
-5. **Highlight Hover Pixel**:
-   ```javascript
-   ctx.strokeRect(hoverPixel.x, hoverPixel.y, 1, 1);
-   ```
-
-**Event Handlers**:
-- `onWheel`: Zoom (calls `useCanvas.handleWheel`)
-- `onMouseDown`: Start pan
-- `onMouseMove`: Pan or hover
-- `onMouseUp`: Stop pan
-- `onClick`: Paint pixel
-- `onContextMenu`: Disabled (right-click pans)
-
-**Overlays**:
-- Top-left: Hover coordinates `(500, 500)`
-- Top-right: Zoom level `5.2x`
-- Bottom-left: Instructions
-- Center (if loading): Loading spinner
-
-**CSS**:
-```css
-style={{ imageRendering: 'pixelated' }}
 ```
-- Prevents anti-aliasing
-- Keeps pixels sharp at high zoom
-
----
-
-### 📁 `client/src/components/ColorPicker.jsx`
-
-**Purpose**: Color selection UI
-
-**Features**:
-
-1. **Current Color Display** (Lines 92-103):
-   - Large 64x64 swatch
-   - Shows hex code (`#FF0000`)
-   - Neon cyan glow
-
-2. **Color History** (Lines 106-125):
-   - Last 5 used colors
-   - Horizontal row of 32x32 swatches
-   - Click to reselect
-
-3. **Preset Colors Grid** (Lines 128-145):
-   - 30 colors in 5x6 grid
-   - 40x40 swatches
-   - Categories: Basic, Primary, Secondary, Neon, Pastels, Dark
-   - Selected color has:
-     - `border-primary` (cyan border)
-     - `shadow-neon-cyan` (glow)
-     - `ring-2 ring-primary` (extra ring)
-
-4. **Custom Hex Input** (Lines 148-166):
-   - Text input: `#FF0000`
-   - Validates: `/^#[0-9A-Fa-f]{6}$/`
-   - "Add" button
-   - Adds to history on submit
-
-**Preset Colors Array** (Lines 15-57):
-```javascript
-const PRESET_COLORS = [
-  '#FFFFFF', // White
-  '#000000', // Black
-  '#FF0000', // Red
-  // ... 27 more
-];
-```
-
-**How to Add Colors**:
-1. Add hex code to `PRESET_COLORS` array
-2. Adjust grid: `grid-cols-5` → `grid-cols-6` (if needed)
-
----
-
-### 📁 `client/src/pages/WelcomePage.jsx`
-
-**Purpose**: Landing page
-
-**Sections**:
-
-1. **Hero** (Lines 18-53):
-   - Animated emoji logo (🎨)
-   - Title: "PIXEL CANVASCHAIN"
-     - "PIXEL" in cyan with text-shadow
-     - "CANVASCHAIN" in magenta with text-shadow
-   - Subtitle with project description
-   - CTA button: "Enter the Canvas" → `/login`
-     - `animate-pulse-glow` class (TailwindCSS)
-     - Neon cyan shadow
-     - Hover: magenta shadow
-
-2. **Feature Cards** (Lines 56-89):
-   - 3 cards in grid
-   - Card 1: "1000x1000 Canvas"
-   - Card 2: "Real-time Painting"
-   - Card 3: "50% to Charity"
-   - Hover effects: border glow, shadow
-
-3. **Footer** (Lines 92-99):
-   - "Phase 1: Prototype (Mock Wallet)"
-   - Powered by MultiversX
-
-**Animations**:
-- `animate-pulse-glow`: Pulsing opacity (defined in tailwind.config.js)
-- `hover:shadow-neon-magenta`: Glow on hover
-
----
-
-### 📁 `client/src/pages/LoginPage.jsx`
-
-**Purpose**: Wallet connection page
-
-**Flow**:
-1. Show centered card
-2. User clicks "Connect Mock Wallet"
-3. Loading spinner (2 seconds)
-4. Success checkmark
-5. Auto-navigate to `/shop`
-
-**Button States**:
-- Normal: "Connect Mock Wallet"
-- Loading: Spinner + "Connecting..."
-- Success: Checkmark + "Connected!"
-
-**Auto-navigation** (in useMockWallet.js):
-```javascript
-setTimeout(() => navigate('/shop'), 500);
-```
-
-**Future**:
-- Replace button with `<ExtensionLogin>` component
-- Add "Web Wallet" and "Ledger" options
-- Show QR code for xPortal mobile
-
----
-
-### 📁 `client/src/pages/ShopPage.jsx`
-
-**Purpose**: Credit purchase page
-
-**Protected Route** (Lines 77-81):
-```javascript
-useEffect(() => {
-  if (!isConnected) navigate('/login');
-}, [isConnected]);
-```
-
-**Layout**:
-
-1. **Header** (Lines 96-118):
-   - Title: "Purchase Credits"
-   - "Start Painting" button (top-right)
-     - Enabled if credits > 0
-     - Green with pulse glow
-     - Disabled: gray, locked icon
-
-2. **Balance Display** (Lines 121-134):
-   - Your Balance: **100** EGLD
-   - Credits: **12,000**
-   - In card with cyan border
-
-3. **Tier Cards Grid** (Lines 138-142):
-   - Maps over `TIERS` array
-   - Renders `<ShopCard>` for each tier
-
-4. **Info Cards** (Lines 145-175):
-   - How it Works
-   - 50% to Charity
-   - Future: NFTs
-
-**TIERS Array** (Lines 22-69):
-- Duplicated from server constants
-- [IMPROVEMENT]: Fetch from server API
-
----
-
-### 📁 `client/src/components/ShopCard.jsx`
-
-**Purpose**: Individual tier purchase card
-
-**Props**:
-```javascript
-tier = {
-  name: 'Artisan',
-  cost: 100,
-  basePixels: 10000,
-  bonusPixels: 2000,
-  total: 12000,
-  bonusPercent: 20,
-  color: '#a855f7',
-  badge: 'Best Value' // Only for Legend
+PixelData {
+    x: u32       — coordonata orizontală (0-99)
+    y: u32       — coordonata verticală (0-99)
+    color: u32   — culoarea ca valoare RGB packed
 }
 ```
 
-**Layout**:
-- Tier name (colored header)
-- Cost: "100 EGLD"
-- Base pixels: "10,000"
-- Bonus: "+2,000 (20%)" in green
-- Total: "12,000 Credits" (bold)
-- Badge (if Legend): "Best Value" in gradient
-- Purchase button
+Starea contractului este stocată în **storage mappings** — structuri de date persistente pe blockchain, echivalente cu tabele de baze de date:
 
-**Purchase Button States**:
-1. **Normal**: "Purchase" (cyan button)
-2. **Loading**: Spinner (2 second delay)
-3. **Success**: Checkmark + "Purchased!"
-4. **Disabled**: Not enough EGLD (gray)
+```mermaid
+classDiagram
+    class PixelCanvasContract {
+        <<Smart Contract>>
+        +buyPixels() payable_EGLD
+        +paintPixels(pixels: ManagedVec~PixelData~) payable_PIXEL
+        +vote(charity_index: u32)
+        +placeBid() payable_EGLD
+        +withdrawBid()
+        +startEpoch() owner_only
+        +startEpochWithAuction(x: u32, y: u32) owner_only
+        +endEpoch(painter_uri, auction_uri) owner_only
+        +closeAuction() owner_only
+        +setPixelToken(id, denomination) owner_only
+        +setCharityAddress(address) owner_only
+        +setEpochDuration(seconds: u64) owner_only
+        +setNftCollection(token_id) owner_only
+    }
 
-**Purchase Flow**:
-```javascript
-1. User clicks "Purchase"
-2. setIsLoading(true)
-3. Call purchaseCredits(tierName)
-4. Socket emits: credits:purchase
-5. Server waits 2 seconds
-6. Server emits: credits:purchased
-7. Toast shows: "Successfully purchased Artisan! +12,000 credits"
-8. setIsLoading(false)
+    class StorageMappings {
+        <<Storage>>
+        +pixel_token_id: TokenIdentifier
+        +pixel_denomination: BigUint
+        +charity_address: ManagedAddress
+        +total_donated: BigUint
+        +current_epoch: u64
+        +epoch_start_timestamp: u64
+        +epoch_duration: u64
+        +pixel_owner(x,y): ManagedAddress
+        +epoch_paint_count(epoch, addr): u64
+        +epoch_top_painter(epoch): ManagedAddress
+        +epoch_charity_names(epoch): VecMapper~ManagedBuffer~
+        +epoch_charity_addrs(epoch): VecMapper~ManagedAddress~
+        +epoch_vote_counts(epoch): VecMapper~u64~
+        +epoch_voter_choice(epoch, voter): u32
+        +auction_active(epoch): bool
+        +auction_section_x(epoch): u32
+        +auction_section_y(epoch): u32
+        +auction_end_timestamp(epoch): u64
+        +auction_highest_bid(epoch): BigUint
+        +auction_highest_bidder(epoch): ManagedAddress
+        +zone_unlocked_for(epoch): ManagedAddress
+        +nft_collection_id: TokenIdentifier
+    }
+
+    class PixelData {
+        <<Struct>>
+        +x: u32
+        +y: u32
+        +color: u32
+    }
+
+    PixelCanvasContract --> StorageMappings : uses
+    PixelCanvasContract --> PixelData : processes
+```
+
+### 2.2.2 Sistemul de Epoci (Epoch Management)
+
+O **epocă** reprezintă o perioadă de timp limitată în care utilizatorii pot picta pe canvas. La sfârșitul epocii, canvas-ul este "înghețat", NFT-urile sunt mintate și o nouă epocă poate începe.
+
+Starea unei epoci este controlată prin storage mappings, iar tranzițiile sunt gestionate de funcțiile owner-only:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Inactiv: Deploy contract
+    Inactiv --> EpocaActiva: startEpoch() / startEpochWithAuction()
+    EpocaActiva --> LicitatiActiva: startEpochWithAuction()
+    LicitatiActiva --> LicitatieInchisa: closeAuction()
+    LicitatieInchisa --> EpocaActiva: (licitația s-a terminat)
+    EpocaActiva --> EpocaIncheiata: endEpoch()
+    EpocaIncheiata --> Inactiv: (ready for next epoch)
+    EpocaIncheiata --> EpocaActiva: startEpoch() (next epoch)
+```
+
+### 2.2.3 Mecanismul de Cumpărare PIXEL și Distribuirea Veniturilor
+
+```mermaid
+sequenceDiagram
+    participant U as 👤 Utilizator
+    participant SC as Smart Contract
+    participant CA as 🏥 Adresa Caritate
+    participant BA as 🔥 Burn Address
+    participant TR as 🏦 Trezorerie
+    participant WT as 💼 Wallet Utilizator
+
+    U->>SC: buyPixels() + 0.50 EGLD (Artisan tier)
+    SC->>SC: Determină tier: Artisan (0.50 EGLD)
+    SC->>SC: Calculează pixeli: 10,000 + 2,000 bonus = 12,000 PIXEL
+    SC->>CA: Transfer 0.25 EGLD (50%)
+    SC->>BA: Transfer 0.125 EGLD (25% burn)
+    SC->>TR: Transfer 0.125 EGLD (25% trezorerie)
+    SC->>WT: Send 12,000 PIXEL tokens (ESDT)
+    SC-->>U: Emit buy_pixels_event
+```
+
+### 2.2.4 Pictura Pixelilor cu Sistem de Proprietate
+
+O inovație importantă este că fiecare pixel are un **proprietar on-chain**. Pictarea unui pixel deja deținut costă 2 PIXEL (în loc de 1), din care 1 PIXEL se duce ca royalty proprietarului anterior.
+
+```mermaid
+flowchart TD
+    A[paintPixels chiamat cu N pixeli] --> B{Pentru fiecare pixel}
+    B --> C{Proprietar curent?}
+    C -->|Blank / Proprietar = Zero| D[Cost: 1 PIXEL]
+    C -->|Proprietar = Caller| D
+    C -->|Proprietar = Alt utilizator| E[Cost: 2 PIXEL]
+    E --> F[1 PIXEL → Proprietar anterior]
+    E --> G[1 PIXEL → Acumulat pentru caritate]
+    D --> H[1 PIXEL → Acumulat pentru caritate]
+    F --> I[Actualizare pixel_owner x,y = caller]
+    G --> I
+    H --> I
+    I --> J[Actualizare epoch_paint_count]
+    J --> K{Caller este noul top painter?}
+    K -->|Da| L[Actualizare epoch_top_painter]
+    K -->|Nu| M[Continuare]
+```
+
+### 2.2.5 Sistemul de Licitații (Auction)
+
+La inițierea unei epoci cu licitație, o zonă de 20×20 pixeli din canvas devine un "spațiu premium" licitabil. Oricine poate plasa o ofertă în EGLD, câștigătorul primind:
+- Dreptul exclusiv de a picta în zona respectivă pe durata epocii.
+- Un NFT reprezentând zona câștigată.
+
+### 2.2.6 Mintarea NFT-urilor la Finalul Epocii
+
+```mermaid
+sequenceDiagram
+    participant O as 👑 Owner
+    participant SC as Smart Contract
+    participant TP as 🎨 Top Painter
+    participant AW as 🏆 Auction Winner
+
+    O->>SC: endEpoch(painter_uri, auction_uri)
+    SC->>SC: Verifică epoch_ended == false
+    SC->>SC: Distribuie PIXEL acumulat → caritate câștigătoare
+    SC->>SC: Distribuie EGLD votat → caritate câștigătoare
+
+    SC->>SC: Mint NFT "Painter of Epoch X"
+    Note over SC: Atribute: epoch:X;type:painter;pixels:N
+    SC->>TP: Transfer NFT către top painter
+
+    alt Există câștigător licitație
+        SC->>SC: Mint NFT "Auction Winner Epoch X"
+        Note over SC: Atribute: epoch:X;type:auction;section:X,Y
+        SC->>AW: Transfer NFT către câștigător licitație
+    end
+
+    SC->>SC: Setează epoch_ended = true
+    SC-->>O: Epoch closed
 ```
 
 ---
 
-### 📁 `client/src/pages/CanvasPage.jsx`
+## 2.3 Backend — Node.js cu Express și Socket.io
 
-**Purpose**: Main gameplay screen
+### 2.3.1 Diagrama de Clase Backend
 
-**Layout**:
+```mermaid
+classDiagram
+    class PixelGrid {
+        -grid: string[][]
+        -confirmedGrid: string[][]
+        -CANVAS_SIZE: number = 100
+        +getGrid() string[][]
+        +getConfirmedGrid() string[][]
+        +setPixel(x, y, color) boolean
+        +setPixelsBatch(pixels) PixelData[]
+        +persistPixels(pixels) number
+        +revertPixels(pixels) PixelData[]
+        +hydrateFromDb() void
+        +clearAll() void
+        +isValidCoordinate(x, y) boolean
+        +isValidColor(color) boolean
+        +getStats() GridStats
+    }
+
+    class UserManager {
+        -users: Map~string_UserData~
+        +createUser(address) UserData
+        +getUser(address) UserData
+        +joinUser(address) void
+        +recordPaint(address, x, y, color) void
+        +isRateLimited(address) boolean
+        +getUserCount() number
+        +getUserStats(address) UserStats
+    }
+
+    class Database {
+        -db: BetterSQLite3.Database
+        +loadAllPixels() PixelRecord[]
+        +savePixels(batch) void
+        +deletePixels(pixels) void
+        +clearAllPixels() void
+        +pixelCount() number
+    }
+
+    class Server {
+        -io: SocketIOServer
+        -pixelGrid: PixelGrid
+        -userManager: UserManager
+        +handleWalletJoin(socket, address) void
+        +handlePixelPaint(socket, data) void
+        +handlePixelsSubmit(socket, data) void
+        +watchTxOnDevnet(io, txHash, pixels, address) void
+        +getContractStats() ContractStats
+        +broadcastStats() void
+    }
+
+    class Constants {
+        <<Configuration>>
+        +CANVAS_SIZE: 100
+        +CANVAS_WIDTH: 100
+        +CANVAS_HEIGHT: 100
+        +DEFAULT_PIXEL_COLOR: "#FFFFFF"
+        +COST_PER_PIXEL: 1
+        +INITIAL_EGLD: 100
+        +TIERS: TierConfig[]
+    }
+
+    Server --> PixelGrid : uses
+    Server --> UserManager : uses
+    PixelGrid --> Database : uses
+    Server ..> Constants : imports
+    UserManager ..> Constants : imports
 ```
-┌──────────────────────────────────────────────┐
-│  Header (wallet info)                        │
-├────────────┬─────────────────────┬───────────┤
-│            │                     │           │
-│ ColorPicker│      Canvas         │ Toolbar   │
-│  (256px)   │   (flex-grow)       │  (256px)  │
-│            │                     │           │
-└────────────┴─────────────────────┴───────────┘
+
+### 2.3.2 Schema Bazei de Date SQLite
+
+```mermaid
+erDiagram
+    PIXELS {
+        INTEGER x PK "0-99"
+        INTEGER y PK "0-99"
+        TEXT color "format #RRGGBB"
+        TEXT address "adresa wallet erd1..."
+        INTEGER updated_at "Unix timestamp ms"
+    }
 ```
 
-**Components**:
-1. **Header**: Top bar with wallet info
-2. **ColorPicker**: Left sidebar (30 colors)
-3. **Canvas**: Center (1000x1000 pixels)
-4. **Toolbar**: Right sidebar (zoom controls)
+**Note implementare**:
+- Cheia primară compusă `(x, y)` asigură unicitatea fiecărui pixel.
+- Semantică upsert: la plasarea unui pixel existent, rândul este actualizat (nu duplicat).
+- Pixelii albi (default) nu sunt stocați explicit — absența unui rând înseamnă culoarea `#FFFFFF`.
+- Modul WAL activat pentru concurență optimă.
 
-**Protected Route** (Lines 30-34):
-```javascript
-useEffect(() => {
-  if (!wallet.isConnected) navigate('/login');
-}, [wallet.isConnected]);
+### 2.3.3 Modulul PixelGrid — Strategia Dual-Grid
+
+Cel mai important modul al backend-ului este `pixelGrid.js`, care gestionează starea canvas-ului prin două structuri paralele:
+
+```mermaid
+flowchart LR
+    subgraph MEMORY["Memorie RAM"]
+        G["grid[ ][ ]\n(stare live/optimistă)"]
+        CG["confirmedGrid[ ][ ]\n(stare confirmată on-chain)"]
+    end
+
+    subgraph DB["SQLite"]
+        PIXELS_TABLE["pixels table\n(sursa de adevăr)"]
+    end
+
+    subgraph EVENTS["Evenimente"]
+        PAINT["pixel:paint\n(instant)"]
+        CONFIRM["tx confirmată"]
+        FAIL["tx eșuată"]
+        BOOT["server restart"]
+    end
+
+    PAINT -->|setPixel()| G
+    CONFIRM -->|persistPixels()| PIXELS_TABLE
+    CONFIRM -->|actualizare| CG
+    FAIL -->|revertPixels()| G
+    BOOT -->|hydrateFromDb()| CG
+    BOOT -->|copie| G
 ```
 
-**Toast Notifications** (Lines 56-75):
-```jsx
-{toast && (
-  <div className={`fixed top-4 right-4 ${colorClass}`}>
-    {toast.message}
-    <button onClick={dismissToast}>×</button>
-  </div>
-)}
-```
-- Types: success (green), error (red), info (blue)
-- Auto-dismiss: 3 seconds
-- Manual dismiss: X button
+### 2.3.4 Transaction Watcher — Reziliență la Deconectare
+
+Un aspect critic al sistemului este că procesul de confirmare a tranzacțiilor rulează **server-side**, nu client-side. Aceasta înseamnă că dacă utilizatorul închide tab-ul după ce a semnat tranzacția, server-ul continuă să monitorizeze confirmarea și va persista pixelii când tranzacția se confirmă.
+
+**Algoritmul Transaction Watcher:**
+1. La primirea `pixels:submit` de la client, server-ul înregistrează `{txHash, pixels, address}`.
+2. Server-ul pornește un polling pe API-ul devnet la fiecare 5 secunde.
+3. Timeout după 24 de iterații (2 minute).
+4. La succes: `persistPixels()` + `emit("pixels:committed")`.
+5. La eșec/timeout: `revertPixels()` + broadcast rollback.
 
 ---
 
-## Key Concepts Explained
+## 2.4 Frontend — React 18 cu Vite
 
-### 1. Socket.io Real-time Communication
+### 2.4.1 Diagrama de Componente React
 
-**Why Socket.io?**
-- HTTP is request-response (one-way)
-- WebSocket is bidirectional (two-way)
-- Socket.io adds: auto-reconnection, fallback, rooms
+```mermaid
+graph TD
+    APP["App.jsx\n(Router)"]
 
-**Connection**:
-```javascript
-Client: io('http://localhost:5001')
-Server: io.on('connection', (socket) => { ... })
+    APP --> WELCOME["WelcomePage.jsx\n(Landing page + stats)"]
+    APP --> LOGIN["LoginPage.jsx\n(Conectare wallet)"]
+    APP --> SHOP["ShopPage.jsx\n(Cumpărare PIXEL)"]
+    APP --> CANVAS_P["CanvasPage.jsx\n(Gameplay principal)"]
+    APP --> AUCTION_P["AuctionPage.jsx\n(Licitații)"]
+    APP --> NFT_P["NftPage.jsx\n(Galerie NFT)"]
+    APP --> ADMIN["AdminPage.jsx\n(Admin panel)"]
+
+    CANVAS_P --> CANVAS["Canvas.jsx\n(HTML5 renderer)"]
+    CANVAS_P --> TOOLBAR["Toolbar.jsx\n(Zoom, stats, info)"]
+    CANVAS_P --> COLORPICKER["ColorPicker.jsx\n(Selectare culoare)"]
+    CANVAS_P --> EPOCHBANNER["EpochBanner.jsx\n(Countdown epocă)"]
+    CANVAS_P --> REFIMAGE["ReferenceImage.jsx\n(Imagine referință)"]
+
+    SHOP --> SHOPCARD["ShopCard.jsx\n(Card tier)"]
+    SHOP --> VOTING["VotingSection.jsx\n(Vot caritate)"]
+
+    CANVAS_P --> HEADER["Header.jsx\n(Sold utilizator)"]
+    WELCOME --> HEADER
+
+    subgraph CONTEXT["AppContext.jsx (Stare Globală)"]
+        WS["wallet state"]
+        GS["grid state"]
+        EI["epoch info"]
+        AS["auction state"]
+        VS["voting state"]
+    end
+
+    subgraph HOOKS["Custom Hooks"]
+        USESOCKET["useSocket.jsx\n(WebSocket)"]
+        USECANVAS["useCanvas.js\n(Rendering)"]
+        USEWALLET["useWallet.js\n(MultiversX)"]
+        USEBALANCE["usePixelBalance.js\n(Sold PIXEL)"]
+    end
+
+    APP -.->|provides| CONTEXT
+    CANVAS -.->|uses| USECANVAS
+    CANVAS_P -.->|uses| USESOCKET
+    LOGIN -.->|uses| USEWALLET
+    HEADER -.->|uses| USEBALANCE
 ```
 
-**Emitting Events**:
-```javascript
-// To server
-socket.emit('event:name', { data });
+### 2.4.2 AppContext — Gestionarea Stării Globale
 
-// To client
-socket.emit('event:name', { data }); // Only sender
-io.emit('event:name', { data });     // All clients
-```
+`AppContext.jsx` este centrul de control al aplicației frontend. Folosind React Context API, expune starea globală tuturor componentelor din arbore, fără necesitatea trecerii props prin fiecare nivel.
 
-**Listening to Events**:
-```javascript
-socket.on('event:name', (data) => {
-  // Handle data
-});
-```
+Starea gestionată include:
 
-**Real-time Pixel Updates**:
-- User A paints → Server broadcasts → User B sees instantly
-- No polling, no delays, no page refresh
+| Secțiune | Date | Sursă |
+|----------|------|-------|
+| `wallet` | adresă, sold EGLD, sold PIXEL, isConnected | MultiversX SDK + devnet API |
+| `gridState` | matricea de culori 100×100 | Socket.io (server) |
+| `epochInfo` | epoch curent, durată, timestamp start | Contract view queries |
+| `auctionState` | activ, coordonate, ofertă maximă, câștigător | Contract view queries |
+| `votingState` | carități, voturi, vot propriu | Contract view queries |
 
----
+### 2.4.3 useCanvas — Rendering și Interacțiune
 
-### 2. React Context API
+Hook-ul `useCanvas.js` encapsulează toată logica complexă a canvas-ului HTML5:
 
-**Why Context?**
-- Avoid prop drilling (passing props through 10 components)
-- Global state accessible anywhere
+**Rendering performant**: Algoritmul de randare calculează porțiunea vizibilă a canvas-ului în funcție de zoom și offset, randând exclusiv pixelii vizibili (view frustum culling adaptat 2D).
 
-**Pattern**:
-```javascript
-// 1. Create context
-const AppContext = createContext();
+**Zoom și Pan**: 
+- Scroll mouse: ajustare nivel de zoom (0.5x–32x)
+- Click mijloc/dreapta + drag: pan pe canvas
+- La zoom > 5x: afișare grilă suprapusă pentru navigare precisă
 
-// 2. Create provider
-export const AppProvider = ({ children }) => {
-  const [state, setState] = useState();
-  const value = { state, setState };
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
-};
+**Brush Sizes**: Utilizatorul poate selecta un brush de 1×1, 2×2, 3×3 sau 4×4 pixeli.
 
-// 3. Create hook
-export const useApp = () => useContext(AppContext);
+**Flash Effect**: La primirea unui pixel de la un alt utilizator (via Socket.io), pixelul respectiv animează scurt (flash) pentru a indica activitate recentă.
 
-// 4. Use in component
-function MyComponent() {
-  const { state, setState } = useApp();
-  return <button onClick={() => setState('new')}>{state}</button>;
-}
-```
+### 2.4.4 useSocket — Comunicare WebSocket
 
----
+```mermaid
+classDiagram
+    class useSocket {
+        -socket: Socket
+        -isConnected: boolean
+        +paintPixel(x, y, color) void
+        +paintPixels(pixels) void
+        +notifyPixelsSubmitted(txHash, pixels) void
+        +watchPaintTx(txHash, pixels) void
+    }
 
-### 3. Canvas Rendering Optimization
+    class SocketEvents {
+        <<Events Ascultate>>
+        +wallet_joined: callback
+        +canvas_init: callback
+        +pixel_update: callback
+        +pixels_update: callback
+        +pixels_committed: callback
+        +stats_data: callback
+        +error: callback
+    }
 
-**Problem**: Rendering 1,000,000 pixels = lag
-
-**Solution**: Only render visible pixels
-```javascript
-// Calculate visible area
-startX = max(0, floor(-offset.x / zoom));
-endX = min(1000, ceil((width - offset.x) / zoom));
-
-// Only render visible
-for (y = startY; y < endY; y++) {
-  for (x = startX; x < endX; x++) {
-    renderPixel(x, y);
-  }
-}
-```
-
-**At zoom 1**:
-- Visible: ~500x500 = 250,000 pixels
-- Hidden: ~750,000 pixels (not rendered!)
-
-**At zoom 20**:
-- Visible: ~50x50 = 2,500 pixels
-- Renders FASTER than low zoom!
-
----
-
-### 4. Rate Limiting
-
-**Problem**: User spams 1000 pixels/second → crashes server
-
-**Solution**: Max 10 pixels/second
-```javascript
-// Get paints in last 1 second
-const recentPaints = paintHistory.filter(
-  paint => paint.timestamp > (Date.now() - 1000)
-);
-
-// If 10+ paints → reject
-if (recentPaints.length >= 10) {
-  socket.emit('error', { message: 'Rate limit exceeded' });
-  return;
-}
-```
-
-**Why 10/sec?**
-- Fast enough for normal use
-- Slow enough to prevent abuse
-- [FUTURE]: Adjust based on tier (Legend = 20/sec?)
-
----
-
-### 5. Mock Wallet Address Generation
-
-**Current (Mock)**:
-```javascript
-crypto.randomBytes(31) // 31 bytes
-  .toString('hex')      // 62 hex chars
-'erd1' + hex            // erd1abc...xyz (66 chars)
-```
-
-**Future (Real)**:
-```javascript
-import { ExtensionProvider } from '@multiversx/sdk-dapp/providers';
-
-const provider = ExtensionProvider.getInstance();
-await provider.init();
-const address = await provider.getAddress();
-// Returns real erd1... from user's wallet extension
-```
-
----
-
-## How to Modify the Project
-
-### Add a New Tier
-
-**1. Server** (`server/src/constants.js`):
-```javascript
-export const TIERS = [
-  // ... existing tiers
-  {
-    name: 'Supreme',
-    cost: 2000,
-    basePixels: 200000,
-    bonusPixels: 150000,
-    total: 350000,
-    bonusPercent: 75,
-    color: '#FF69B4',
-    badge: 'Ultimate Value'
-  }
-];
-```
-
-**2. Client** (`client/src/pages/ShopPage.jsx`):
-- Update `TIERS` array (or fetch from server API)
-
-**3. Client** (`client/tailwind.config.js`):
-- Add color: `supreme: '#FF69B4'`
-
----
-
-### Change Canvas Size
-
-**1. Constants** (`server/src/constants.js`):
-```javascript
-export const CANVAS_WIDTH = 2000;  // Was 1000
-export const CANVAS_HEIGHT = 2000; // Was 1000
-```
-
-**2. Client** (`client/src/hooks/useCanvas.js`):
-```javascript
-const CANVAS_SIZE = 2000; // Was 1000
-```
-
-**3. Memory**: 2000x2000 = 4M pixels = 28 MB RAM
-
----
-
-### Add Persistence (Database)
-
-**Replace** (`server/src/pixelGrid.js`):
-```javascript
-// OLD: In-memory
-this.grid = Array(1000).fill()...
-
-// NEW: PostgreSQL
-async setPixel(x, y, color) {
-  await db.query(
-    'UPDATE pixels SET color = $1 WHERE x = $2 AND y = $3',
-    [color, x, y]
-  );
-}
-```
-
-**Add** (`server/src/userManager.js`):
-```javascript
-// OLD: Map
-this.users = new Map();
-
-// NEW: PostgreSQL
-async getUser(address) {
-  const result = await db.query(
-    'SELECT * FROM users WHERE address = $1',
-    [address]
-  );
-  return result.rows[0];
-}
+    useSocket --> SocketEvents : listens
 ```
 
 ---
 
-### Integrate Real Blockchain
+## 2.5 Fluxuri de Date Principale
 
-**1. Install SDK**:
-```bash
-npm install @multiversx/sdk-dapp
+### 2.5.1 Autentificarea cu Wallet xPortal
+
+```mermaid
+sequenceDiagram
+    participant U as 👤 Utilizator
+    participant APP as React App
+    participant DAPP as MultiversX SDK-dapp
+    participant MX as MultiversX Devnet
+    participant S as Node.js Server
+
+    U->>APP: Click "Connect Wallet"
+    APP->>DAPP: login()
+    DAPP-->>U: Afișare QR Code / Deep Link xPortal
+    U->>DAPP: Scanare QR cu xPortal Mobile
+    DAPP->>MX: Verificare semnătură wallet
+    MX-->>DAPP: Confirmare adresă erd1...
+    DAPP-->>APP: Callback cu address
+    APP->>APP: Actualizare wallet state în AppContext
+    APP->>S: emit("wallet:join", {address})
+    S->>S: createUser(address) în UserManager
+    S-->>APP: emit("wallet:joined", {address, gridState})
+    APP->>APP: Actualizare grid din gridState primit
 ```
 
-**2. Replace** (`client/src/App.jsx`):
-```jsx
-import { DappProvider } from '@multiversx/sdk-dapp/wrappers';
+### 2.5.2 Pictura Unui Pixel — Flux Complet
 
-<DappProvider environment="mainnet">
-  {/* ... existing code ... */}
-</DappProvider>
-```
+A se vedea **Secțiunea 2.1.2** pentru diagrama detaliată a acestui flux.
 
-**3. Replace** (`client/src/pages/LoginPage.jsx`):
-```jsx
-import { ExtensionLoginButton } from '@multiversx/sdk-dapp/UI';
+### 2.5.3 Finalizarea Epocii — NFT Minting
 
-<ExtensionLoginButton
-  callbackRoute="/shop"
-  loginButtonText="Connect MultiversX Wallet"
-/>
-```
+A se vedea **Secțiunea 2.2.6** pentru diagrama detaliată.
 
-**4. Replace** (`client/src/hooks/useMockWallet.js`):
-```javascript
-import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+### 2.5.4 Plasarea unei Licitații
 
-export const useWallet = () => {
-  const { address, balance } = useGetAccountInfo();
-  return { address, egld: balance };
-};
-```
+```mermaid
+sequenceDiagram
+    participant B1 as 👤 Bidder 1
+    participant B2 as 👤 Bidder 2
+    participant SC as Smart Contract
+    participant MX as MultiversX
 
-**5. Server** (`server/src/server.js`):
-- Remove mock wallet generation
-- Add signature verification:
-```javascript
-const { UserVerifier } = require('@multiversx/sdk-core');
-const verifier = new UserVerifier();
-const valid = verifier.verify(message, signature, address);
-```
+    Note over SC: Epoch cu licitație activă (20×20 zona la x=40, y=40)
 
----
+    B1->>MX: Semnează placeBid() + 0.5 EGLD
+    MX->>SC: Execuție placeBid()
+    SC->>SC: auction_bids[B1] = 0.5 EGLD
+    SC->>SC: highest_bidder = B1, highest_bid = 0.5
 
-## Common Issues & Solutions
+    B2->>MX: Semnează placeBid() + 0.8 EGLD
+    MX->>SC: Execuție placeBid()
+    SC->>SC: auction_bids[B2] = 0.8 EGLD
+    SC->>SC: highest_bidder = B2, highest_bid = 0.8
 
-### Issue: Port 5000 already in use
+    B1->>MX: Semnează placeBid() + 0.4 EGLD (total B1 = 0.9)
+    MX->>SC: Execuție placeBid()
+    SC->>SC: auction_bids[B1] = 0.9 EGLD (cumulativ)
+    SC->>SC: highest_bidder = B1, highest_bid = 0.9
 
-**Cause**: macOS AirPlay Receiver uses port 5000
-
-**Solution**: Changed to port 5001 in 3 places:
-1. `server/src/server.js` line 28
-2. `client/src/hooks/useSocket.jsx` line 38
-3. `client/vite.config.js` line 12
-
----
-
-### Issue: "Failed to parse JSX syntax"
-
-**Cause**: File has JSX but `.js` extension
-
-**Solution**: Rename to `.jsx`:
-- `useSocket.js` → `useSocket.jsx`
-
----
-
-### Issue: Canvas performance lag
-
-**Cause**: Rendering all 1M pixels every frame
-
-**Solution**: Already optimized!
-- `getVisibleArea()` calculates viewport
-- Only renders visible pixels
-
-**Further Optimization**:
-- Use `OffscreenCanvas` for background rendering
-- Implement dirty rectangle tracking
-- Use WebGL for GPU acceleration
-
----
-
-### Issue: Memory usage grows over time
-
-**Cause**:
-- Paint history stores ALL paints
-- Grid state copied on every update
-
-**Solution**:
-- Limit paint history to 100 (already done)
-- Use immutable data structures (Immer.js)
-- Implement garbage collection
-
----
-
-## File Structure Summary
-
-```
-Proiect Licenta/
-├── server/                 # Backend (Node.js)
-│   ├── src/
-│   │   ├── server.js      # Main server (Socket.io events)
-│   │   ├── constants.js   # Config (tiers, canvas size)
-│   │   ├── pixelGrid.js   # 1000x1000 pixel storage
-│   │   ├── userManager.js # User balances, rate limiting
-│   │   └── blockchain/    # Future SDK integration
-│   └── package.json       # Dependencies
-│
-├── client/                 # Frontend (React)
-│   ├── src/
-│   │   ├── App.jsx        # Router (4 routes)
-│   │   ├── main.jsx       # Entry point
-│   │   │
-│   │   ├── context/
-│   │   │   └── AppContext.jsx    # Global state
-│   │   │
-│   │   ├── hooks/
-│   │   │   ├── useSocket.jsx     # Socket.io connection
-│   │   │   ├── useMockWallet.js  # Mock wallet
-│   │   │   └── useCanvas.js      # Canvas interactions
-│   │   │
-│   │   ├── pages/
-│   │   │   ├── WelcomePage.jsx   # Landing (/)
-│   │   │   ├── LoginPage.jsx     # Wallet (/login)
-│   │   │   ├── ShopPage.jsx      # Purchase (/shop)
-│   │   │   └── CanvasPage.jsx    # Gameplay (/canvas)
-│   │   │
-│   │   └── components/
-│   │       ├── Header.jsx        # Nav bar
-│   │       ├── WalletInfo.jsx    # Balance display
-│   │       ├── ColorPicker.jsx   # 30 colors
-│   │       ├── Canvas.jsx        # 1000x1000 renderer
-│   │       ├── Toolbar.jsx       # Zoom controls
-│   │       └── ShopCard.jsx      # Tier card
-│   │
-│   ├── index.html         # HTML entry
-│   ├── vite.config.js     # Vite config (proxy)
-│   └── tailwind.config.js # Theme colors
-│
-└── README.md              # Project docs
+    Note over SC: Owner apelează closeAuction()
+    SC->>SC: zone_unlocked_for = B1
+    SC->>SC: Adaugă 0.9 EGLD la pool-ul de caritate
+    SC-->>B2: B2 poate withdrawBid() (0.8 EGLD returnat)
 ```
 
 ---
 
-## Quick Reference: Where to Find Things
+## 2.6 Securitate și Validare
 
-**Want to change tier prices?**
-→ [server/src/constants.js](server/src/constants.js) line 16
+### 2.6.1 Validare Server-Side
 
-**Want to change canvas size?**
-→ [server/src/constants.js](server/src/constants.js) line 84-85
+Server-ul Node.js implementează multiple niveluri de validare:
 
-**Want to add new socket event?**
-→ [server/src/server.js](server/src/server.js) add `socket.on('event:name', handler)`
+```mermaid
+flowchart TD
+    REQ["Cerere pixels:paint primită"]
+    V1{Utilizatorul e\nautentificat?}
+    V2{Rate limit\n< 10 px/s?}
+    V3{Coordonate\nvalide 0-99?}
+    V4{Format culoare\n#RRGGBB valid?}
+    PROC["Procesare și broadcast"]
+    ERR["emit('error', message)"]
 
-**Want to add new page?**
-→ Create component in `client/src/pages/`, add route in [App.jsx](client/src/App.jsx)
+    REQ --> V1
+    V1 -->|Nu| ERR
+    V1 -->|Da| V2
+    V2 -->|Depășit| ERR
+    V2 -->|OK| V3
+    V3 -->|Invalid| ERR
+    V3 -->|Valid| V4
+    V4 -->|Invalid| ERR
+    V4 -->|Valid| PROC
+```
 
-**Want to change colors?**
-→ [client/tailwind.config.js](client/tailwind.config.js) lines 15-30
+### 2.6.2 Securitatea Smart Contract-ului
 
-**Want to add new color to picker?**
-→ [client/src/components/ColorPicker.jsx](client/src/components/ColorPicker.jsx) line 15-57
+Smart contract-ul implementează mai multe mecanisme de securitate:
 
-**Want to change rate limit?**
-→ [server/src/constants.js](server/src/constants.js) line 90
+- **Owner-only endpoints**: Funcțiile administrative (`startEpoch`, `endEpoch`, `closeAuction`, configurare) sunt accesibile exclusiv proprietarului contractului (adresa care l-a deploiat).
+- **Verificări epoch**: `endEpoch` verifică că `epoch_ended == false` pentru a preveni double-minting de NFT-uri.
+- **Validare licitație**: `placeBid` verifică că licitația este activă și că timestamp-ul curent nu a depășit `auction_end_timestamp`.
+- **Retragere securizată**: `withdrawBid` permite recuperarea fondurilor doar pentru utilizatorii care nu sunt `highest_bidder` (sau după închiderea licitației).
 
-**Want to change initial EGLD?**
-→ [server/src/constants.js](server/src/constants.js) line 69
+### 2.6.3 Securitatea Arhitecturii Client-Server
 
-**Want to understand real-time painting?**
-→ [server/src/server.js](server/src/server.js) line 154 + [client/src/hooks/useSocket.jsx](client/src/hooks/useSocket.jsx) line 62
+**Server-authoritative state**: Clientul nu poate modifica direct starea canvas-ului. Orice actualizare trebuie să treacă prin server-ul Node.js, care validează și autorizează înainte de broadcast. Clientul primește actualizările prin Socket.io și nu poate manipula starea altor utilizatori.
+
+**No trust client data**: Server-ul nu acceptă date direct de la client fără validare. Pixelii sunt validați independent de orice informație trimisă de client.
 
 ---
 
-## Running the Project
-
-### Start Server:
-```bash
-cd server
-npm start
-```
-Server runs on: http://localhost:5001
-
-### Start Client:
-```bash
-cd client
-npm run dev
-```
-Client runs on: http://localhost:5173
+<div style="page-break-after: always;"></div>
 
 ---
 
-This documentation covers every file, every feature, and every design decision in your project. You should now understand the code as if you wrote it yourself!
+# CAPITOLUL 3: REZULTATE ȘI TESTARE
+
+## 3.1 Funcționalități Implementate
+
+### 3.1.1 Tablou Comparativ: Planificat vs. Implementat
+
+| Funcționalitate | Planificat | Implementat | Observații |
+|----------------|-----------|-------------|------------|
+| Canvas real-time 100×100 | ✅ | ✅ | WebSocket sub 100ms |
+| Autentificare wallet MultiversX | ✅ | ✅ | xPortal, Browser Extension |
+| Token $PIXEL ESDT | ✅ | ✅ | Devnet |
+| Sistem de tier-uri (5 tier-uri) | ✅ | ✅ | Novice → Legend |
+| Distribuire 25/25/50 | ✅ | ✅ | Smart contract enforced |
+| Proprietate pixeli on-chain | ✅ | ✅ | pixel_owner[x][y] mapping |
+| Sistem de epoci | ✅ | ✅ | Durata configurabilă |
+| Vot democratic pentru caritate | ✅ | ✅ | 1 vot/wallet/epocă |
+| Licitații pentru zone premium | ✅ | ✅ | Zone 20×20 pixeli |
+| NFT pentru top painter | ✅ | ✅ | Mintat la endEpoch |
+| NFT pentru câștigătorul licitației | ✅ | ✅ | Mintat la endEpoch |
+| Admin dashboard | ✅ | ✅ | Control epoci, configurare |
+| Persistență SQLite | ✅ | ✅ | Supraviețuiește restartului |
+| Dual-grid strategy | ✅ | ✅ | Live vs. confirmed |
+| Transaction watcher server-side | ✅ | ✅ | Polling devnet 5s |
+| Brush sizes multiple | ✅ | ✅ | 1x1, 2x2, 3x3, 4x4 |
+| Imagine de referință overlay | ✅ | ✅ | Transparență ajustabilă |
+| Canvas 1000×1000 | ✅ | ❌ | Faza 4 (viitor) |
+| IPFS snapshots periodice | ✅ | ❌ | Faza 4 (viitor) |
+| Generare AI NFT-uri | ✅ | ❌ | Faza 4 (viitor) |
+| Deployment mainnet | ✅ | ❌ | Faza 4 (viitor) |
+
+### 3.1.2 Cele Trei Faze de Dezvoltare
+
+**Faza 1 — MVP (Real-time Canvas):**
+- Canvas 100×100 funcțional cu WebSockets
+- Wallet mock (fără blockchain real)
+- Persistență in-memory
+- Brush și color picker
+
+**Faza 2 — Integrare Blockchain:**
+- Conectare wallet real (MultiversX SDK-dapp)
+- Smart contract cu `buyPixels()` și `paintPixels()`
+- Sistem de tier-uri și token PIXEL
+- Distribuire venituri 25/25/50
+- Persistență SQLite + transaction watcher
+- Sistem de vot caritate
+
+**Faza 3 — Funcționalități Avansate:**
+- Mecanismul de licitații (20×20 zone)
+- Mintare NFT la finalul epocii (top painter + auction winner)
+- Admin dashboard complet
+- Pagini NFT gallery și Auction
+
+---
+
+## 3.2 Testare pe MultiversX Devnet
+
+### 3.2.1 Testarea Smart Contract-ului
+
+Contractul a fost deploiat pe **MultiversX Devnet** și testat prin MultiversX Explorer și CLI. Principalele scenarii testate:
+
+**Scenariu 1 — Cumpărare PIXEL tier Artisan:**
+- Input: 0.50 EGLD
+- Expected: Utilizatorul primește 12,000 PIXEL tokens
+- Distribuire: 0.25 EGLD → caritate, 0.125 EGLD → burn, 0.125 EGLD → trezorerie
+- Rezultat: ✅ Corespunde așteptărilor
+
+**Scenariu 2 — Pictarea pixelilor cu ownership:**
+- Plasare 10 pixeli pe coordonate libere: cost 10 PIXEL ✅
+- Suprascriere pixel deținut de altcineva: cost 2 PIXEL, 1 PIXEL → proprietar anterior ✅
+- Rescriere propriul pixel: cost 1 PIXEL ✅
+
+**Scenariu 3 — Licitație:**
+- Epocă inițiată cu zonă de licitație la (40, 40)
+- Bidder 1: 0.5 EGLD → devine highest bidder ✅
+- Bidder 2: 0.8 EGLD → preia poziția de highest bidder ✅
+- Bidder 1: +0.4 EGLD (total 0.9) → recuperează poziția ✅
+- closeAuction(): zona deblocată pentru Bidder 1 ✅
+- Bidder 2 withdrawBid(): recuperare 0.8 EGLD ✅
+
+**Scenariu 4 — End Epoch cu NFT minting:**
+- Painter cu cele mai multe pixeli: primește NFT "Painter of Epoch 1" ✅
+- Câștigătorul licitației: primește NFT "Auction Winner Epoch 1" ✅
+- Al doilea apel endEpoch: blocat de `epoch_ended == true` ✅
+
+### 3.2.2 Testarea Fluxului Real-Time
+
+**Test concurență**: 5 sesiuni browser simultane pictând pixeli → toți clienții primesc actualizările în <100ms ✅
+
+**Test resilience**: Client pictează pixel și închide tab-ul imediat după semnarea tranzacției → server-ul continuă polling și persistă pixelii la confirmare ✅
+
+**Test rollback**: Tranzacție simulată cu eșec → server revine la starea anterioară și broadcastează rollback la toți clienții ✅
+
+---
+
+## 3.3 Performanță și Caracteristici Tehnice
+
+### 3.3.1 Latența Actualizărilor Real-Time
+
+| Operație | Latență Măsurată | Observații |
+|----------|------------------|------------|
+| Propagare pixel local | <5ms | Client → actualizare vizuală proprie |
+| Propagare la alți clienți | <50ms | Server broadcast Socket.io (LAN) |
+| Propagare la alți clienți | <200ms | Server broadcast Socket.io (WAN) |
+| Confirmare tranzacție blockchain | ~6-12s | Devnet MultiversX |
+
+### 3.3.2 Utilizarea Resurselor
+
+| Resursă | Valoare | Detalii |
+|---------|---------|---------|
+| RAM server (canvas 100×100) | ~7 MB | Dual grid: 2 × 10,000 × 7 bytes |
+| Stocare SQLite | ~50-200 KB | Depinde de nr. pixeli pictați |
+| Conexiuni WebSocket simultane | Testați ~20 | Limita practică: 1,000+ |
+| Timp de boot server (hydrate DB) | <100ms | O citire SQLite la pornire |
+
+### 3.3.3 Scalabilitate
+
+Arhitectura hibridă aleasă separă explicit volumul de operații rapide (WebSocket, in-memory) de cel de operații lente (blockchain). Creșteri viitoare ale canvas-ului (1,000×1,000 pixeli) ar necesita:
+- Upgrade la PostgreSQL/Redis pentru persistență
+- Partajarea socket rooms pe regiuni canvas
+- Introducerea IPFS pentru snapshot-uri (deja planificat în Faza 4)
+
+---
+
+## 3.4 Limitări Identificate
+
+### 3.4.1 Limitări Tehnice Curente
+
+**Canvas 100×100**: Viziunea inițială a proiectului era un canvas de 1,000×1,000 pixeli (1 milion de pixeli). Versiunea curentă folosește 100×100 (10,000 pixeli) din considerente de simplitate în faza de prototip. Extinderea este arhitectural posibilă dar necesită optimizări ale rendering-ului și stocării.
+
+**Devnet Only**: Contractul este deploiat exclusiv pe devnet-ul MultiversX. Trecerea la mainnet necesită un audit de securitate profesional și configurarea multi-sig pentru trezorerie.
+
+**Server Centralizat**: Backend-ul Node.js reprezintă un singur punct de eșec (single point of failure). Un arhitect distribuit (multiple instanțe cu load balancing și shared state via Redis) ar îmbunătăți reziliența.
+
+**Fără IPFS**: Snapshot-urile periodice ale canvas-ului nu sunt stocate pe IPFS, ci generate on-demand din SQLite. Aceasta înseamnă că istoricul canvas-ului nu este complet descentralizat.
+
+### 3.4.2 Funcționalități Planificate Neimplementate
+
+| Funcționalitate | Justificare |
+|----------------|-------------|
+| Generare AI NFT-uri | Necesită integrare API extern (Stable Diffusion / DALL-E) și infrastructură costisitoare |
+| Canvas 1,000×1,000 | Necesită refactorizare rendering + storage |
+| IPFS snapshots | Necesită integrare IPFS SDK și scheduler |
+| Mainnet deployment | Necesită audit securitate |
+
+---
+
+<div style="page-break-after: always;"></div>
+
+---
+
+# CONCLUZII
+
+## Realizări Principale
+
+Această lucrare a prezentat proiectarea și implementarea **Pixel CanvasChain**, o platformă inovatoare de artă colaborativă construită pe blockchain-ul MultiversX. Principalele realizări tehnice pot fi sintetizate astfel:
+
+**1. Arhitectura Hibridă Web2/Web3** a demonstrat că este posibilă combinarea experienței de utilizare instantanee a aplicațiilor tradiționale cu garanțiile criptografice ale blockchain-ului. Prin modelul optimistic UI cu settlement on-chain, utilizatorii pictează fără latență perceptibilă, în timp ce proprietatea fiecărui pixel este verificabilă public pe blockchain.
+
+**2. Smart Contract-ul Complex în Rust** gestionează un ecosistem economic complet: cumpărarea token-urilor PIXEL cu distribuire automată a veniturilor (50% donații, 25% burn, 25% trezorerie), pictarea cu sistem de proprietate și royalties, epoci cu reset periodic, licitații pentru zone premium, vot democratic pentru direcționarea donațiilor și mintarea de NFT-uri ca recompense. Toate aceste mecanisme sunt codificate și executate trustless pe blockchain.
+
+**3. Backend-ul Node.js** a implementat cu succes strategia dual-grid pentru menținerea consistenței datelor între actualizările optimiste și cele confirmate on-chain, împreună cu un mecanism de transaction watcher server-side rezistent la deconectarea clientului.
+
+**4. Frontend-ul React 18** oferă o experiență fluidă și responsivă, cu un renderer HTML5 Canvas optimizat pentru actualizări frecvente, zoom/pan precis și suport pentru multiple modalități de interacțiune.
+
+## Contribuții Originale
+
+Față de proiectele similare existente, Pixel CanvasChain introduce o combinație unică de mecanisme:
+
+- **Modelul de donații enforced on-chain**: Transparența completă a fluxului de fonduri caritabile, imposibil de circumventat fără modificarea contractului public.
+- **Proprietatea on-chain a pixelilor individuali**: Cu mecanism de royalty la suprascriere, creând o economie internă a spațiului vizual.
+- **Epoci cu lifecycle complet**: De la licitație pentru zona premium, la vot pentru caritate, la mintarea NFT-urilor dovedind participarea.
+
+## Direcții de Dezvoltare Ulterioară
+
+Proiectul are un roadmap clar pentru etapele viitoare:
+
+1. **Extinderea canvas-ului** la 1,000×1,000 pixeli (1 milion de spații), apropiindu-se de viziunea inițială și de experiența r/place.
+2. **Integrarea IPFS** pentru snapshot-uri periodice imutabile ale canvas-ului, completând descentralizarea.
+3. **Generarea AI NFT-uri** la finalul fiecărei epoci: imaginea canvas-ului procesată de un model generativ (Stable Diffusion) pentru a crea o colecție de interpretări artistice distribuite celor mai activi participanți.
+4. **Deployment pe mainnet** după un audit de securitate profesional al smart contract-ului.
+5. **Arhitectură distribuită** a backend-ului cu Redis Pub/Sub pentru scalabilitate orizontală.
+
+## Reflecții
+
+Proiectul a demonstrat că construirea unui dApp cu adevărat funcțional este semnificativ mai complex decât implementarea unui smart contract izolat. Provocările reale stau în integrarea coherentă a tuturor stratelor: consistența stării distribuite (client, server, blockchain), gestionarea tranzacțiilor asincrone cu posibilitate de eșec, experiența de utilizare în condiții de latență blockchain și securitatea tuturor punctelor de intrare.
+
+Pixel CanvasChain oferă o dovadă concretă că Web3 nu trebuie să fie o experiență frustrantă și lentă — cu arhitectura potrivită, aplicațiile descentralizate pot oferi aceeași fluență a Web2, adăugând garanțiile valoroase ale transparenței și proprietății criptografice.
+
+---
+
+<div style="page-break-after: always;"></div>
+
+---
+
+# BIBLIOGRAFIE
+
+1. **MultiversX Documentation** — *MultiversX Developer Docs: Smart Contracts, ESDT Tokens, SDK-dapp*. MultiversX, 2024. Disponibil la: https://docs.multiversx.com
+
+2. **Rust Programming Language** — Klabnik, S., Nichols, C. — *The Rust Programming Language*. No Starch Press, 2022.
+
+3. **multiversx-sc Framework** — *MultiversX Rust Smart Contract Framework v0.58*. GitHub Repository: multiversx/mx-sdk-rs, 2024.
+
+4. **Socket.io Documentation** — *Socket.io: Bidirectional and Low-Latency Communication for Every Platform*. Socket.io, 2024. Disponibil la: https://socket.io/docs
+
+5. **React Documentation** — *React 18 Official Documentation*. Meta Open Source, 2024. Disponibil la: https://react.dev
+
+6. **SQLite Documentation** — *SQLite: Small. Fast. Reliable. Choose any three.* SQLite.org, 2024. Disponibil la: https://www.sqlite.org/docs.html
+
+7. **Nakamoto, S.** — *Bitcoin: A Peer-to-Peer Electronic Cash System*. Bitcoin.org, 2008.
+
+8. **Buterin, V.** — *Ethereum: A Next-Generation Smart Contract and Decentralized Application Platform*. Ethereum Foundation, 2014.
+
+9. **Reddit r/place** — *The r/place Atlas*. Disponibil la: https://place-atlas.stefanocoding.me (arhivă 2022)
+
+10. **Sharp Library** — *High Performance Node.js Image Processing*. lovell/sharp, GitHub, 2024.
+
+11. **better-sqlite3** — *The Fastest and Simplest Library for SQLite3 in Node.js*. WiseLibs/better-sqlite3, GitHub, 2024.
+
+12. **TailwindCSS** — *A Utility-First CSS Framework*. Tailwind Labs, 2024. Disponibil la: https://tailwindcss.com/docs
+
+13. **Vite** — *Next Generation Frontend Tooling*. vitejs/vite, 2024. Disponibil la: https://vitejs.dev
+
+14. **WebSocket RFC 6455** — Fette, I., Melnikov, A. — *The WebSocket Protocol*. IETF RFC 6455, 2011.
+
+---
+
+*Documentul a fost redactat în cadrul lucrării de licență la Universitatea "Lucian Blaga" din Sibiu, Facultatea de Inginerie, Specializarea Calculatoare și Tehnologia Informației, 2026.*

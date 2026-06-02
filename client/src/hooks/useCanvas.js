@@ -37,7 +37,7 @@ function getBrushPixels(x, y, brushSize, color, canvasSize = CANVAS_SIZE) {
 }
 
 export const useCanvas = () => {
-  const { selectedColor, wallet, gridState, showToast, brushSize, zoom, setZoom, offset, setOffset, minZoom, setMinZoom, auctionState } = useApp();
+  const { selectedColor, wallet, gridState, showToast, brushSize, zoom, setZoom, offset, setOffset, minZoom, setMinZoom, auctionState, paintLocked } = useApp();
   const { paintPixel, paintPixels } = useSocket();
   const navigate = useNavigate();
 
@@ -161,6 +161,18 @@ export const useCanvas = () => {
       return;
     }
 
+    // Epoch gate — block paints in the dead window between endEpoch and
+    // the next startEpochWithAuction. The lock state is computed in
+    // AppContext from epochInfo + the contract's `isEpochEnded` flag.
+    // Reuse strokeBlockedRef so a drag stroke fires the toast at most once.
+    if (paintLocked) {
+      if (!strokeBlockedRef.current) {
+        strokeBlockedRef.current = true;
+        showToast('Wait for the next epoch to start so you can paint.', 'warning');
+      }
+      return;
+    }
+
     const coords = getPixelCoords(e);
     if (!coords) return;
 
@@ -207,7 +219,7 @@ export const useCanvas = () => {
         console.log(`🎨 Painting ${pixels.length} pixels with ${brushSize}x${brushSize} brush`);
       }
     }
-  }, [wallet, brushSize, selectedColor, paintPixel, paintPixels, showToast, getPixelCoords, auctionBlockReason, navigate]);
+  }, [wallet, brushSize, selectedColor, paintPixel, paintPixels, showToast, getPixelCoords, auctionBlockReason, navigate, paintLocked]);
 
   /**
    * Handle mouse wheel zoom — eased toward a target, focal point preserved

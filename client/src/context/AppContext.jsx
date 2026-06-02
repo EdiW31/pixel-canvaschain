@@ -101,6 +101,13 @@ export const AppProvider = ({ children }) => {
 
   // ── Epoch info ────────────────────────────────────────────────────────────
   const [epochInfo, setEpochInfo] = useState({ epoch: 0, startTimestamp: 0, durationSeconds: 0, endsAt: 0 });
+  // Derived: true whenever painting is NOT allowed (no epoch yet, contract
+  // says ended, natural duration expired, or contract is in "ended sentinel"
+  // state — `durationSeconds === 1`, set by endEpoch).
+  // Kept as a separate state slot so consumers (useCanvas, Canvas overlay)
+  // can subscribe to lock-state changes without re-rendering on every
+  // epochInfo poll.
+  const [paintLocked, setPaintLocked] = useState(true);
   const epochRefetchRef = useRef(null);
 
   // ── Auction state ─────────────────────────────────────────────────────────
@@ -138,12 +145,27 @@ export const AppProvider = ({ children }) => {
       } catch { /* view may not exist on older contract — treat as not-ended */ }
     }
     setEpochInfo({ epoch, startTimestamp, durationSeconds, endsAt, ended });
+
+    // Paint lock derivation — single source of truth for "can the user
+    // paint right now?". Matches EpochBanner's end-detection (line 70).
+    // Locked when:
+    //   - no epoch has ever started (epoch === 0), OR
+    //   - contract flagged this epoch as ended (admin called endEpoch), OR
+    //   - the natural duration ran out and admin hasn't restarted yet, OR
+    //   - durationSeconds === 1 (sentinel value endEpoch writes to mark
+    //     "ended, awaiting startEpochWithAuction")
+    const naturalExpired =
+      startTimestamp > 0 &&
+      durationSeconds > 1 &&
+      (startTimestamp + durationSeconds) * 1000 <= Date.now();
+    setPaintLocked(!epoch || ended || naturalExpired || durationSeconds === 1);
   }, []);
 
-  // Fetch epoch on mount and every 5 minutes
+  // Fetch epoch on mount and every 30 s — tight enough that an admin's
+  // endEpoch in another tab is reflected in users' canvases within ~30 s.
   useEffect(() => {
     fetchEpochInfo();
-    epochRefetchRef.current = setInterval(fetchEpochInfo, 5 * 60 * 1000);
+    epochRefetchRef.current = setInterval(fetchEpochInfo, 30_000);
     return () => clearInterval(epochRefetchRef.current);
   }, [fetchEpochInfo]);
 
@@ -459,6 +481,7 @@ export const AppProvider = ({ children }) => {
 
     // Epoch
     epochInfo,
+    paintLocked,
     refetchEpochInfo: fetchEpochInfo,
 
     // Voting

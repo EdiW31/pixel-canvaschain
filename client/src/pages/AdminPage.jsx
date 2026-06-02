@@ -58,6 +58,20 @@ async function queryContract(funcName, args = []) {
   return json.data?.data?.returnData ?? [];
 }
 
+// Extract the broadcast tx hash from whatever shape `signTransactions`
+// returned — sdk-dapp providers vary across versions (some return a
+// Transaction with `.getHash()`, some attach a `.hash` after signing).
+// Falls back to '<unknown>' so the explorer link just isn't clickable.
+function extractTxHash(signed) {
+  const t = Array.isArray(signed) ? signed[0] : signed;
+  if (!t) return '<unknown>';
+  try {
+    const h = t.getHash?.();
+    if (h) return typeof h === 'string' ? h : (h.hex?.() ?? h.toString?.() ?? String(h));
+  } catch (_) {}
+  return t.hash ?? t.txHash ?? '<unknown>';
+}
+
 async function sendTx(wallet, funcName, gasLimit = 10_000_000n) {
   const dappProvider = getDappProvider();
   if (!dappProvider || dappProvider.getType?.() === 'empty') throw new Error('Wallet provider not ready.');
@@ -68,7 +82,11 @@ async function sendTx(wallet, funcName, gasLimit = 10_000_000n) {
     gasLimit, data: new TextEncoder().encode(funcName), chainID: CHAIN_ID,
   });
   const signed = await dappProvider.signTransactions([tx]);
+  const txHash = extractTxHash(signed);
+  console.log(`📤 Broadcasting tx (${funcName}): ${txHash}`);
+  console.log(`🔗 https://devnet-explorer.multiversx.com/transactions/${txHash}`);
   await TransactionManager.getInstance().send(signed);
+  return txHash;
 }
 
 async function sendTxWithData(wallet, data, gasLimit = 5_000_000n) {
@@ -81,7 +99,13 @@ async function sendTxWithData(wallet, data, gasLimit = 5_000_000n) {
     gasLimit, data: new TextEncoder().encode(data), chainID: CHAIN_ID,
   });
   const signed = await dappProvider.signTransactions([tx]);
+  const txHash = extractTxHash(signed);
+  // First @-segment is the function selector — handy for grepping logs.
+  const funcSel = data.split('@')[0];
+  console.log(`📤 Broadcasting tx (${funcSel}): ${txHash}`);
+  console.log(`🔗 https://devnet-explorer.multiversx.com/transactions/${txHash}`);
   await TransactionManager.getInstance().send(signed);
+  return txHash;
 }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────── */
@@ -230,6 +254,18 @@ const AdminPage = () => {
     if (isConnected && wallet.address === ADMIN_ADDRESS) fetchStats();
   }, [isConnected, wallet.address, fetchStats]);
 
+  // Periodic stats refresh — without this, a once-only initial fetch can
+  // leave the admin UI permanently stale if the contract state changes
+  // (e.g. someone else started an epoch, or the page was navigated to
+  // before the wallet finished connecting). The most visible symptom
+  // was the End-Epoch button being permanently disabled because
+  // `hasActiveEpoch` rode on stale `stats?.epoch === 0`.
+  useEffect(() => {
+    if (!isConnected || wallet.address !== ADMIN_ADDRESS) return;
+    const id = setInterval(fetchStats, 20_000);
+    return () => clearInterval(id);
+  }, [isConnected, wallet.address, fetchStats]);
+
   const isAdmin = wallet.address === ADMIN_ADDRESS;
 
   /* ── Handlers ─────────────────────────────────────────────────────────── */
@@ -273,10 +309,16 @@ const AdminPage = () => {
     // Defend against UI race conditions (button held / double-click) that
     // could fire endEpoch twice and mint duplicate NFT pairs. The contract
     // also has an `epoch_ended` guard for safety.
+    console.log('[handleEndEpoch] click', { epoch: stats?.epoch, endEpochState });
     if (endEpochState === 'pending') return;
     setEndEpochState('pending');
     setEndEpochStep('snapshotting');
     setLastNftUrl('');
+    // Force a fresh stats read before we trust `stats?.epoch` below — without
+    // this, a stale `stats === null` from a failed initial load would cascade
+    // into the "Cannot determine current epoch" toast even though the contract
+    // actually has an active epoch right now.
+    await fetchStats().catch(() => {});
     try {
       // Auction zone coords — sx/sy come from getAuctionState (set in fetchStats).
       // Fall back to (40,40) only if absolutely no zone info is available.
@@ -320,46 +362,25 @@ const AdminPage = () => {
         auctionUri = `${SERVER_URL}/canvas/section-png?x=${sx}&y=${sy}&w=20&h=20`;
       }
 
-      // STEP 2 — TRY to upload both images to a public host (catbox →
-      // 0x0.st inside the server). If either succeeds, prefer its https
-      // URL over the local fallback. If both fail, we still ship the
-      // local URI — broken on the explorer, but the website renders fine.
-      setEndEpochStep('uploading-painter');
-      const [painterRes, auctionRes] = await Promise.allSettled([
-        fetch(`${SERVER_URL}/canvas/upload`, { method: 'POST' }),
-        fetch(`${SERVER_URL}/canvas/upload-section`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ x: sx, y: sy, w: 20, h: 20, scale: 32 }),
-        }),
-      ]);
-
-      if (painterRes.status === 'fulfilled' && painterRes.value.ok) {
-        const { url } = await painterRes.value.json().catch(() => ({}));
-        if (url?.startsWith('https://')) painterUri = url;
-        else console.warn('[endEpoch] painter upload returned non-https URL — using snapshot fallback');
-      } else {
-        console.warn('[endEpoch] painter upload failed — using snapshot fallback');
-      }
-      setEndEpochStep('uploading-auction');
-      if (auctionRes.status === 'fulfilled' && auctionRes.value.ok) {
-        const { url } = await auctionRes.value.json().catch(() => ({}));
-        if (url?.startsWith('https://')) auctionUri = url;
-        else console.warn('[endEpoch] auction upload returned non-https URL — using snapshot fallback');
-      } else {
-        console.warn('[endEpoch] auction upload failed — using snapshot fallback');
-      }
+      // STEP 2 (REMOVED) — catbox.moe and 0x0.st are both dead (catbox 404,
+      // 0x0.st 503 "uploads disabled"). The old block here tried both via
+      // Promise.allSettled and burned ~30s of timeout per click for nothing.
+      // The NFT URIs stay as the per-epoch snapshot URLs (set above) —
+      // viewable on the website's NftPage but NOT on the devnet explorer.
 
       setLastNftUrl({ painter: painterUri, auction: auctionUri });
 
       setEndEpochStep('signing');
       // endEpoch@<painterUri hex>@<auctionUri hex>
-      await sendTxWithData(
+      const txHash = await sendTxWithData(
         wallet,
         `endEpoch@${toHex(painterUri)}@${toHex(auctionUri)}`,
         100_000_000n,
       );
-      showToast('Epoch ended — PIXEL & EGLD distributed, NFTs minted, canvas resetting…', 'success');
+      showToast(
+        `Epoch end tx sent: ${txHash.slice(0, 10)}… (check console for explorer link)`,
+        'success',
+      );
       setEndEpochState('done');
       setEndEpochStep('');
       setTimeout(() => { setEndEpochState('idle'); fetchStats(); refetchEpochInfo(); }, 3000);
@@ -932,13 +953,18 @@ const StartEpochTab = ({
                       <span style={{ fontSize: 11, fontWeight: 700, color: complete ? '#48BB78' : 'rgb(var(--text-muted))', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{complete ? '✓ ' : ''}Charity {i + 1}</span>
                       {charityRows.length > 1 && <button onClick={() => setCharityRows(prev => prev.filter((_, j) => j !== i))} style={{ fontSize: 11, background: 'none', border: 'none', color: 'rgb(var(--text-muted))', cursor: 'pointer' }}>Remove</button>}
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
-                      <Input type="text" value={row.name} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} placeholder="Name (e.g. UNICEF)" />
-                      <Input type="text" value={row.address} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))} placeholder="erd1… address" mono />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <Input type="url" value={row.photoUrl ?? ''} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, photoUrl: e.target.value } : r))} placeholder="Photo URL" />
-                      <Input type="url" value={row.link ?? ''} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, link: e.target.value } : r))} placeholder="Website" />
+                    <div style={{ display: 'grid', gridTemplateColumns: '88px 1fr', gap: 12, alignItems: 'start' }}>
+                      <CharityPhotoPreview url={row.photoUrl} name={row.name} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <Input type="text" value={row.name} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} placeholder="Name (e.g. UNICEF)" />
+                          <Input type="text" value={row.address} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, address: e.target.value } : r))} placeholder="erd1… address" mono />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <Input type="url" value={row.photoUrl ?? ''} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, photoUrl: e.target.value } : r))} placeholder="Photo URL (off-chain)" />
+                          <Input type="url" value={row.link ?? ''} onChange={e => setCharityRows(prev => prev.map((r, j) => j === i ? { ...r, link: e.target.value } : r))} placeholder="Website (off-chain)" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -954,6 +980,9 @@ const StartEpochTab = ({
                 + Add another charity ({charityRows.length}/5)
               </button>
             )}
+            <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))', marginTop: -8, marginBottom: 14, lineHeight: 1.4 }}>
+              Photo &amp; website are optional and stored locally in your browser. Only the name and address are written on-chain.
+            </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <PrimaryBtn disabled={setCharitiesState !== 'idle' || readyCount === 0} pending={setCharitiesState === 'pending'} onClick={handleSetCharities}>
                 {setCharitiesState === 'pending' ? <Spinner label="Sending…" /> : setCharitiesState === 'done' ? '✓ Charities set' : `Set ${readyCount || ''} Charit${readyCount === 1 ? 'y' : 'ies'}`}
@@ -1006,6 +1035,42 @@ const StartEpochTab = ({
           </Card>
         </div>
       </div>
+    </div>
+  );
+};
+
+/* ── Charity photo preview thumbnail ──────────────────────────────────────
+   Renders 88×88 of the charity's photo URL, falling back to a green-accent
+   initial bubble when the URL is empty, blank, or fails to load. The
+   `failed` state is reset whenever the URL changes so the admin can fix a
+   typo without remounting the row. */
+const CharityPhotoPreview = ({ url, name }) => {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [url]);
+  const trimmed = (url ?? '').trim();
+  const showImg = trimmed.length > 0 && !failed;
+  const initial = ((name ?? '').trim()[0] ?? '?').toUpperCase();
+  return (
+    <div style={{
+      width: 88, height: 88, borderRadius: 10, overflow: 'hidden',
+      border: '1px solid rgb(var(--border))', background: 'rgb(var(--bg-alt))',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      flexShrink: 0,
+    }}>
+      {showImg ? (
+        <img
+          src={trimmed}
+          alt={name || 'charity logo'}
+          onError={() => setFailed(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <span style={{
+          fontSize: 34, fontWeight: 700, color: '#48BB78',
+          fontFamily: 'inherit', userSelect: 'none',
+        }}>{initial}</span>
+      )}
     </div>
   );
 };
@@ -1096,20 +1161,8 @@ const EndEpochTab = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))', marginBottom: 14, fontSize: 12, flexWrap: 'wrap' }}>
                 <ProgStep
                   active={endEpochStep === 'snapshotting'}
-                  done={['uploading-painter', 'uploading-auction', 'signing'].includes(endEpochStep) || endEpochState === 'done'}
-                  label="Snapshot"
-                />
-                <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
-                <ProgStep
-                  active={endEpochStep === 'uploading-painter'}
-                  done={['uploading-auction', 'signing'].includes(endEpochStep) || endEpochState === 'done'}
-                  label="Upload painter"
-                />
-                <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
-                <ProgStep
-                  active={endEpochStep === 'uploading-auction'}
                   done={endEpochStep === 'signing' || endEpochState === 'done'}
-                  label="Upload zone"
+                  label="Snapshot"
                 />
                 <span style={{ color: 'rgb(var(--text-muted))' }}>→</span>
                 <ProgStep active={endEpochStep === 'signing'} done={endEpochState === 'done'} label="Sign tx" />
@@ -1133,14 +1186,19 @@ const EndEpochTab = ({
                 ))}
               </div>
             )}
+            {!hasActiveEpoch && (
+              <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))', marginBottom: 8 }}>
+                No active epoch detected on chain. Click the button to refresh and retry — or run “Start Epoch + Auction” first if this is a freshly redeployed contract.
+              </p>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <PrimaryBtn disabled={endEpochState !== 'idle' || !hasActiveEpoch} pending={endEpochState === 'pending'} onClick={handleEndEpoch}>
+              {/* Disabled gate intentionally drops `!hasActiveEpoch` — letting the
+                  click through gives the user a real toast error from handleEndEpoch
+                  (line 313-318) instead of silently disabled button with no hint. */}
+              <PrimaryBtn disabled={endEpochState !== 'idle'} pending={endEpochState === 'pending'} onClick={handleEndEpoch}>
                 {endEpochState === 'pending' ? (
                   <Spinner label={
-                    endEpochStep === 'snapshotting'      ? 'Saving snapshot…' :
-                    endEpochStep === 'uploading-painter' ? 'Uploading canvas…' :
-                    endEpochStep === 'uploading-auction' ? 'Uploading zone…' :
-                    'Signing…'
+                    endEpochStep === 'snapshotting' ? 'Saving snapshot…' : 'Signing…'
                   } />
                 ) : endEpochState === 'done' ? '✓ Epoch ended' : `End Epoch ${stats?.epoch ?? '—'}`}
               </PrimaryBtn>

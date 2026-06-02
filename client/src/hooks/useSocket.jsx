@@ -6,6 +6,35 @@ import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGet
 
 const SocketContext = createContext();
 
+/**
+ * Pull a human-readable revert reason out of a devnet transaction payload.
+ * MultiversX surfaces SC errors either in `logs.events` (topic/data) or in the
+ * `smartContractResults[].returnMessage`. Returns null if nothing useful found.
+ */
+function extractRevertReason(data) {
+  try {
+    const scr = data?.smartContractResults;
+    if (Array.isArray(scr)) {
+      for (const r of scr) {
+        if (r?.returnMessage) return r.returnMessage;
+      }
+    }
+    const events = data?.logs?.events;
+    if (Array.isArray(events)) {
+      for (const ev of events) {
+        if (ev?.identifier === 'signalError' || ev?.identifier === 'internalVMErrors') {
+          // `data` is base64-encoded; the message is usually plain-text inside.
+          const raw = ev?.data ? atob(ev.data) : '';
+          const m = raw.match(/\[([^\]]+)\]/g);
+          if (m && m.length) return m[m.length - 1].replace(/[[\]]/g, '');
+          if (raw) return raw.slice(0, 120);
+        }
+      }
+    }
+  } catch (_) { /* best-effort only */ }
+  return null;
+}
+
 export const useSocket = () => {
   const context = useContext(SocketContext);
   if (!context) throw new Error('useSocket must be used within SocketProvider');
@@ -138,14 +167,19 @@ export const SocketProvider = ({ children }) => {
   };
 
   /**
-   * Poll the devnet API for a paintPixels tx's outcome. If it fails or is
-   * invalid, ask the server to revert the optimistic pixels so they vanish
-   * from the canvas (and stay gone after a refresh).
+   * Poll the devnet API for a paintPixels tx's outcome.
+   *
+   * Pixels are already persisted server-side at paint time (socket paint →
+   * SQLite), so this watcher does NOT remove pixels on failure — it only
+   * surfaces the on-chain result to the user and refreshes the token balance
+   * once the payment actually settles.
    *
    * Returns a promise that resolves to 'success' | 'failed' | 'timeout'.
    */
   const watchPaintTx = async (txHash, pixels) => {
     if (!txHash || !Array.isArray(pixels) || pixels.length === 0) return 'timeout';
+    const TX_OK = ['success', 'successful', 'executed'];
+    const TX_BAD = ['fail', 'failed', 'invalid', 'rejected'];
     const apiBase = import.meta.env.VITE_DEVNET_API_URL ?? 'https://devnet-api.multiversx.com';
     const deadline = Date.now() + 90_000; // 90s
     while (Date.now() < deadline) {
@@ -155,8 +189,9 @@ export const SocketProvider = ({ children }) => {
         if (!res.ok) continue;
         const data = await res.json();
         const status = data?.status;
-        if (status === 'success') {
-          // Tell the server it's safe to persist these pixels to SQLite.
+        if (TX_OK.includes(status)) {
+          // Belt-and-suspenders: pixels were already saved at paint time, but
+          // re-confirm so the server's pending-tx watcher can clear itself.
           if (socket && isConnected) {
             socket.emit('pixels:confirm', { pixels, txHash });
           }
@@ -164,11 +199,15 @@ export const SocketProvider = ({ children }) => {
           try { refetchPixelBalance?.(); } catch (_) {}
           return 'success';
         }
-        if (status === 'fail' || status === 'failed' || status === 'invalid') {
-          if (socket && isConnected) {
-            socket.emit('pixels:rollback', { pixels, txHash });
-          }
-          showToast('Transaction failed — your pixels were reverted.', 'error');
+        if (TX_BAD.includes(status)) {
+          // Surface the on-chain revert reason if the API exposes one.
+          const reason = extractRevertReason(data);
+          showToast(
+            reason
+              ? `Payment failed on-chain: ${reason}`
+              : 'Payment failed on-chain. Pixels stay on the canvas but were not paid for.',
+            'error',
+          );
           return 'failed';
         }
         // 'pending' / unknown → keep polling
@@ -177,11 +216,8 @@ export const SocketProvider = ({ children }) => {
         console.warn('[watchPaintTx]', err?.message);
       }
     }
-    // Timeout: treat as failure so memory reverts and the pixels don't ghost.
-    if (socket && isConnected) {
-      socket.emit('pixels:rollback', { pixels, txHash });
-    }
-    showToast('Transaction timed out — your pixels were reverted.', 'error');
+    // Timed out waiting for devnet — pixels remain saved; just inform the user.
+    showToast('Payment not confirmed yet — pixels saved, balance may update shortly.', 'error');
     return 'timeout';
   };
 

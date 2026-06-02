@@ -38,7 +38,16 @@ async function bootstrap() {
   try {
     await restoreProvider();
   } catch (err) {
-    console.warn('[bootstrap] restoreProvider failed (expected on first load):', err);
+    // On first load this is harmless (no persisted session to restore).
+    // After a prior crash or aborted disconnect, however, the persisted
+    // WalletConnect session may be corrupted — in which case
+    // useGetIsLoggedIn() will return true but signTransactions() will
+    // always come back as "declined". If you see this AND signs are
+    // failing, ask the user to disconnect + reconnect to clear it.
+    console.warn(
+      '[bootstrap] restoreProvider failed — stale WC session likely; user should reconnect:',
+      err,
+    );
   }
 
   // NOTE: <React.StrictMode> intentionally omitted.
