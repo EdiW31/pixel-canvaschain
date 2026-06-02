@@ -123,12 +123,26 @@ function TypeBadge({ type }) {
 function NftCard({ nft }) {
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [aiCaption, setAiCaption] = useState('');
 
   const attrs = parseAttributes(nft.attributes);
   const nftType = attrs.type ?? (nft.name?.toLowerCase().includes('auction') ? 'auction' : 'painter');
   // Pass `type` into attrs lookup so resolveImageUrl picks zone vs canvas correctly.
   const imageUrl = resolveImageUrl(nft, { ...attrs, type: nftType });
   const isAuction = nftType === 'auction';
+
+  // For painter NFTs, fetch the AI-generated caption persisted server-side
+  // by painterAI.js. 404 = AI job hasn't finished (or wasn't enabled) — we
+  // just show no caption. Auction NFTs intentionally have no AI caption.
+  useEffect(() => {
+    if (isAuction || !attrs.epoch) return;
+    let cancelled = false;
+    fetch(`${SERVER_URL}/snapshots/epoch/${attrs.epoch}/caption.txt`)
+      .then(r => (r.ok ? r.text() : ''))
+      .then(text => { if (!cancelled) setAiCaption((text || '').trim()); })
+      .catch(() => { /* no caption available, skip silently */ });
+    return () => { cancelled = true; };
+  }, [isAuction, attrs.epoch]);
 
   const accentColor = isAuction ? '#7c3aed' : '#b45309';
   const accentColorFaint = isAuction ? 'rgba(124,58,237,0.12)' : 'rgba(180,83,9,0.10)';
@@ -267,6 +281,37 @@ function NftCard({ nft }) {
             <StatChip icon="💸" label="Royalties" value={`${nft.royalties / 100}%`} color="#22c55e" />
           )}
         </div>
+
+        {/* AI caption — painter NFTs only. The vision model wrote a
+            one-sentence description of the collaborative pixel art that
+            was used as the prompt for the AI-generated painter image. */}
+        {!isAuction && aiCaption && (
+          <div
+            style={{
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(180,83,9,0.18)',
+              background: 'rgba(180,83,9,0.05)',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-start',
+            }}
+          >
+            <span style={{ fontSize: 13, lineHeight: 1.1, flexShrink: 0 }}>🤖</span>
+            <p style={{
+              margin: 0,
+              fontSize: 11,
+              fontStyle: 'italic',
+              color: 'rgb(var(--text-secondary))',
+              lineHeight: 1.45,
+            }}>
+              <span style={{ fontWeight: 600, fontStyle: 'normal', color: accentColor }}>
+                AI's view:
+              </span>{' '}
+              “{aiCaption}”
+            </p>
+          </div>
+        )}
 
         {/* Divider */}
         <div style={{ height: 1, background: 'rgb(var(--border))' }} />

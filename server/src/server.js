@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pixelGrid from './pixelGrid.js';
 import userManager from './userManager.js';
+import { generatePainterArtifact } from './ai/painterAI.js';
 
 // ── Surface crashes loudly ──────────────────────────────────────────────────
 // Previously, an unhandled rejection in any async handler (upload, DB write,
@@ -549,9 +550,19 @@ app.post('/snapshots/epoch/:n', express.json(), async (req, res) => {
     fs.writeFileSync(zonePath, zoneBuf);
     console.log(`📸 Snapshot written for epoch ${n}: ${canvasBuf.length}B canvas, ${zoneBuf.length}B zone`);
 
+    // Co-creation AI: fire-and-forget. Don't block the HTTP response (and
+    // therefore the admin's endEpoch tx) on a 15–30 s OpenAI round-trip.
+    // The NFT URI points at `painter.png`; until this job finishes the
+    // GET handler below falls back to `canvas.png`. When the job lands,
+    // the file swaps in automatically with no on-chain change.
+    generatePainterArtifact(n, SNAPSHOTS_DIR).catch((err) => {
+      console.error(`[painterAI] unhandled error for epoch ${n}:`, err?.message ?? err);
+    });
+
     res.json({
-      canvasUrl: `/snapshots/epoch/${n}/canvas.png`,
-      zoneUrl:   `/snapshots/epoch/${n}/zone.png`,
+      canvasUrl:  `/snapshots/epoch/${n}/canvas.png`,
+      zoneUrl:    `/snapshots/epoch/${n}/zone.png`,
+      painterUrl: `/snapshots/epoch/${n}/painter.png`,
     });
   } catch (err) {
     console.error('Snapshot write error:', err);
@@ -570,20 +581,63 @@ app.get('/snapshots/epoch/:n/:kind.png', (req, res) => {
   try {
     const n = parseInt(req.params.n, 10);
     const kind = req.params.kind;
-    if (!Number.isFinite(n) || n <= 0 || !['canvas', 'zone'].includes(kind)) {
+    if (!Number.isFinite(n) || n <= 0 || !['canvas', 'zone', 'painter'].includes(kind)) {
       return res.status(400).json({ error: 'Invalid path' });
     }
-    const filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-${kind}.png`);
+    let filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-${kind}.png`);
+
+    // painter.png is written ~30 s after endEpoch by the async AI job.
+    // While the job is in flight (or if it failed) fall through to the
+    // raw pixel snapshot so the NFT image is never broken.
+    if (kind === 'painter' && !fs.existsSync(filePath)) {
+      const fallback = path.join(SNAPSHOTS_DIR, `epoch-${n}-canvas.png`);
+      if (fs.existsSync(fallback)) {
+        filePath = fallback;
+        res.set('Cache-Control', 'no-cache');
+        res.set('Content-Type', 'image/png');
+        return res.sendFile(filePath);
+      }
+    }
+
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: `No ${kind} snapshot for epoch ${n}` });
     }
     res.set('Content-Type', 'image/png');
-    // Snapshots are immutable per epoch — aggressive caching is safe.
-    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    // canvas + zone are immutable per epoch; painter.png becomes immutable
+    // only once it's actually been written by the AI job (path above).
+    res.set('Cache-Control',
+      kind === 'painter'
+        ? 'public, max-age=300'
+        : 'public, max-age=31536000, immutable');
     res.sendFile(filePath);
   } catch (err) {
     console.error('Snapshot serve error:', err);
     res.status(500).json({ error: 'Failed to serve snapshot' });
+  }
+});
+
+/**
+ * GET /snapshots/epoch/:n/caption.txt
+ *
+ * Returns the AI-generated caption for the painter NFT, or 404 if the AI
+ * job hasn't completed (or wasn't enabled) for that epoch.
+ */
+app.get('/snapshots/epoch/:n/caption.txt', (req, res) => {
+  try {
+    const n = parseInt(req.params.n, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      return res.status(400).json({ error: 'Invalid epoch' });
+    }
+    const filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-caption.txt`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: `No AI caption for epoch ${n}` });
+    }
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Caption serve error:', err);
+    res.status(500).json({ error: 'Failed to serve caption' });
   }
 });
 
