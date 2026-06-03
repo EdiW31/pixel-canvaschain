@@ -50,7 +50,7 @@ export async function generatePainterArtifact(epoch, snapshotsDir) {
   }
 
   const captionPath = path.join(snapshotsDir, `epoch-${epoch}-caption.txt`);
-  const imagePath   = path.join(snapshotsDir, `epoch-${epoch}-painter.png`);
+  const imagePath   = path.join(snapshotsDir, `epoch-${epoch}-ai.png`);
 
   // Step 1 — caption
   let caption;

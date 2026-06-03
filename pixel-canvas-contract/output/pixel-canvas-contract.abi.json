@@ -171,6 +171,11 @@
                     "name": "auction_uri",
                     "type": "optional<bytes>",
                     "multi_arg": true
+                },
+                {
+                    "name": "ai_uri",
+                    "type": "optional<bytes>",
+                    "multi_arg": true
                 }
             ],
             "outputs": [],

@@ -67,7 +67,15 @@ function resolveImageUrl(nft, attrs) {
   // Otherwise fall back to the local per-epoch snapshot.
   const epoch = attrs.epoch;
   if (!epoch) return onChainUrl ?? null; // no way to derive snapshot path
-  const kind = attrs.type === 'auction' ? 'zone' : 'canvas';
+  // Three NFT types, each served from a distinct per-epoch file:
+  //   - auction → 20×20 zone image
+  //   - ai      → AI-generated reinterpretation (falls back to canvas.png
+  //               server-side while the AI job is still running)
+  //   - painter → raw full-canvas pixel art (the default)
+  const kind =
+    attrs.type === 'auction' ? 'zone' :
+    attrs.type === 'ai'      ? 'ai'   :
+                               'canvas';
   return `${SERVER_URL}/snapshots/epoch/${epoch}/${kind}.png`;
 }
 
@@ -92,8 +100,17 @@ function parseAttributes(rawAttributes) {
 }
 
 /* ── Type badge ─────────────────────────────────────────────────────────────── */
+/**
+ * Three NFT types share the badge:
+ *   - auction → purple (zone winner)
+ *   - ai      → teal/cyan (AI Vision — the AI's reinterpretation)
+ *   - painter → amber (top painter, raw canvas pixel art)
+ */
 function TypeBadge({ type }) {
-  const isAuction = type === 'auction';
+  const palette =
+    type === 'auction' ? { grad: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)', shadow: 'rgba(124,58,237,0.40)', icon: '🏆', label: 'Auction Winner' } :
+    type === 'ai'      ? { grad: 'linear-gradient(135deg, #06b6d4 0%, #0e7490 100%)', shadow: 'rgba(6,182,212,0.40)',  icon: '🤖', label: 'AI Vision' } :
+                         { grad: 'linear-gradient(135deg, #b45309 0%, #92400e 100%)', shadow: 'rgba(180,83,9,0.35)',  icon: '🎨', label: 'Top Painter' };
   return (
     <span
       style={{
@@ -105,16 +122,12 @@ function TypeBadge({ type }) {
         fontSize: 11,
         fontWeight: 700,
         letterSpacing: '0.04em',
-        background: isAuction
-          ? 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)'
-          : 'linear-gradient(135deg, #b45309 0%, #92400e 100%)',
+        background: palette.grad,
         color: '#fff',
-        boxShadow: isAuction
-          ? '0 2px 8px rgba(124,58,237,0.40)'
-          : '0 2px 8px rgba(180,83,9,0.35)',
+        boxShadow: `0 2px 8px ${palette.shadow}`,
       }}
     >
-      {isAuction ? '🏆' : '🎨'} {isAuction ? 'Auction Winner' : 'Top Painter'}
+      {palette.icon} {palette.label}
     </span>
   );
 }
@@ -124,29 +137,64 @@ function NftCard({ nft }) {
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [aiCaption, setAiCaption] = useState('');
+  // aiReady: null = status not yet polled; false = AI job in progress; true = ai.png on disk.
+  const [aiReady, setAiReady] = useState(null);
 
   const attrs = parseAttributes(nft.attributes);
-  const nftType = attrs.type ?? (nft.name?.toLowerCase().includes('auction') ? 'auction' : 'painter');
-  // Pass `type` into attrs lookup so resolveImageUrl picks zone vs canvas correctly.
+  // Type detection: prefer the on-chain attribute, fall back to name patterns.
+  const lowerName = (nft.name ?? '').toLowerCase();
+  const nftType =
+    attrs.type ??
+    (lowerName.includes('auction')   ? 'auction' :
+     lowerName.includes('ai vision') ? 'ai'      :
+                                       'painter');
   const imageUrl = resolveImageUrl(nft, { ...attrs, type: nftType });
   const isAuction = nftType === 'auction';
+  const isAI      = nftType === 'ai';
 
-  // For painter NFTs, fetch the AI-generated caption persisted server-side
-  // by painterAI.js. 404 = AI job hasn't finished (or wasn't enabled) — we
-  // just show no caption. Auction NFTs intentionally have no AI caption.
+  // AI Vision cards poll the server for the AI artifact's status. Until
+  // `ready: true`, the card shows a "Waiting for AI generation…" overlay
+  // instead of the canvas fallback the server would otherwise serve. Once
+  // ready, we also fetch the caption that the vision step wrote.
   useEffect(() => {
-    if (isAuction || !attrs.epoch) return;
+    if (!isAI || !attrs.epoch) return;
     let cancelled = false;
-    fetch(`${SERVER_URL}/snapshots/epoch/${attrs.epoch}/caption.txt`)
-      .then(r => (r.ok ? r.text() : ''))
-      .then(text => { if (!cancelled) setAiCaption((text || '').trim()); })
-      .catch(() => { /* no caption available, skip silently */ });
-    return () => { cancelled = true; };
-  }, [isAuction, attrs.epoch]);
+    let pollId = null;
+    const POLL_MS = 5000;
+    const MAX_POLLS = 30; // ~2.5 minutes
+    let polls = 0;
 
-  const accentColor = isAuction ? '#7c3aed' : '#b45309';
-  const accentColorFaint = isAuction ? 'rgba(124,58,237,0.12)' : 'rgba(180,83,9,0.10)';
-  const accentBorder = isAuction ? 'rgba(124,58,237,0.35)' : 'rgba(180,83,9,0.30)';
+    const fetchCaption = () =>
+      fetch(`${SERVER_URL}/snapshots/epoch/${attrs.epoch}/caption.txt`)
+        .then(r => (r.ok ? r.text() : ''))
+        .then(text => { if (!cancelled) setAiCaption((text || '').trim()); })
+        .catch(() => {});
+
+    const tick = () => {
+      polls += 1;
+      fetch(`${SERVER_URL}/snapshots/epoch/${attrs.epoch}/ai-status`)
+        .then(r => (r.ok ? r.json() : { ready: false }))
+        .then(({ ready }) => {
+          if (cancelled) return;
+          setAiReady(!!ready);
+          if (ready) {
+            fetchCaption();
+            return; // stop polling
+          }
+          if (polls < MAX_POLLS) pollId = setTimeout(tick, POLL_MS);
+        })
+        .catch(() => {
+          if (!cancelled && polls < MAX_POLLS) pollId = setTimeout(tick, POLL_MS);
+        });
+    };
+    tick();
+    return () => { cancelled = true; if (pollId) clearTimeout(pollId); };
+  }, [isAI, attrs.epoch]);
+
+  // Per-type accent palette — auction purple, AI teal, painter amber.
+  const accentColor      = isAuction ? '#7c3aed'              : isAI ? '#06b6d4'              : '#b45309';
+  const accentColorFaint = isAuction ? 'rgba(124,58,237,0.12)' : isAI ? 'rgba(6,182,212,0.12)' : 'rgba(180,83,9,0.10)';
+  const accentBorder     = isAuction ? 'rgba(124,58,237,0.35)' : isAI ? 'rgba(6,182,212,0.35)' : 'rgba(180,83,9,0.30)';
 
   const copyOwner = () => {
     if (!nft.owner) return;
@@ -183,7 +231,37 @@ function NftCard({ nft }) {
           overflow: 'hidden',
         }}
       >
-        {imageUrl ? (
+        {isAI && aiReady === false ? (
+          // AI Vision card, AI job still running. Show a clear waiting state
+          // instead of the canvas-fallback the server would otherwise serve —
+          // shipping the pixel art under an "AI's view" caption misleads.
+          <div
+            style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 12,
+              background: `radial-gradient(circle at 50% 40%, ${accentColorFaint} 0%, transparent 70%)`,
+              padding: '16px',
+            }}
+          >
+            <div
+              style={{
+                width: 44, height: 44,
+                border: '3px solid rgba(6,182,212,0.25)',
+                borderTopColor: '#06b6d4',
+                borderRadius: '50%',
+                animation: 'nft-spin 1s linear infinite',
+              }}
+            />
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'rgb(var(--text-primary))', margin: 0 }}>
+              Waiting for AI generation…
+            </p>
+            <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))', maxWidth: 220, textAlign: 'center', margin: 0, lineHeight: 1.4 }}>
+              GPT-image-1 is painting epoch {attrs.epoch}. This usually takes 20–30&nbsp;seconds.
+            </p>
+            <style>{`@keyframes nft-spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : imageUrl ? (
           <img
             src={imageUrl}
             alt={nft.name}
@@ -191,7 +269,9 @@ function NftCard({ nft }) {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              imageRendering: 'pixelated',
+              // AI image is a real photo-style rendering — keep it smooth.
+              // Painter/Auction images are pixel-grid snapshots — keep them crisp.
+              imageRendering: isAI ? 'auto' : 'pixelated',
               display: 'block',
               transition: 'transform 0.35s ease',
               transform: hovered ? 'scale(1.04)' : 'scale(1)',
@@ -210,7 +290,7 @@ function NftCard({ nft }) {
               background: `radial-gradient(circle at 50% 40%, ${accentColorFaint} 0%, transparent 70%)`,
             }}
           >
-            <span style={{ fontSize: 48, lineHeight: 1 }}>{isAuction ? '🏆' : '🎨'}</span>
+            <span style={{ fontSize: 48, lineHeight: 1 }}>{isAuction ? '🏆' : isAI ? '🤖' : '🎨'}</span>
             <span style={{ fontSize: 11, color: 'rgb(var(--text-muted))', fontWeight: 500 }}>
               No image yet
             </span>
@@ -282,16 +362,16 @@ function NftCard({ nft }) {
           )}
         </div>
 
-        {/* AI caption — painter NFTs only. The vision model wrote a
-            one-sentence description of the collaborative pixel art that
-            was used as the prompt for the AI-generated painter image. */}
-        {!isAuction && aiCaption && (
+        {/* AI caption — only on the AI Vision card. The vision model wrote
+            a one-sentence description of the collaborative pixel art that
+            was used as the prompt for the AI image. */}
+        {isAI && aiCaption && (
           <div
             style={{
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid rgba(180,83,9,0.18)',
-              background: 'rgba(180,83,9,0.05)',
+              border: '1px solid rgba(6,182,212,0.22)',
+              background: 'rgba(6,182,212,0.06)',
               display: 'flex',
               gap: 8,
               alignItems: 'flex-start',
