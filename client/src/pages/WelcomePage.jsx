@@ -726,11 +726,11 @@ const WelcomePage = () => {
             <div>
               <div className="pill mb-2">NFT Rewards</div>
               <h2 className="font-heading text-4xl sm:text-5xl font-semibold tracking-tight mb-2">
-                Two NFTs minted every epoch.
+                Three NFTs minted every epoch.
               </h2>
               <Stroke color="#9F7AEA" />
               <p className="text-textSecondary leading-relaxed mb-4 text-base">
-                At epoch end, the smart contract automatically mints and airdrops two unique NFTs — no claiming needed.
+                At epoch end, the smart contract automatically mints and airdrops three unique NFTs — no claiming needed.
               </p>
 
               <div className="space-y-3 mb-4">
@@ -741,7 +741,18 @@ const WelcomePage = () => {
                   <div>
                     <p className="font-heading text-sm font-bold text-textPrimary">Top Painter NFT</p>
                     <p className="text-xs text-textSecondary leading-relaxed mt-0.5">
-                      Goes to the wallet that painted the most pixels. Generative art from the full epoch canvas snapshot.
+                      Goes to the wallet that painted the most pixels. Snapshot of the full epoch canvas, frozen on-chain.
+                    </p>
+                  </div>
+                </div>
+                {/* AI Vision NFT */}
+                <div className="rounded-xl border border-border p-3 flex items-start gap-3 bg-backgroundAlt">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ background: '#06b6d422' }}>🤖</div>
+                  <div>
+                    <p className="font-heading text-sm font-bold text-textPrimary">AI Vision NFT</p>
+                    <p className="text-xs text-textSecondary leading-relaxed mt-0.5">
+                      GPT-4o captions the finished canvas in one sentence and gpt-image-1 paints an AI reinterpretation. Airdropped to the top painter alongside the canvas snapshot.
                     </p>
                   </div>
                 </div>
@@ -770,6 +781,13 @@ const WelcomePage = () => {
                 <p className="text-sm font-semibold text-textPrimary">Epoch #1 NFT — Example</p>
                 <p className="text-xs text-textMuted mt-0.5">Generated from the epoch's canvas snapshot</p>
               </div>
+              <Link
+                to="/nft"
+                className="btn-primary text-sm font-semibold inline-flex"
+                style={{ padding: '9px 22px', borderRadius: 10, marginTop: 6 }}
+              >
+                Check live NFTs →
+              </Link>
             </div>
           </div>
         </div>

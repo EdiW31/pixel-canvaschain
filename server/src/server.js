@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pixelGrid from './pixelGrid.js';
 import userManager from './userManager.js';
+import { generatePainterArtifact } from './ai/painterAI.js';
 
 // ── Surface crashes loudly ──────────────────────────────────────────────────
 // Previously, an unhandled rejection in any async handler (upload, DB write,
@@ -207,14 +208,26 @@ async function collectStats() {
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true,
-}));
+// CORS origin resolver — allows localhost dev, any LAN IP for mobile testing,
+// and any explicit origins listed in CORS_ORIGINS env var (comma-separated).
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  ...(process.env.CORS_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean),
+]);
+const corsOrigin = (origin, cb) => {
+  if (!origin) return cb(null, true); // curl / Postman / same-origin
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
+  // Match any RFC 1918 private LAN IP: 10.x.x.x, 192.168.x.x, 172.16-31.x.x
+  if (/^http:\/\/(?:10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)) return cb(null, true);
+  if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+  cb(new Error(`CORS: origin not allowed — ${origin}`));
+};
+
+app.use(cors({ origin: corsOrigin, credentials: true }));
 
 const io = new Server(httpServer, {
   cors: {
-    origin: 'http://localhost:5173',
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -549,9 +562,19 @@ app.post('/snapshots/epoch/:n', express.json(), async (req, res) => {
     fs.writeFileSync(zonePath, zoneBuf);
     console.log(`📸 Snapshot written for epoch ${n}: ${canvasBuf.length}B canvas, ${zoneBuf.length}B zone`);
 
+    // Co-creation AI: fire-and-forget. Don't block the HTTP response (and
+    // therefore the admin's endEpoch tx) on a 15–30 s OpenAI round-trip.
+    // The NFT URI points at `painter.png`; until this job finishes the
+    // GET handler below falls back to `canvas.png`. When the job lands,
+    // the file swaps in automatically with no on-chain change.
+    generatePainterArtifact(n, SNAPSHOTS_DIR).catch((err) => {
+      console.error(`[painterAI] unhandled error for epoch ${n}:`, err?.message ?? err);
+    });
+
     res.json({
       canvasUrl: `/snapshots/epoch/${n}/canvas.png`,
       zoneUrl:   `/snapshots/epoch/${n}/zone.png`,
+      aiUrl:     `/snapshots/epoch/${n}/ai.png`,
     });
   } catch (err) {
     console.error('Snapshot write error:', err);
@@ -570,20 +593,93 @@ app.get('/snapshots/epoch/:n/:kind.png', (req, res) => {
   try {
     const n = parseInt(req.params.n, 10);
     const kind = req.params.kind;
-    if (!Number.isFinite(n) || n <= 0 || !['canvas', 'zone'].includes(kind)) {
+    if (!Number.isFinite(n) || n <= 0 || !['canvas', 'zone', 'ai', 'painter'].includes(kind)) {
       return res.status(400).json({ error: 'Invalid path' });
     }
-    const filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-${kind}.png`);
+    // `painter` is a legacy alias: previously the AI image was written as
+    // painter.png, and old NFTs minted under that scheme still resolve here.
+    // Map it to ai.png on disk so those legacy on-chain URIs keep working.
+    const diskKind = kind === 'painter' ? 'ai' : kind;
+    let filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-${diskKind}.png`);
+
+    // ai.png is written ~30 s after endEpoch by the async AI job. While
+    // the job is in flight (or if it failed) fall through to the raw
+    // pixel snapshot so the NFT image is never broken.
+    if (diskKind === 'ai' && !fs.existsSync(filePath)) {
+      const fallback = path.join(SNAPSHOTS_DIR, `epoch-${n}-canvas.png`);
+      if (fs.existsSync(fallback)) {
+        res.set('Cache-Control', 'no-cache');
+        res.set('Content-Type', 'image/png');
+        return res.sendFile(fallback);
+      }
+    }
+
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: `No ${kind} snapshot for epoch ${n}` });
     }
     res.set('Content-Type', 'image/png');
-    // Snapshots are immutable per epoch — aggressive caching is safe.
-    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    // canvas + zone are immutable per epoch; ai.png becomes immutable
+    // only once it's actually been written by the AI job (path above).
+    res.set('Cache-Control',
+      diskKind === 'ai'
+        ? 'public, max-age=300'
+        : 'public, max-age=31536000, immutable');
     res.sendFile(filePath);
   } catch (err) {
     console.error('Snapshot serve error:', err);
     res.status(500).json({ error: 'Failed to serve snapshot' });
+  }
+});
+
+/**
+ * GET /snapshots/epoch/:n/caption.txt
+ *
+ * Returns the AI-generated caption for the painter NFT, or 404 if the AI
+ * job hasn't completed (or wasn't enabled) for that epoch.
+ */
+/**
+ * GET /snapshots/epoch/:n/ai-status
+ *
+ * Returns `{ ready, captionReady }` so the NFT card can show a
+ * "Waiting for AI generation…" placeholder instead of the canvas-fallback
+ * image while painterAI is still running. No-store cache so the client
+ * sees the flip from pending → ready immediately.
+ */
+app.get('/snapshots/epoch/:n/ai-status', (req, res) => {
+  try {
+    const n = parseInt(req.params.n, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      return res.status(400).json({ error: 'Invalid epoch' });
+    }
+    const imgPath = path.join(SNAPSHOTS_DIR, `epoch-${n}-ai.png`);
+    const capPath = path.join(SNAPSHOTS_DIR, `epoch-${n}-caption.txt`);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ready: fs.existsSync(imgPath),
+      captionReady: fs.existsSync(capPath),
+    });
+  } catch (err) {
+    console.error('ai-status error:', err);
+    res.status(500).json({ error: 'Failed to check AI status' });
+  }
+});
+
+app.get('/snapshots/epoch/:n/caption.txt', (req, res) => {
+  try {
+    const n = parseInt(req.params.n, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      return res.status(400).json({ error: 'Invalid epoch' });
+    }
+    const filePath = path.join(SNAPSHOTS_DIR, `epoch-${n}-caption.txt`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: `No AI caption for epoch ${n}` });
+    }
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Caption serve error:', err);
+    res.status(500).json({ error: 'Failed to serve caption' });
   }
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import MarketingNav from '../components/MarketingNav';
@@ -7,6 +7,7 @@ import Canvas from '../components/Canvas';
 import Toolbar from '../components/Toolbar';
 import ReferenceImage from '../components/ReferenceImage';
 import RefImageHandle from '../components/RefImageHandle';
+import CanvasTutorial from '../components/CanvasTutorial';
 import { useApp } from '../context/AppContext';
 
 /**
@@ -32,6 +33,23 @@ const CanvasPage = () => {
     document.body.classList.add('canvas-page-active');
     return () => document.body.classList.remove('canvas-page-active');
   }, []);
+
+  // Once-per-session PixelMan walkthrough of the canvas menu. Runs only
+  // here (on /canvas) so brand-new users see it the first time they
+  // actually look at the tools. `canvas_tutorial_seen` flag in
+  // sessionStorage keeps it from re-appearing during the same tab session.
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('canvas_tutorial_seen') !== '1') {
+        setTutorialOpen(true);
+      }
+    } catch (_) {
+      // sessionStorage blocked (private mode) — show the tour anyway.
+      setTutorialOpen(true);
+    }
+  }, []);
+  const closeTutorial = () => setTutorialOpen(false);
 
   // Redirect if not connected
   useEffect(() => {
@@ -83,6 +101,15 @@ const CanvasPage = () => {
           <Toolbar />
         </div>
       </div>
+
+      {/* First-time canvas tutorial — PixelMan walks the user through the
+          left/right panels. Skipping and finishing both behave identically:
+          dismiss + persist the seen flag in sessionStorage. */}
+      <CanvasTutorial
+        open={tutorialOpen}
+        onComplete={closeTutorial}
+        onSkip={closeTutorial}
+      />
 
       {/* Toast Notifications */}
       {toast && (

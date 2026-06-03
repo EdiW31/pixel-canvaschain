@@ -202,6 +202,7 @@ pub trait PixelCanvasContract {
         &self,
         painter_uri: OptionalValue<ManagedBuffer>,
         auction_uri: OptionalValue<ManagedBuffer>,
+        ai_uri: OptionalValue<ManagedBuffer>,
     ) {
         self.require_owner();
         let epoch = self.current_epoch().get();
@@ -262,6 +263,14 @@ pub trait PixelCanvasContract {
                     auction_uris.push(uri);
                 }
             }
+            // AI NFT URI — points at the server-rendered AI reinterpretation
+            // of the full canvas. Skipped (no AI NFT minted) if empty.
+            let mut ai_uris: ManagedVec<ManagedBuffer> = ManagedVec::new();
+            if let OptionalValue::Some(uri) = ai_uri {
+                if uri.len() > 0 {
+                    ai_uris.push(uri);
+                }
+            }
 
             // Mint NFT for top painter (full-canvas image)
             if !top_painter.is_zero() {
@@ -279,6 +288,28 @@ pub trait PixelCanvasContract {
                     &hash,
                     &attributes,
                     &painter_uris,
+                );
+                self.send().direct_esdt(&top_painter, &token_id, nft_nonce, &amount);
+            }
+
+            // Mint AI Vision NFT for top painter (AI's reimagining of the
+            // collaborative canvas). Goes to the same recipient as the Painter
+            // NFT — "you painted the most, you get both versions of your work".
+            // Skipped if ai_uri is empty/absent, or if no top painter exists.
+            if !top_painter.is_zero() && !ai_uris.is_empty() {
+                let name = sc_format!("AI Vision of Epoch {}", epoch);
+                let attributes = sc_format!(
+                    "epoch:{};type:ai;source:gpt-image-1",
+                    epoch
+                );
+                let nft_nonce = self.send().esdt_nft_create(
+                    &token_id,
+                    &amount,
+                    &name,
+                    &royalties,
+                    &hash,
+                    &attributes,
+                    &ai_uris,
                 );
                 self.send().direct_esdt(&top_painter, &token_id, nft_nonce, &amount);
             }

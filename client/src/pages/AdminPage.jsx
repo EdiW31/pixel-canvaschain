@@ -350,8 +350,16 @@ const AdminPage = () => {
       // render on devnet explorer, but the website does via NftPage's
       // resolveImageUrl which substitutes snapshot paths). Caller still
       // gets a meaningful, per-epoch-frozen URI.
+      // Three URIs, one per NFT minted by the upgraded contract:
+      //  - Painter NFT  → raw pixel canvas for that epoch (immutable snapshot)
+      //  - Auction NFT  → cropped 20×20 zone (unchanged behaviour)
+      //  - AI NFT       → AI's reimagining of the canvas (generated server-side
+      //                   in the background; GET /ai.png falls back to
+      //                   canvas.png while the AI job is still running, so the
+      //                   on-chain URI never points at a 404).
       let painterUri = `${SERVER_URL}/snapshots/epoch/${epoch}/canvas.png`;
       let auctionUri = `${SERVER_URL}/snapshots/epoch/${epoch}/zone.png`;
+      let aiUri      = `${SERVER_URL}/snapshots/epoch/${epoch}/ai.png`;
       if (!snapRes.ok) {
         const txt = await snapRes.text().catch(() => '');
         console.warn('[endEpoch] snapshot write failed — keeping default fallback URIs:', snapRes.status, txt.slice(0, 200));
@@ -368,13 +376,13 @@ const AdminPage = () => {
       // The NFT URIs stay as the per-epoch snapshot URLs (set above) —
       // viewable on the website's NftPage but NOT on the devnet explorer.
 
-      setLastNftUrl({ painter: painterUri, auction: auctionUri });
+      setLastNftUrl({ painter: painterUri, auction: auctionUri, ai: aiUri });
 
       setEndEpochStep('signing');
-      // endEpoch@<painterUri hex>@<auctionUri hex>
+      // endEpoch@<painterUri hex>@<auctionUri hex>@<aiUri hex>
       const txHash = await sendTxWithData(
         wallet,
-        `endEpoch@${toHex(painterUri)}@${toHex(auctionUri)}`,
+        `endEpoch@${toHex(painterUri)}@${toHex(auctionUri)}@${toHex(aiUri)}`,
         100_000_000n,
       );
       showToast(
@@ -1175,6 +1183,7 @@ const EndEpochTab = ({
                 {[
                   { label: 'Painter NFT (full canvas)', url: lastNftUrl.painter },
                   { label: 'Auction NFT (20×20 zone)', url: lastNftUrl.auction },
+                  ...(lastNftUrl.ai ? [{ label: 'AI Vision NFT (AI reinterpretation)', url: lastNftUrl.ai }] : []),
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgb(var(--bg-alt))', border: '1px solid rgb(var(--border))' }}>
                     <img src={item.url} alt={item.label} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', imageRendering: 'pixelated', flexShrink: 0 }} />
@@ -1202,7 +1211,9 @@ const EndEpochTab = ({
                   } />
                 ) : endEpochState === 'done' ? '✓ Epoch ended' : `End Epoch ${stats?.epoch ?? '—'}`}
               </PrimaryBtn>
-              <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))' }}>Canvas resets ~30 s after confirmation.</p>
+              <p style={{ fontSize: 11, color: 'rgb(var(--text-muted))' }}>
+                Mints three NFTs: <strong>Painter</strong> (full canvas) + <strong>AI Vision</strong> (AI's reinterpretation, ~20–30 s background) to the top painter, and <strong>Auction</strong> (20×20 zone) to the zone winner. Canvas resets ~30 s after confirmation.
+              </p>
             </div>
           </Card>
         </div>
