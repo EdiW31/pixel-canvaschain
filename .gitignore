@@ -31,7 +31,7 @@ Thumbs.db
 *.sln
 
 # Claude
-.claude/settings.local.json
+.claude/
 
 # Rust build artifacts (keep output/ but ignore target/)
 pixel-canvas-contract/target/
