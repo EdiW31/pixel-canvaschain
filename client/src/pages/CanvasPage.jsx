@@ -10,19 +10,8 @@ import RefImageHandle from '../components/RefImageHandle';
 import CanvasTutorial from '../components/CanvasTutorial';
 import { useApp } from '../context/AppContext';
 
-/**
- * CanvasPage - Main gameplay screen
- *
- * Layout:
- * - Header (top)
- * - Grid: [ColorPicker] [Canvas] [Toolbar]
- *
- * Features:
- * - Protected route (requires wallet connection)
- * - Real-time collaborative painting
- * - Toast notifications
- */
-
+// CanvasPage — main gameplay screen: [ColorPicker] [Canvas] [Toolbar].
+// Protected route (requires a connected wallet) with real-time painting.
 const CanvasPage = () => {
   const { isConnected } = useWallet();
   const { toast, dismissToast, epochInfo, showToast, refetchEpochInfo, refetchVotingState } = useApp();
@@ -90,13 +79,11 @@ const CanvasPage = () => {
           <ReferenceImage />
         </div>
 
-        {/* Center: Canvas */}
         <div className="flex-1 relative flex items-center justify-center overflow-hidden min-w-0">
           <Canvas />
           <RefImageHandle />
         </div>
 
-        {/* Right Sidebar: Toolbar */}
         <div className="flex-shrink-0 h-full min-h-0 p-4 flex flex-col items-end gap-3 overflow-y-auto">
           <Toolbar />
         </div>
@@ -111,7 +98,6 @@ const CanvasPage = () => {
         onSkip={closeTutorial}
       />
 
-      {/* Toast Notifications */}
       {toast && (
         <div className="fixed top-20 right-6 z-50 animate-slide-up max-w-sm">
           <div

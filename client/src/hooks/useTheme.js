@@ -1,18 +1,8 @@
 import { useEffect, useState } from 'react';
 
-/**
- * useTheme — global light/dark mode hook.
- *
- * THREE layers of theme application to make sure dark mode actually paints:
- *   1. data-theme="dark|light" on <html>  → drives CSS custom-property switch
- *   2. class="dark" on <html>             → activates Tailwind `dark:` variants
- *   3. inline style on <body> + <html>    → bypasses Tailwind entirely as a
- *                                            last-resort fallback in case any
- *                                            cached CSS overrides the above
- *
- * Initial theme is also applied by an inline script in index.html so the page
- * doesn't flash light before this hook runs.
- */
+// useTheme — global light/dark mode. Applied in three layers (data-theme attr,
+// Tailwind `dark` class, inline style fallback) so dark mode paints reliably.
+// index.html also applies the initial theme inline to avoid a light flash.
 
 const STORAGE_KEY = 'canvaschain-theme';
 
@@ -37,14 +27,14 @@ const applyTheme = (theme) => {
   const body = document.body;
   const colors = COLORS[theme] ?? COLORS.light;
 
-  // Layer 1 — attribute (CSS vars switch)
+  // Layer 1 — attribute (CSS vars switch).
   root.setAttribute('data-theme', theme);
 
-  // Layer 2 — class (Tailwind dark: variants)
+  // Layer 2 — class (Tailwind dark: variants).
   if (theme === 'dark') root.classList.add('dark');
   else root.classList.remove('dark');
 
-  // Layer 3 — direct inline style fallback (bypasses CSS layers entirely)
+  // Layer 3 — inline style fallback.
   root.style.backgroundColor = colors.bg;
   root.style.color = colors.text;
   if (body) {

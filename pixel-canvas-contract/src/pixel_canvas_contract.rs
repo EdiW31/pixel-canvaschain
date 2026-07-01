@@ -4,7 +4,7 @@
 use multiversx_sc::imports::*;
 use multiversx_sc::derive_imports::*;
 
-// ─── Tier thresholds (in smallest EGLD units = 10^18) ─────────────────────────
+// Tier thresholds (in smallest EGLD units = 10^18)
 const EGLD_UNIT: u64 = 1_000_000_000_000_000_000u64;
 
 const TIER_NOVICE: u64     =   50_000_000_000_000_000u64; // 0.05  xEGLD
@@ -16,7 +16,7 @@ const TIER_LEGEND: u64     = 2_500_000_000_000_000_000u64; // 2.50 xEGLD
 const BASE_PIXELS_PER_EGLD: u64 = 20_000u64;
 const DEFAULT_EPOCH_DURATION: u64 = 86_400u64; // 24 hours in seconds
 
-// ─── Phase 3: Auction constants ───────────────────────────────────────────────
+// Auction constants
 const AUCTION_SIZE: u32 = 20;                  // 20×20 pixel zone
 const DEFAULT_AUCTION_DURATION: u64 = 300u64;  // 5 min default; configurable via setAuctionDuration
 
@@ -32,8 +32,7 @@ pub struct PixelData {
 #[multiversx_sc::contract]
 pub trait PixelCanvasContract {
 
-    // ─── Init / Upgrade ───────────────────────────────────────────────────────
-
+    // Init / Upgrade
     #[init]
     fn init(&self) {
         let deployer = self.blockchain().get_caller();
@@ -55,8 +54,7 @@ pub trait PixelCanvasContract {
         }
     }
 
-    // ─── Owner configuration ──────────────────────────────────────────────────
-
+    // Owner configuration
     #[endpoint(setPixelToken)]
     fn set_pixel_token(&self, token_id: TokenIdentifier, denomination: BigUint) {
         self.require_owner();
@@ -112,8 +110,7 @@ pub trait PixelCanvasContract {
         }
     }
 
-    // ─── Phase 3: NFT collection configuration ────────────────────────────────
-
+    // NFT collection configuration
     #[endpoint(setNftCollection)]
     fn set_nft_collection(&self, token_id: TokenIdentifier) {
         self.require_owner();
@@ -121,8 +118,7 @@ pub trait PixelCanvasContract {
         self.nft_collection_id().set(&token_id);
     }
 
-    // ─── Charity voting ───────────────────────────────────────────────────────
-
+    // Charity voting
     /// Cast a vote for a charity in the current epoch. One vote per wallet.
     #[endpoint(vote)]
     fn vote(&self, charity_index: u32) {
@@ -147,8 +143,7 @@ pub trait PixelCanvasContract {
         self.vote_cast_event(epoch, &caller, charity_index);
     }
 
-    // ─── Epoch management ─────────────────────────────────────────────────────
-
+    // Epoch management
     /// Start a new epoch. Increments epoch counter, records start timestamp,
     /// resets top-painter tracking.
     #[endpoint(startEpoch)]
@@ -175,9 +170,7 @@ pub trait PixelCanvasContract {
         require!(duration > 0u64, "Auction duration must be > 0");
         let end_ts = self.blockchain().get_block_timestamp() + duration;
 
-        // Defensive clears: the new epoch index *should* start empty, but if
-        // there's ever any leak (failed prior start, partial upgrade), wipe
-        // it explicitly so we don't inherit stale state.
+        // Defensive clears so the new epoch never inherits stale auction state.
         self.auction_highest_bid(new_epoch).clear();
         self.auction_highest_bidder(new_epoch).clear();
         self.zone_unlocked_for(new_epoch).clear();
@@ -190,12 +183,9 @@ pub trait PixelCanvasContract {
         self.auction_started_event(new_epoch, section_x, section_y, end_ts);
     }
 
-    /// End the current epoch. Distributes accumulated PIXEL to the default charity
-    /// and accumulated EGLD to the vote-winning charity (or default if no votes).
-    /// Accepts two optional NFT URIs:
-    ///   `painter_uri`  — full-canvas PNG used for the top-painter NFT image.
-    ///   `auction_uri`  — cropped 20×20 zone PNG used for the auction-winner NFT image.
-    /// Both are passed as hex-encoded ManagedBuffers by the admin UI.
+    /// End the current epoch: send accumulated PIXEL to the default charity and
+    /// EGLD to the vote-winning charity, then mint the epoch NFTs. The optional
+    /// painter/auction/ai URIs are the NFT images (hex-encoded by the admin UI).
     #[allow_multiple_var_args]
     #[endpoint(endEpoch)]
     fn end_epoch(
@@ -239,10 +229,9 @@ pub trait PixelCanvasContract {
 
         self.epoch_ended_event(epoch, &top_painter, top_count);
 
-        // ── Phase 3: Snapshot top painter history ─────────────────────────────
         self.epoch_top_painter_history(epoch).set(&top_painter);
 
-        // ── Phase 3: Mint NFTs if collection is configured ────────────────────
+        // Mint the epoch NFTs if a collection is configured.
         if !self.nft_collection_id().is_empty() {
             let token_id = self.nft_collection_id().get();
             let royalties = BigUint::zero();
@@ -292,10 +281,8 @@ pub trait PixelCanvasContract {
                 self.send().direct_esdt(&top_painter, &token_id, nft_nonce, &amount);
             }
 
-            // Mint AI Vision NFT for top painter (AI's reimagining of the
-            // collaborative canvas). Goes to the same recipient as the Painter
-            // NFT — "you painted the most, you get both versions of your work".
-            // Skipped if ai_uri is empty/absent, or if no top painter exists.
+            // AI Vision NFT — the AI reinterpretation, minted to the same top
+            // painter. Skipped if there's no ai_uri or no top painter.
             if !top_painter.is_zero() && !ai_uris.is_empty() {
                 let name = sc_format!("AI Vision of Epoch {}", epoch);
                 let attributes = sc_format!(
@@ -343,8 +330,7 @@ pub trait PixelCanvasContract {
             }
         }
 
-        // ── Finalize the epoch ───────────────────────────────────────────
-        // Mark this epoch as ended so further endEpoch calls are rejected.
+        // Mark the epoch ended so further endEpoch calls are rejected.
         self.epoch_ended(epoch).set(true);
 
         // Force-close the auction if it was still flagged active.
@@ -352,31 +338,23 @@ pub trait PixelCanvasContract {
             self.auction_active(epoch).set(false);
         }
 
-        // Reset epoch-scoped painter accumulators so the next epoch starts
-        // clean. (`current_epoch` is bumped by the next startEpoch call,
-        // which is what triggers the server-side canvas wipe.)
+        // Reset epoch-scoped painter accumulators for the next epoch.
         self.epoch_top_painter().clear();
         self.epoch_top_paint_count().set(0u64);
 
-        // NOTE: epoch_duration_seconds is intentionally NOT modified here.
-        // Previously we set it to 1 as a "this epoch is over" signal for the
-        // client timer — but that polluted the next epoch's duration because
-        // start_epoch_internal doesn't reset it. Use the per-epoch
-        // `isEpochEnded(epoch)` view instead (exposed in the views section).
+        // epoch_duration_seconds is intentionally NOT touched here; "ended" is
+        // tracked by the per-epoch isEpochEnded(epoch) view instead.
     }
 
-    // ─── Phase 3: Auction endpoints ───────────────────────────────────────────
-
+    // Auction endpoints
     /// Place a bid in the current epoch's auction.
     #[payable("EGLD")]
     #[endpoint(placeBid)]
     fn place_bid(&self) {
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch");
-        // Single source of truth: an auction is "live" only if both the flag
-        // is set AND we haven't passed the end timestamp. Previously these
-        // two checks were separate which allowed `placeBid` to disagree with
-        // the read path (a known footgun when `closeAuction` hadn't fired yet).
+        // is_auction_live = flag set AND not past the end timestamp (one rule
+        // shared with the read path and the paintPixels zone check).
         require!(self.is_auction_live(epoch), "Auction is not live");
 
         let payment = self.call_value().egld().clone_value();
@@ -384,17 +362,15 @@ pub trait PixelCanvasContract {
 
         let caller = self.blockchain().get_caller();
 
-        // Accumulate caller's total bid
+        // Bids accumulate per caller.
         self.auction_bid(epoch, &caller).update(|b| *b += &payment);
         let new_total = self.auction_bid(epoch, &caller).get();
 
-        // Register bidder if first time
         if !self.auction_has_bid(epoch, &caller).get() {
             self.auction_has_bid(epoch, &caller).set(true);
             self.auction_bidders(epoch).push(&caller);
         }
 
-        // Update highest bidder
         let current_highest = self.auction_highest_bid(epoch).get();
         if new_total > current_highest {
             self.auction_highest_bid(epoch).set(&new_total);
@@ -412,7 +388,7 @@ pub trait PixelCanvasContract {
 
         let caller = self.blockchain().get_caller();
 
-        // Highest bidder cannot withdraw while auction is still active
+        // The highest bidder can't withdraw while the auction is still active.
         if self.auction_active(epoch).get() {
             let now = self.blockchain().get_block_timestamp();
             let end_ts = self.auction_end_timestamp(epoch).get();
@@ -429,52 +405,40 @@ pub trait PixelCanvasContract {
         self.send().direct_egld(&caller, &bid);
     }
 
-    /// Close the current epoch's auction (owner only). Sets the winner and
-    /// commits the winning bid to the charity accumulator.
-    ///
-    /// Owner may close at any time while the auction flag is set — either
-    /// early (administrative decision) or after natural expiry. The prior
-    /// `now >= end_ts` requirement created a half-open state where an
-    /// expired auction kept `auction_active = true` until the owner
-    /// remembered to flip it, causing `paintPixels` to keep blocking the
-    /// zone. Auto-expire on read (`is_auction_live`) plus letting the
-    /// owner close at will eliminates both bugs.
+    /// Close the current epoch's auction (owner only): set the winner and commit
+    /// the winning bid to the charity accumulator. Owner may close at any time
+    /// while the flag is set; expiry is handled separately by is_auction_live.
     #[endpoint(closeAuction)]
     fn close_auction(&self) {
         self.require_owner();
         let epoch = self.current_epoch().get();
         require!(epoch > 0u64, "No active epoch");
-        // Idempotency: closing an already-closed auction is rejected so the
-        // admin sees "no-op vs. effective" feedback instead of silently
-        // double-distributing the winning bid.
+        // Reject closing an already-closed auction so the bid isn't distributed twice.
         require!(self.auction_active(epoch).get(), "Auction is not active");
 
         self.auction_active(epoch).set(false);
 
-        // Set winner and commit winning bid to charity pool
         if !self.auction_highest_bidder(epoch).is_empty() {
             let winner = self.auction_highest_bidder(epoch).get();
             let winning_bid = self.auction_highest_bid(epoch).get();
 
             self.zone_unlocked_for(epoch).set(&winner);
 
-            // Commit to charity accumulator (EGLD stays in contract until endEpoch)
+            // EGLD stays in the contract until endEpoch sends it to the charity.
             self.total_egld_for_charity().update(|t| *t += &winning_bid);
 
-            // Clear the winner's bid so they cannot also call withdrawBid
+            // Clear the winner's bid so they can't also withdrawBid.
             self.auction_bid(epoch, &winner).set(BigUint::zero());
 
             self.auction_closed_event(epoch, &winner, &winning_bid);
         } else {
-            // No bids — `zone_unlocked_for(epoch)` is intentionally left
-            // unset. Downstream consumers (paintPixels zone-check, endEpoch
-            // NFT mint) treat empty as "no winner / unrestricted zone".
+            // No bids: zone_unlocked_for stays unset, which downstream treats
+            // as "no winner / unrestricted zone".
             self.auction_closed_event(epoch, &ManagedAddress::zero(), &BigUint::zero());
         }
     }
 
-    // ─── Buy PIXEL tokens with EGLD ───────────────────────────────────────────
-
+    // Buy PIXEL tokens with EGLD
     #[payable("EGLD")]
     #[endpoint(buyPixels)]
     fn buy_pixels(&self) {
@@ -497,8 +461,7 @@ pub trait PixelCanvasContract {
         self.buy_pixels_event(&caller, &payment, &token_amount);
     }
 
-    // ─── Paint pixels (user sends PIXEL tokens) ───────────────────────────────
-
+    // Paint pixels (user sends PIXEL tokens)
     #[payable("*")]
     #[endpoint(paintPixels)]
     fn paint_pixels(&self, pixels: ManagedVec<PixelData>) {
@@ -514,12 +477,9 @@ pub trait PixelCanvasContract {
 
         let caller = self.blockchain().get_caller();
 
-        // ── Phase 3: Auction zone restriction check ───────────────────────────
-        // Uses `is_auction_live` (flag + timestamp) so an expired-but-not-yet-
-        // closed auction does NOT keep blocking paints. Previously this branch
-        // checked `auction_active && now < end_ts` inline, which combined with
-        // `closeAuction`'s old `now >= end_ts` requirement produced a window
-        // where the zone was stuck locked.
+        // Auction zone gate: a live auction locks the zone; after it closes,
+        // only the winner may paint there. Uses is_auction_live so an expired
+        // auction stops blocking immediately.
         let epoch = self.current_epoch().get();
         if epoch > 0u64 {
             let zone_x = self.auction_section_x(epoch).get();
@@ -547,7 +507,6 @@ pub trait PixelCanvasContract {
                 }
             }
         }
-        // ── End auction zone check ────────────────────────────────────────────
 
         let denomination = self.pixel_denomination().get();
         let len = pixels.len();
@@ -605,8 +564,7 @@ pub trait PixelCanvasContract {
         self.paint_pixels_event(&caller, len as u32);
     }
 
-    // ─── Distribute PIXEL to charity (manual, kept for backward compat) ───────
-
+    // Distribute PIXEL to charity (manual, kept for backward compat)
     #[endpoint(distributePixelToCharity)]
     fn distribute_pixel_to_charity(&self) {
         self.require_owner();
@@ -619,8 +577,7 @@ pub trait PixelCanvasContract {
         self.total_pixel_for_charity().set(BigUint::zero());
     }
 
-    // ─── Views ────────────────────────────────────────────────────────────────
-
+    // Views
     #[view(getPixelOwner)]
     fn get_pixel_owner(&self, x: u32, y: u32) -> OptionalValue<ManagedAddress> {
         let mapper = self.pixel_owner(x, y);
@@ -656,8 +613,7 @@ pub trait PixelCanvasContract {
         self.total_donated().get()
     }
 
-    // ─── Epoch views ──────────────────────────────────────────────────────────
-
+    // Epoch views
     #[view(getCurrentEpoch)]
     fn get_current_epoch(&self) -> u64 {
         self.current_epoch().get()
@@ -694,8 +650,7 @@ pub trait PixelCanvasContract {
         self.epoch_pixel_count(epoch, &painter).get()
     }
 
-    // ─── Charity voting views ─────────────────────────────────────────────────
-
+    // Charity voting views
     /// Returns (names, addresses) for charities registered in `epoch`.
     #[view(getEpochCharities)]
     fn get_epoch_charities(
@@ -737,8 +692,7 @@ pub trait PixelCanvasContract {
         self.total_egld_for_charity().get()
     }
 
-    // ─── Phase 3: Auction views ───────────────────────────────────────────────
-
+    // Auction views
     /// Returns full auction state for the given epoch.
     #[view(getAuctionState)]
     fn get_auction_state(
@@ -779,18 +733,15 @@ pub trait PixelCanvasContract {
         }
     }
 
-    /// Returns whether the auction flag is set for the given epoch. NOTE:
-    /// this does not account for time-based expiry — use `isAuctionLive`
-    /// instead if you need "currently accepting bids".
+    /// Whether the auction flag is set (ignores expiry — use isAuctionLive for
+    /// "currently accepting bids").
     #[view(isAuctionActive)]
     fn is_auction_active(&self, epoch: u64) -> bool {
         self.auction_active(epoch).get()
     }
 
-    /// Returns true iff the auction is BOTH flagged active AND has not yet
-    /// passed its end timestamp. This is the single source of truth used by
-    /// `placeBid` and the `paintPixels` zone-gating — exposing it lets the
-    /// UI render the same state without re-deriving the rule.
+    /// True iff the auction is flagged active AND not past its end timestamp.
+    /// Single source of truth shared by placeBid, the zone gate, and the UI.
     #[view(isAuctionLive)]
     fn is_auction_live(&self, epoch: u64) -> bool {
         if !self.auction_active(epoch).get() {
@@ -799,16 +750,13 @@ pub trait PixelCanvasContract {
         self.blockchain().get_block_timestamp() < self.auction_end_timestamp(epoch).get()
     }
 
-    /// Returns true if `endEpoch` has already been called for the given
-    /// epoch. Lets the admin UI pre-check before submitting and surface a
-    /// clearer error than the on-chain `require!` rejection.
+    /// Whether endEpoch has already run for this epoch (lets the UI pre-check).
     #[view(isEpochEnded)]
     fn is_epoch_ended_view(&self, epoch: u64) -> bool {
         self.epoch_ended(epoch).get()
     }
 
-    // ─── Storage mappers ──────────────────────────────────────────────────────
-
+    // Storage mappers
     #[storage_mapper("pixelTokenId")]
     fn pixel_token_id(&self) -> SingleValueMapper<TokenIdentifier>;
 
@@ -868,8 +816,7 @@ pub trait PixelCanvasContract {
     #[storage_mapper("epochVoterChoice")]
     fn epoch_voter_choice(&self, epoch: u64, voter: &ManagedAddress) -> SingleValueMapper<u32>;
 
-    // ─── Phase 3: Auction storage ─────────────────────────────────────────────
-
+    // Auction storage
     #[storage_mapper("auctionSectionX")]
     fn auction_section_x(&self, epoch: u64) -> SingleValueMapper<u32>;
 
@@ -906,15 +853,12 @@ pub trait PixelCanvasContract {
     #[storage_mapper("epochTopPainterHistory")]
     fn epoch_top_painter_history(&self, epoch: u64) -> SingleValueMapper<ManagedAddress>;
 
-    /// Per-epoch "this epoch has been ended" flag. Prevents `endEpoch` from
-    /// being called twice on the same epoch (which would re-mint duplicate
-    /// NFT pairs) and gates the next `startEpoch` so it can't begin until
-    /// the prior epoch has been properly closed.
+    /// Per-epoch "ended" flag: blocks a second endEpoch (duplicate NFTs) and
+    /// gates the next startEpoch until the prior epoch is closed.
     #[storage_mapper("epochEnded")]
     fn epoch_ended(&self, epoch: u64) -> SingleValueMapper<bool>;
 
-    // ─── Events ───────────────────────────────────────────────────────────────
-
+    // Events
     #[event("buyPixels")]
     fn buy_pixels_event(
         &self,
@@ -953,8 +897,7 @@ pub trait PixelCanvasContract {
         #[indexed] charity_index: u32,
     );
 
-    // ─── Phase 3: Auction events ──────────────────────────────────────────────
-
+    // Auction events
     #[event("auctionStarted")]
     fn auction_started_event(
         &self,
@@ -981,15 +924,11 @@ pub trait PixelCanvasContract {
         #[indexed] winning_bid: &BigUint,
     );
 
-    // ─── Internal helpers ─────────────────────────────────────────────────────
-
+    // Internal helpers
     /// Increments epoch, resets painter tracking, records timestamp.
     /// Returns the new epoch number.
     fn start_epoch_internal(&self) -> u64 {
-        // If a previous epoch exists, it must have been formally ended via
-        // endEpoch before a new one can begin. Otherwise the canvas isn't
-        // wiped, the prior auction state leaks, and NFTs for the prior
-        // epoch never get minted.
+        // A previous epoch must be formally ended before a new one can begin.
         let prev = self.current_epoch().get();
         if prev > 0u64 {
             require!(
@@ -1000,9 +939,7 @@ pub trait PixelCanvasContract {
         let new_epoch = prev + 1u64;
         self.current_epoch().set(new_epoch);
 
-        // Self-heal: if epoch_duration_seconds was left at an absurdly small
-        // value (e.g. 1 from an old endEpoch bug), reset it to the default so
-        // the new epoch doesn't show as ended the moment it starts.
+        // Self-heal a stale tiny duration so the new epoch isn't immediately "ended".
         if self.epoch_duration_seconds().get() < 30u64 {
             self.epoch_duration_seconds().set(DEFAULT_EPOCH_DURATION);
         }

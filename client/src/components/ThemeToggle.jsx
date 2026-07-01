@@ -24,7 +24,6 @@ const ThemeToggle = ({ className = '' }) => {
         padding: 3,
       }}
     >
-      {/* Track icons */}
       <span style={{
         position: 'absolute', left: 7, opacity: isDark ? 0 : 0.5,
         transition: 'opacity 0.25s ease', lineHeight: 1, fontSize: 11,
@@ -34,7 +33,6 @@ const ThemeToggle = ({ className = '' }) => {
         transition: 'opacity 0.25s ease', lineHeight: 1, fontSize: 11,
       }}>🌙</span>
 
-      {/* Sliding thumb */}
       <span
         style={{
           display: 'flex',

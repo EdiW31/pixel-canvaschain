@@ -12,7 +12,7 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
 const DEVNET_EXPLORER = 'https://devnet-explorer.multiversx.com/accounts';
 
-/* ─── Helpers ────────────────────────────────────────────────────────────── */
+// Helpers
 
 function shortenAddr(addr) {
   if (!addr || addr.length < 12) return addr || '—';
@@ -83,7 +83,7 @@ async function sendTx(walletAddress, data) {
   await TransactionManager.getInstance().send(signed);
 }
 
-/* ─── Zone diagram (mini canvas preview) ────────────────────────────────── */
+// Zone diagram (mini canvas preview)
 
 const ZoneDiagram = ({ sectionX, sectionY, accent = '#E5B547' }) => {
   const CELLS = 10; // render 10×10 grid of dots
@@ -122,7 +122,7 @@ const ZoneDiagram = ({ sectionX, sectionY, accent = '#E5B547' }) => {
   );
 };
 
-/* ─── Info card (reused from ShopPage pattern) ───────────────────────────── */
+// Info card (reused from ShopPage pattern)
 
 const InfoCard = ({ accent, tag, title, body }) => (
   <div className="card p-6 overflow-hidden relative">
@@ -133,7 +133,7 @@ const InfoCard = ({ accent, tag, title, body }) => (
   </div>
 );
 
-/* ─── Stat row item ──────────────────────────────────────────────────────── */
+// Stat row item
 
 const StatItem = ({ label, value, accent }) => (
   <div>
@@ -144,7 +144,7 @@ const StatItem = ({ label, value, accent }) => (
 
 const VDivider = () => <div className="hidden sm:block w-px h-10 bg-border" />;
 
-/* ─── Main page ──────────────────────────────────────────────────────────── */
+// Main page
 
 const AuctionPage = () => {
   const { auctionState, refetchAuctionState, wallet, showToast } = useApp();
@@ -204,7 +204,6 @@ const AuctionPage = () => {
 
       <main className="max-w-4xl mx-auto px-6 py-12 pt-16">
 
-        {/* ─── Page hero ─────────────────────────────────────────────── */}
         <div className="relative overflow-hidden rounded-2xl bg-backgroundAlt border border-border px-8 pt-10 pb-8 mb-8 animate-fade-in">
           <Dot color="#E5B547" style={{ top: 18,  left: '4%'  }} />
           <Dot color="#ED8936" style={{ top: 40,  right: '6%' }} />
@@ -214,7 +213,6 @@ const AuctionPage = () => {
 
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
             <div>
-              {/* Status tag */}
               {auctionLive && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-3"
                   style={{ background: 'rgba(229,181,71,0.15)', color: '#B8860B', border: '1.5px solid rgba(229,181,71,0.5)' }}>
@@ -253,7 +251,6 @@ const AuctionPage = () => {
           </div>
         </div>
 
-        {/* ─── Main auction state card ────────────────────────────────── */}
         {auctionLive && (
           <div className="card p-6 mb-8 animate-fade-in">
             <div className="flex flex-col lg:flex-row gap-8">
@@ -261,7 +258,6 @@ const AuctionPage = () => {
               {/* Left: stats + bid form */}
               <div className="flex-1 flex flex-col gap-6">
 
-                {/* Countdown */}
                 <div>
                   <div className="text-xs text-textMuted uppercase tracking-wider font-medium mb-2">Auction ends in</div>
                   <div className="font-mono text-5xl font-bold tracking-tight" style={{ color: '#B8860B' }}>
@@ -272,7 +268,6 @@ const AuctionPage = () => {
                   )}
                 </div>
 
-                {/* Stats row */}
                 <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 border-t border-b border-border">
                   <StatItem
                     label="Highest bid"
@@ -307,7 +302,6 @@ const AuctionPage = () => {
                   )}
                 </div>
 
-                {/* Bid form */}
                 {isConnected ? (
                   <div className="flex flex-col gap-3">
                     <label className="text-sm font-medium text-textSecondary">Add to your bid</label>
@@ -368,7 +362,6 @@ const AuctionPage = () => {
                 )}
               </div>
 
-              {/* Right: zone diagram */}
               <div className="flex-shrink-0 flex flex-col items-center justify-start gap-4 pt-2">
                 <ZoneDiagram sectionX={sectionX} sectionY={sectionY} accent="#E5B547" />
                 <div className="text-xs text-textMuted text-center max-w-[160px]">
@@ -379,7 +372,6 @@ const AuctionPage = () => {
           </div>
         )}
 
-        {/* ─── Closed / winner state ──────────────────────────────────── */}
         {auctionClosed && (
           <div className="card p-6 mb-8 animate-fade-in">
             <div className="flex flex-col lg:flex-row gap-8">
@@ -436,7 +428,6 @@ const AuctionPage = () => {
                   </p>
                 )}
 
-                {/* Losers can still withdraw */}
                 {canWithdraw && (
                   <button
                     onClick={handleWithdraw}
@@ -455,7 +446,6 @@ const AuctionPage = () => {
           </div>
         )}
 
-        {/* ─── No auction state ────────────────────────────────────────── */}
         {noAuction && (
           <div className="card p-10 mb-8 text-center animate-fade-in">
             <div className="text-5xl mb-4">🔨</div>
@@ -467,7 +457,6 @@ const AuctionPage = () => {
           </div>
         )}
 
-        {/* ─── How auctions work ───────────────────────────────────────── */}
         <div className="mt-4 grid md:grid-cols-3 gap-5">
           <InfoCard
             accent="#E5B547"

@@ -69,8 +69,6 @@ function b64ToUtf8(b64) {
 function hexToU64(hex) {
   return hex ? parseInt(hex, 16) : 0;
 }
-// Decode a MultiversX bech32 address from a 32-byte base64 blob.
-// We keep it as hex here; bech32 conversion is done in the UI layer.
 function b64ToAddrHex(b64) {
   return b64ToHex(b64);
 }
@@ -84,12 +82,12 @@ export const useApp = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  // ── Wallet (sdk-dapp) ─────────────────────────────────────────────────────
+  // Wallet (sdk-dapp)
   const { address, account } = useGetAccountInfo();
   const isLoggedIn = useGetIsLoggedIn();
   const egld = parseFloat((Number(account?.balance ?? 0) / 1e18).toFixed(4));
 
-  // ── PIXEL token balance ───────────────────────────────────────────────────
+  // PIXEL token balance
   const { pixelBalance, refetchPixelBalance } = usePixelBalance(address || null);
 
   const wallet = {
@@ -99,26 +97,21 @@ export const AppProvider = ({ children }) => {
     pixelBalance,
   };
 
-  // ── Epoch info ────────────────────────────────────────────────────────────
+  // Epoch info
   const [epochInfo, setEpochInfo] = useState({ epoch: 0, startTimestamp: 0, durationSeconds: 0, endsAt: 0 });
-  // Derived: true whenever painting is NOT allowed (no epoch yet, contract
-  // says ended, natural duration expired, or contract is in "ended sentinel"
-  // state — `durationSeconds === 1`, set by endEpoch).
-  // Kept as a separate state slot so consumers (useCanvas, Canvas overlay)
-  // can subscribe to lock-state changes without re-rendering on every
-  // epochInfo poll.
+  // True whenever painting is NOT allowed. Kept as its own state slot so
+  // consumers can subscribe to lock changes without re-rendering on every poll.
   const [paintLocked, setPaintLocked] = useState(true);
   const epochRefetchRef = useRef(null);
 
-  // ── Auction state ─────────────────────────────────────────────────────────
+  // Auction state
   const [auctionState, setAuctionState] = useState(null);
   const auctionRefetchRef = useRef(null);
 
-  // ── NFT collection ID (one-time fetch) ───────────────────────────────────
+  // NFT collection ID (one-time fetch)
   const [nftCollectionId, setNftCollectionId] = useState(null);
 
-  // ── Voting state ──────────────────────────────────────────────────────────
-  // charities: [{ name, address, votes }]
+  // Voting state — charities: [{ name, address, votes }]
   const [votingState, setVotingState] = useState({ charities: [], hasVoted: false, userVoteIndex: 255, loading: false });
   const votingRefetchRef = useRef(null);
 
@@ -129,31 +122,24 @@ export const AppProvider = ({ children }) => {
       queryContractU64('getEpochDuration'),
     ]);
     const endsAt = startTimestamp > 0 && durationSeconds > 0
-      ? (startTimestamp + durationSeconds) * 1000  // convert to ms
+      ? (startTimestamp + durationSeconds) * 1000
       : 0;
-    // Authoritative end signal — the contract sets `epoch_ended[epoch] = true`
-    // inside endEpoch. Timer-based detection alone is unreliable because
-    // endEpoch can fire before the natural end OR the admin might bump
-    // setEpochDuration mid-epoch.
+    // Authoritative end signal: the contract sets epoch_ended[epoch] inside
+    // endEpoch. Timer-based detection alone is unreliable (admin can end early
+    // or change setEpochDuration mid-epoch).
     let ended = false;
     if (epoch > 0) {
       try {
         const epochHex = epoch.toString(16).padStart(2, '0');
         const raw = await queryContractRaw('isEpochEnded', [epochHex]);
-        // Contract returns `true` as a single non-zero byte; missing/empty = false.
         ended = !!(raw && raw[0] && atob(raw[0]).charCodeAt(0) === 1);
-      } catch { /* view may not exist on older contract — treat as not-ended */ }
+      } catch {}
     }
     setEpochInfo({ epoch, startTimestamp, durationSeconds, endsAt, ended });
 
-    // Paint lock derivation — single source of truth for "can the user
-    // paint right now?". Matches EpochBanner's end-detection (line 70).
-    // Locked when:
-    //   - no epoch has ever started (epoch === 0), OR
-    //   - contract flagged this epoch as ended (admin called endEpoch), OR
-    //   - the natural duration ran out and admin hasn't restarted yet, OR
-    //   - durationSeconds === 1 (sentinel value endEpoch writes to mark
-    //     "ended, awaiting startEpochWithAuction")
+    // Single source of truth for "can the user paint right now?". Locked when no
+    // epoch started, the contract flagged it ended, the duration expired, or
+    // durationSeconds === 1 (sentinel endEpoch writes to mark "ended").
     const naturalExpired =
       startTimestamp > 0 &&
       durationSeconds > 1 &&
@@ -161,8 +147,8 @@ export const AppProvider = ({ children }) => {
     setPaintLocked(!epoch || ended || naturalExpired || durationSeconds === 1);
   }, []);
 
-  // Fetch epoch on mount and every 30 s — tight enough that an admin's
-  // endEpoch in another tab is reflected in users' canvases within ~30 s.
+  // Poll epoch on mount and every 30s so an admin's endEpoch in another tab
+  // reaches users' canvases within ~30s.
   useEffect(() => {
     fetchEpochInfo();
     epochRefetchRef.current = setInterval(fetchEpochInfo, 30_000);
@@ -175,14 +161,13 @@ export const AppProvider = ({ children }) => {
 
     const epochHex = epoch.toString(16).padStart(2, '0');
 
-    // Fetch charities + vote counts
     const [charitiesData, countsData] = await Promise.all([
       queryContractRaw('getEpochCharities', [epochHex]),
       queryContractRaw('getVoteTallies', [epochHex]),
     ]);
 
-    // getEpochCharities returns MultiValue2<ManagedVec<ManagedBuffer>, ManagedVec<ManagedAddress>>.
-    // Each ManagedVec is nested-encoded into a SINGLE returnData blob, items concatenated:
+    // getEpochCharities returns two ManagedVecs, each nested-encoded into a
+    // single returnData blob with items concatenated:
     //   charitiesData[0] = (4-byte len + utf8 bytes) * N
     //   charitiesData[1] = (32 raw bytes) * N
     const decodeNestedBytes = (b64) => {
@@ -233,7 +218,6 @@ export const AppProvider = ({ children }) => {
       votes: votes[i] ?? 0,
     }));
 
-    // Fetch user vote if connected
     let hasVoted = false;
     let userVoteIndex = 255;
     if (voterAddress) {
@@ -255,7 +239,7 @@ export const AppProvider = ({ children }) => {
     setVotingState({ charities, hasVoted, userVoteIndex, loading: false });
   }, []);
 
-  // Refresh voting state when epoch or wallet changes; also poll every 30s
+  // Refresh voting state when epoch or wallet changes; also poll every 30s.
   useEffect(() => {
     fetchVotingState(epochInfo.epoch, address || null);
     clearInterval(votingRefetchRef.current);
@@ -270,9 +254,8 @@ export const AppProvider = ({ children }) => {
     if (!epoch) { setAuctionState(null); return; }
     const epochHex = epoch.toString(16).padStart(2, '0');
 
+    // getAuctionState returns MultiValue7, one item per returnData entry.
     const stateData = await queryContractRaw('getAuctionState', [epochHex]);
-    // getAuctionState returns MultiValue7<bool, u32, u32, u64, ManagedAddress, BigUint, ManagedAddress>
-    // Each item is a separate returnData entry.
     if (!stateData || stateData.length < 7) { setAuctionState(null); return; }
 
     const active = stateData[0] ? atob(stateData[0]).charCodeAt(0) === 1 : false;
@@ -307,7 +290,7 @@ export const AppProvider = ({ children }) => {
     });
   }, []);
 
-  // Poll auction state every 15s while connected
+  // Poll auction state every 15s while connected.
   useEffect(() => {
     fetchAuctionState(epochInfo.epoch, address || null);
     clearInterval(auctionRefetchRef.current);
@@ -318,7 +301,7 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(auctionRefetchRef.current);
   }, [epochInfo.epoch, address, isLoggedIn, fetchAuctionState]);
 
-  // Fetch NFT collection ID once on mount
+  // Fetch NFT collection ID once on mount.
   useEffect(() => {
     queryContractRaw('getNftCollectionId', []).then(data => {
       if (data && data[0]) {
@@ -327,18 +310,16 @@ export const AppProvider = ({ children }) => {
     });
   }, []);
 
-  // ── Pending pixels (painted but not yet paid for) ─────────────────────────
+  // Pending pixels (painted but not yet paid for).
   // Map<"x_y", {x, y, color}> — keyed so repainting the same pixel replaces it.
   const [pendingPixels, setPendingPixels] = useState(new Map());
   const pendingCount = pendingPixels.size;
 
-  // Ref to track the original grid color BEFORE each pixel was first painted into
-  // pending. Used by undoPendingPixels() to restore the canvas on undo.
-  const pendingOriginalsRef = useRef(new Map()); // Map<"x_y", originalColor>
+  // Original grid color before each pixel entered pending, for undo.
+  const pendingOriginalsRef = useRef(new Map());
 
-  // Keep a live ref to gridState so addPendingPixels can snapshot originals
-  // without needing gridState in its dependency array.
-  // NOTE: the syncing useEffect is placed AFTER gridState is declared below.
+  // Live ref to gridState so addPendingPixels can snapshot originals without
+  // listing gridState as a dependency. Synced in an effect after gridState below.
   const gridStateRef = useRef(null);
 
   const addPendingPixels = useCallback((pixels) => {
@@ -346,7 +327,6 @@ export const AppProvider = ({ children }) => {
       const next = new Map(prev);
       for (const p of pixels) {
         const key = `${p.x}_${p.y}`;
-        // Capture original color the first time this pixel enters pending
         if (!prev.has(key) && !pendingOriginalsRef.current.has(key)) {
           const origColor = gridStateRef.current?.[p.y]?.[p.x] ?? '#FFFFFF';
           pendingOriginalsRef.current.set(key, origColor);
@@ -362,19 +342,14 @@ export const AppProvider = ({ children }) => {
     pendingOriginalsRef.current = new Map();
   }, []);
 
-  /**
-   * Undo all pending pixels: reverts the local gridState to the original
-   * colors and clears the pending set.
-   * Returns an array of {x, y, color} with the original colors so the caller
-   * can emit pixels:paint to the server.
-   */
+  // Undo all pending pixels: revert local gridState to original colors, clear
+  // the pending set, and return the reverts so the caller can broadcast them.
   const undoPendingPixels = useCallback(() => {
     const reverts = [];
     pendingOriginalsRef.current.forEach((origColor, key) => {
       const [x, y] = key.split('_').map(Number);
       reverts.push({ x, y, color: origColor });
     });
-    // Revert local grid visually
     reverts.forEach(({ x, y, color }) => {
       setGridState((prev) => {
         if (!prev) return prev;
@@ -388,36 +363,35 @@ export const AppProvider = ({ children }) => {
     return reverts;
   }, [clearPendingPixels]);
 
-  // Clear pending when wallet disconnects
   useEffect(() => {
     if (!isLoggedIn) clearPendingPixels();
   }, [isLoggedIn, clearPendingPixels]);
 
-  // ── Canvas state ──────────────────────────────────────────────────────────
+  // Canvas state
   const [gridState, setGridState] = useState(null);
-  // Keep gridStateRef in sync — must live AFTER gridState declaration to avoid TDZ
+  // Keep gridStateRef in sync — must run after gridState is declared (TDZ).
   useEffect(() => { gridStateRef.current = gridState; }, [gridState]);
 
   const [selectedColor, setSelectedColor] = useState('#FF0000');
   const [colorHistory, setColorHistory] = useState(['#FF0000']);
   const [brushSize, setBrushSize] = useState(1);
 
-  // ── Canvas view state ─────────────────────────────────────────────────────
+  // Canvas view state
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [minZoom, setMinZoom] = useState(1);
 
-  // ── Reference image overlay ───────────────────────────────────────────────
+  // Reference image overlay
   const [refImageSrc, setRefImageSrc] = useState(null);
   const [refImageOpacity, setRefImageOpacity] = useState(0.7);
   const [refImageRect, setRefImageRect] = useState({ x: 0, y: 0, w: 100, h: 100 });
   const [refImageLocked, setRefImageLocked] = useState(false);
 
-  // ── UI state ──────────────────────────────────────────────────────────────
+  // UI state
   const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // ── Total donated (polled every 60s) ──────────────────────────────────────
+  // Total donated (polled every 60s)
   const [totalDonatedEgld, setTotalDonatedEgld] = useState(null);
 
   useEffect(() => {
@@ -431,7 +405,6 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(id);
   }, []);
 
-  // ── Color helpers ─────────────────────────────────────────────────────────
   const changeColor = (color) => {
     setSelectedColor(color);
     setColorHistory((prev) => {
@@ -440,7 +413,6 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  // ── Pixel helper ──────────────────────────────────────────────────────────
   const updatePixel = (x, y, color) => {
     setGridState((prev) => {
       if (!prev) return prev;
@@ -451,7 +423,6 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  // ── Toast ─────────────────────────────────────────────────────────────────
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
@@ -459,7 +430,7 @@ export const AppProvider = ({ children }) => {
 
   const dismissToast = () => setToast(null);
 
-  // ── Persist color to localStorage ────────────────────────────────────────
+  // Persist color + history to localStorage.
   useEffect(() => {
     const savedColor = localStorage.getItem('selectedColor');
     if (savedColor) setSelectedColor(savedColor);
@@ -537,7 +508,7 @@ export const AppProvider = ({ children }) => {
     // On-chain aggregates
     totalDonatedEgld,
 
-    // Phase 3: Auction
+    // Auction
     auctionState,
     refetchAuctionState: () => fetchAuctionState(epochInfo.epoch, address || null),
     nftCollectionId,

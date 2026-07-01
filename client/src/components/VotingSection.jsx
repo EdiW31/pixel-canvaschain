@@ -56,7 +56,7 @@ function loadMeta(epoch) {
   }
 }
 
-// ── Single card ───────────────────────────────────────────────────────────────
+// Single card
 
 const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, hasVoted, onSelect, canSelect }) => {
   const accent   = ACCENTS[index % ACCENTS.length];
@@ -85,7 +85,6 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
         filter: isDimmed ? 'grayscale(0.4)' : 'none',
       }}
     >
-      {/* ── Photo area ── */}
       <div className="relative overflow-hidden group/photo" style={{ height: 200 }}>
         <img
           src={photo}
@@ -98,7 +97,6 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
           className="absolute inset-0"
           style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.10) 50%, transparent 100%)' }}
         />
-        {/* Hover overlay: visit website */}
         {link && (
           <a
             href={link}
@@ -134,7 +132,6 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
           </div>
         )}
 
-        {/* "Your vote" badge */}
         {isMyVote && (
           <div
             className="absolute top-3 left-3 flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full"
@@ -155,9 +152,7 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
         </div>
       </div>
 
-      {/* ── Bottom info ── */}
       <div className="px-5 py-4 flex flex-col gap-3" style={{ background: '#fff' }}>
-        {/* Vote bar + pct */}
         <div>
           <div className="flex items-center justify-between mb-1.5 text-xs font-medium" style={{ color: '#6b7280' }}>
             <span>{charity.votes} vote{charity.votes !== 1 ? 's' : ''}</span>
@@ -200,7 +195,7 @@ const CharityCard = ({ charity, index, meta, totalVotes, selected, isMyVote, has
   return card;
 };
 
-// ── Section ───────────────────────────────────────────────────────────────────
+// Section
 
 const VotingSection = ({ compact = false, onYellow = false }) => {
   const { epochInfo, votingState, refetchVotingState, wallet, showToast } = useApp();
@@ -288,7 +283,6 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
         </div>
       )}
 
-      {/* Stats row */}
       <div className="flex flex-wrap items-center gap-x-8 gap-y-2 mb-8">
         <div>
           <div className="text-xs uppercase tracking-wider font-medium mb-0.5" style={{ color: mutedClr }}>
@@ -304,7 +298,6 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
         </div>
       </div>
 
-      {/* Cards grid */}
       <div className={`grid gap-5 ${
         charities.length === 1 ? 'max-w-xs'            :
         charities.length === 2 ? 'sm:grid-cols-2 max-w-2xl' :
@@ -326,7 +319,6 @@ const VotingSection = ({ compact = false, onYellow = false }) => {
         ))}
       </div>
 
-      {/* Bottom action */}
       <div className="mt-8">
         {canVote ? (
           <div className="flex items-center gap-4 flex-wrap">

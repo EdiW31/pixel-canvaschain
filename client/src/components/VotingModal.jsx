@@ -27,7 +27,7 @@ async function sendVoteTx(walletAddress, charityIndex) {
   await TransactionManager.getInstance().send(signed);
 }
 
-// ── Charity card ─────────────────────────────────────────────────────────────
+// Charity card
 
 const PALETTE = ['#E53E3E', '#4299E1', '#48BB78', '#ED8936', '#9F7AEA'];
 
@@ -48,7 +48,6 @@ const CharityCard = ({ charity, index, totalVotes, onVote, canVote, isVoted }) =
           : 'border-border bg-backgroundAlt cursor-default'}
       `}
     >
-      {/* accent left bar */}
       <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl" style={{ background: accent }} />
 
       <div className="pl-3">
@@ -66,7 +65,6 @@ const CharityCard = ({ charity, index, totalVotes, onVote, canVote, isVoted }) =
           </div>
         </div>
 
-        {/* Progress bar */}
         <div className="h-1.5 rounded-full bg-border overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-500"
@@ -78,7 +76,7 @@ const CharityCard = ({ charity, index, totalVotes, onVote, canVote, isVoted }) =
   );
 };
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// Modal
 
 const VotingModal = ({ onClose }) => {
   const { epochInfo, votingState, refetchVotingState, wallet, showToast } = useApp();
@@ -111,12 +109,10 @@ const VotingModal = ({ onClose }) => {
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div className="card w-full max-w-md relative overflow-hidden animate-slide-up">
-        {/* Rainbow top bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5"
           style={{ background: 'linear-gradient(90deg,#E53E3E,#ED8936,#ECC94B,#48BB78,#4299E1,#9F7AEA)' }} />
 
         <div className="p-6 pt-7">
-          {/* Header */}
           <div className="flex items-start justify-between mb-1">
             <div>
               <h2 className="font-heading text-xl font-semibold">Vote for a Charity</h2>
@@ -127,7 +123,6 @@ const VotingModal = ({ onClose }) => {
             <button onClick={onClose} className="text-textMuted hover:text-textPrimary transition-colors text-lg leading-none mt-0.5">✕</button>
           </div>
 
-          {/* Stats row */}
           <div className="flex gap-4 my-4 text-xs text-textMuted">
             <span><strong className="text-textPrimary">{totalVotes}</strong> votes cast</span>
             <span><strong className="text-textPrimary">{charities.length}</strong> charities</span>
@@ -136,7 +131,6 @@ const VotingModal = ({ onClose }) => {
             )}
           </div>
 
-          {/* Content */}
           {loading ? (
             <div className="py-10 flex justify-center">
               <span className="inline-block w-7 h-7 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -161,7 +155,6 @@ const VotingModal = ({ onClose }) => {
             </div>
           )}
 
-          {/* Footer hint */}
           <div className="mt-5 pt-4 border-t border-border">
             {!wallet.isConnected ? (
               <p className="text-xs text-textMuted text-center">Connect your wallet to vote.</p>

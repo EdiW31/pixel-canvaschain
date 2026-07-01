@@ -3,18 +3,8 @@ import { useApp } from '../context/AppContext';
 import { useCanvas } from '../hooks/useCanvas';
 import { useSocket } from '../hooks/useSocket';
 
-/**
- * Canvas - Main 100x100 pixel canvas component
- *
- * Features:
- * - Renders visible portion of 100x100 grid (optimized)
- * - Zoom: Initial fit to 20x (mouse wheel)
- * - Pan: Click & drag (middle/right mouse button)
- * - Paint: Left click + drag (supports brush sizes 1-4)
- * - Grid overlay at high zoom (>5x)
- * - Brush preview on separate overlay canvas
- */
-
+// Canvas — the 100x100 pixel grid. Renders the visible portion across stacked
+// overlay canvases (pixels, flash, auction zone, brush preview) with zoom/pan.
 const Canvas = () => {
   const { gridState, selectedColor, refImageSrc, refImageOpacity, refImageRect, wallet, auctionState, paintLocked } = useApp();
   const { socket } = useSocket();
@@ -43,7 +33,7 @@ const Canvas = () => {
   const auctionFrameRef = useRef(0);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Flash effect state (refs to avoid re-renders)
+  // Flash effect state (refs to avoid re-renders).
   const flashMapRef = useRef(new Map()); // "x_y" -> timestamp
   const rafRef = useRef(null);
   const offsetRef = useRef(offset);
@@ -84,10 +74,9 @@ const Canvas = () => {
     rafRef.current = requestAnimationFrame(loop);
   }, []);
 
-  // Cleanup rAF on unmount
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
-  // Listen for remote pixel updates to trigger flash
+  // Flash remote pixel updates (from other users) briefly.
   useEffect(() => {
     if (!socket) return;
     const handlePixelUpdate = ({ x, y, address }) => {
@@ -118,9 +107,7 @@ const Canvas = () => {
     img.src = refImageSrc;
   }, [refImageSrc]);
 
-  /**
-   * Center canvas on initial load
-   */
+  // Center the canvas on initial load.
   useEffect(() => {
     if (!displayCanvasRef.current || !gridState || isInitialized) return;
 
@@ -129,34 +116,26 @@ const Canvas = () => {
     setIsInitialized(true);
   }, [gridState, centerCanvas, isInitialized]);
 
-  /**
-   * Render main canvas (pixels and grid)
-   */
+  // Render the main canvas: visible pixels, reference overlay, and grid lines.
   useEffect(() => {
     if (!displayCanvasRef.current || !gridState) return;
 
     const canvas = displayCanvasRef.current;
     const ctx = canvas.getContext('2d');
 
-    // Set canvas size to match container
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
 
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Save context state
     ctx.save();
 
-    // Apply camera transform (zoom and pan)
+    // Camera transform (zoom + pan).
     ctx.translate(offset.x, offset.y);
     ctx.scale(zoom, zoom);
 
-    // Get visible area for optimization
     const { startX, startY, endX, endY } = getVisibleArea();
 
-    // Render visible pixels
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const color = gridState[y]?.[x] || '#FFFFFF';
@@ -165,19 +144,16 @@ const Canvas = () => {
       }
     }
 
-    // Draw reference image overlay at its canvas-pixel rect
     if (refImageObj) {
       ctx.globalAlpha = refImageOpacity;
       ctx.drawImage(refImageObj, refImageRect.x, refImageRect.y, refImageRect.w, refImageRect.h);
       ctx.globalAlpha = 1;
     }
 
-    // Restore context before drawing grid (draw grid in screen space)
     ctx.restore();
 
-    // Draw grid lines at high zoom (in screen space for crisp 1px lines).
-    // Soft gray that fades in between zoom 5 → 25 so the grid is never
-    // visually loud, just barely readable when you're working close.
+    // Grid lines, drawn in screen space for crisp 1px strokes. Alpha fades in
+    // between zoom 5 → 25 so the grid stays subtle.
     if (shouldShowGrid) {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       const baseAlpha = Math.min(0.16, Math.max(0.05, (zoom - 5) / 24));
@@ -186,13 +162,11 @@ const Canvas = () => {
         : `rgba(40, 40, 40, ${baseAlpha})`;
       ctx.lineWidth = 1;
 
-      // Calculate screen coordinates for grid lines
       const gridStartX = Math.floor(offset.x + startX * zoom);
       const gridStartY = Math.floor(offset.y + startY * zoom);
       const gridEndX = Math.ceil(offset.x + endX * zoom);
       const gridEndY = Math.ceil(offset.y + endY * zoom);
 
-      // Vertical lines
       for (let x = startX; x <= endX; x++) {
         const screenX = Math.floor(offset.x + x * zoom) + 0.5; // +0.5 for crisp lines
         ctx.beginPath();
@@ -201,7 +175,6 @@ const Canvas = () => {
         ctx.stroke();
       }
 
-      // Horizontal lines
       for (let y = startY; y <= endY; y++) {
         const screenY = Math.floor(offset.y + y * zoom) + 0.5; // +0.5 for crisp lines
         ctx.beginPath();
@@ -212,39 +185,31 @@ const Canvas = () => {
     }
   }, [gridState, zoom, offset, shouldShowGrid, getVisibleArea, refImageObj, refImageOpacity, refImageRect]);
 
-  /**
-   * Render brush preview on separate overlay canvas (reduces full redraws)
-   */
+  // Render the brush preview on its own overlay so hovering doesn't redraw all pixels.
   useEffect(() => {
     if (!previewCanvasRef.current || !displayCanvasRef.current) return;
 
     const canvas = previewCanvasRef.current;
     const ctx = canvas.getContext('2d');
 
-    // Match size with main canvas
     const rect = displayCanvasRef.current.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
 
-    // Clear preview canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw brush preview on hover
     if (hoverPixel) {
       ctx.save();
-
-      // Apply same camera transform
       ctx.translate(offset.x, offset.y);
       ctx.scale(zoom, zoom);
 
-      // Calculate brush preview bounds (clamped to canvas)
       const previewX = hoverPixel.x;
       const previewY = hoverPixel.y;
       const previewWidth = Math.min(brushSize, CANVAS_SIZE - previewX);
       const previewHeight = Math.min(brushSize, CANVAS_SIZE - previewY);
 
       if (previewWidth > 0 && previewHeight > 0) {
-        // Check if any pixel under the brush hits a blocked auction zone
+        // Red when any pixel under the brush is in a blocked auction zone.
         let blocked = false;
         for (let dy = 0; dy < previewHeight && !blocked; dy++) {
           for (let dx = 0; dx < previewWidth && !blocked; dx++) {
@@ -252,18 +217,16 @@ const Canvas = () => {
           }
         }
 
-        // Fill: selected color preview, dimmed red when blocked
         ctx.globalAlpha = blocked ? 0.35 : 0.55;
         ctx.fillStyle = blocked ? '#E53E3E' : selectedColor;
         ctx.fillRect(previewX, previewY, previewWidth, previewHeight);
         ctx.globalAlpha = 1;
 
-        // Outline: subtle dark in normal mode, bold red when blocked
         ctx.strokeStyle = blocked ? '#E53E3E' : 'rgba(0, 0, 0, 0.65)';
         ctx.lineWidth = blocked ? 0.18 : 0.08;
         ctx.strokeRect(previewX, previewY, previewWidth, previewHeight);
 
-        // Subtle white inner outline for visibility on dark pixels
+        // White inner outline for visibility on dark pixels.
         if (!blocked) {
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
           ctx.lineWidth = 0.05;
@@ -275,10 +238,7 @@ const Canvas = () => {
     }
   }, [hoverPixel, brushSize, selectedColor, zoom, offset, CANVAS_SIZE, auctionBlockReason]);
 
-  /**
-   * Render auction zone border on a dedicated overlay canvas.
-   * Gold pulsing border during active auction; solid purple after winner is set.
-   */
+  // Render the auction zone border: gold pulsing while live, solid purple once won.
   useEffect(() => {
     const canvas = auctionCanvasRef.current;
     const displayCanvas = displayCanvasRef.current;
@@ -294,7 +254,7 @@ const Canvas = () => {
     if (!auctionState) return;
 
     const { active, sectionX, sectionY, endTs, winner } = auctionState;
-    const now = Date.now() / 1000; // seconds
+    const now = Date.now() / 1000;
     const auctionLive = active && now < endTs;
     const zoneWon = !active && winner && winner !== '';
 
@@ -302,20 +262,16 @@ const Canvas = () => {
 
     const ZONE = 20;
 
-    /**
-     * Draw the full auction zone: dark overlay + animated border + text.
-     * @param {number} borderAlpha  0–1, pulsed for live auctions
-     */
+    // Draw the auction zone (borderAlpha is pulsed 0–1 for live auctions).
     const drawZone = (borderAlpha) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // ── World-space pass ─────────────────────────────────────────────
+      // World-space pass.
       ctx.save();
       ctx.translate(offset.x, offset.y);
       ctx.scale(zoom, zoom);
 
       if (auctionLive) {
-        // Live auction: gold fill + animated gold border (existing behavior)
         ctx.fillStyle = 'rgba(229, 181, 71, 0.28)';
         ctx.fillRect(sectionX, sectionY, ZONE, ZONE);
 
@@ -323,13 +279,12 @@ const Canvas = () => {
         ctx.lineWidth = 4 / zoom;
         ctx.strokeRect(sectionX + 0.5 / zoom, sectionY + 0.5 / zoom, ZONE, ZONE);
       } else if (zoneWon) {
-        // Zone won: margin only — NO fill (so the winner's painted pixels
-        // remain fully visible), NO lock icon, NO "AUCTION ZONE" label.
+        // Border only — no fill, so the winner's painted pixels stay visible.
         ctx.strokeStyle = 'rgba(160, 80, 255, 1.0)';
         ctx.lineWidth = 3 / zoom;
         ctx.strokeRect(sectionX, sectionY, ZONE, ZONE);
 
-        // Gold L-shaped corner ticks for emphasis
+        // Gold L-shaped corner ticks.
         const tick = 3;
         ctx.lineWidth = 5 / zoom;
         ctx.strokeStyle = 'rgba(229, 181, 71, 1.0)';
@@ -350,9 +305,8 @@ const Canvas = () => {
 
       ctx.restore();
 
-      // ── Screen-space pass: lock icon + labels ────────────────────────
-      // ONLY rendered during the live auction. Once the zone is won, the
-      // winner's artwork lives inside that frame — no lock, no label.
+      // Screen-space pass: lock icon + labels, only while the auction is live
+      // (once won, the winner's artwork fills the frame instead).
       if (!auctionLive) return;
 
       const zoneScreenW = ZONE * zoom;
@@ -402,7 +356,7 @@ const Canvas = () => {
     }
   }, [auctionState, zoom, offset]);
 
-  // Disable context menu on right click
+  // Suppress the context menu so right-drag can pan.
   useEffect(() => {
     const canvas = displayCanvasRef.current;
     if (!canvas) return;
@@ -424,7 +378,6 @@ const Canvas = () => {
         boxShadow: 'inset 0 0 60px rgba(0,0,0,0.08), inset 0 0 0 1px rgb(var(--border))',
       }}
     >
-      {/* Main pixel canvas */}
       <canvas
         ref={(el) => {
           displayCanvasRef.current = el;
@@ -446,7 +399,6 @@ const Canvas = () => {
         style={{ imageRendering: 'pixelated' }}
       />
 
-      {/* Auction zone border overlay */}
       <canvas
         ref={auctionCanvasRef}
         className="absolute inset-0 pointer-events-none"
@@ -460,7 +412,6 @@ const Canvas = () => {
         style={{ imageRendering: 'pixelated' }}
       />
 
-      {/* Hover coordinates */}
       {hoverPixel && (
         <div className="absolute top-4 left-4 card px-3 py-1.5 pointer-events-none">
           <p className="text-xs font-mono text-textSecondary">
@@ -469,12 +420,10 @@ const Canvas = () => {
         </div>
       )}
 
-      {/* Zoom level */}
       <div className="absolute top-4 right-4 card px-3 py-1.5 pointer-events-none">
         <p className="text-xs font-mono text-textSecondary">{zoom.toFixed(1)}×</p>
       </div>
 
-      {/* Loading State */}
       {!gridState && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="text-center">
@@ -484,11 +433,8 @@ const Canvas = () => {
         </div>
       )}
 
-      {/* Epoch-locked overlay — between endEpoch and the next
-          startEpochWithAuction. Semi-opaque so the previous epoch's
-          artwork stays partly visible underneath. `pointer-events-auto`
-          swallows clicks so the canvas can't be reached, and useCanvas
-          still emits a one-shot warning toast if the user does try. */}
+      {/* Epoch-locked overlay (between endEpoch and the next epoch). Semi-opaque
+          and pointer-events-auto so clicks can't reach the canvas underneath. */}
       {paintLocked && gridState && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[2px] pointer-events-auto cursor-not-allowed">
           <div className="card px-6 py-5 max-w-sm text-center space-y-2">
@@ -501,7 +447,6 @@ const Canvas = () => {
         </div>
       )}
 
-      {/* Instructions */}
       <div className="absolute bottom-4 left-4 card px-4 py-3 text-xs text-textSecondary space-y-1.5">
         <p><span className="text-textPrimary font-semibold">Left + drag</span> &mdash; paint</p>
         <p><span className="text-textPrimary font-semibold">Right + drag</span> &mdash; pan</p>

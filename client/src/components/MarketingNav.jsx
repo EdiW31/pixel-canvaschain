@@ -7,15 +7,8 @@ import { useApp } from '../context/AppContext';
 
 const ADMIN_ADDRESS = import.meta.env.VITE_ADMIN_ADDRESS;
 
-/**
- * MarketingNav — full-width flex navbar.
- *
- * Layout: [🎨 logo] [links…] ——————————— [epoch] [wallet] | [theme]
- *
- * Logo is on the far left, nav links sit right beside it, controls
- * are pushed to the far right with ml-auto. Everything is vertically
- * centred inside the 80px tall bar.
- */
+// MarketingNav — full-width navbar: logo + links on the left, epoch/wallet/theme
+// controls pushed right with ml-auto.
 const MarketingNav = () => {
   const { wallet, auctionState } = useApp();
   const navigate = useNavigate();
@@ -76,7 +69,6 @@ const MarketingNav = () => {
           }}
         >
 
-          {/* ── Logo badge ─────────────────────────────────────────────── */}
           <button
             onClick={() => navigate('/')}
             title="Home"
@@ -95,7 +87,7 @@ const MarketingNav = () => {
             🎨
           </button>
 
-          {/* ── Nav links — sit right after the logo ───────────────────── */}
+          {/* Nav links — sit right after the logo */}
           <div className="hidden md:flex items-center" style={{ gap: 30 }}>
             {links.map(({ to, label, live }) => (
               <NavRouteLink
@@ -112,7 +104,7 @@ const MarketingNav = () => {
             ))}
           </div>
 
-          {/* ── Controls — pushed to far right ─────────────────────────── */}
+          {/* Controls — pushed to far right */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <EpochBanner className="hidden lg:inline-flex" />
 
@@ -147,7 +139,7 @@ const MarketingNav = () => {
   );
 };
 
-/* ─── Route-aware link ─────────────────────────────────────────────────────── */
+// Route-aware link
 const NavRouteLink = ({ to, active, children, linkColor, activeColor, hoverColor, live }) => {
   const [hovered, setHovered] = useState(false);
   return (

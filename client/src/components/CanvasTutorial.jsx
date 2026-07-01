@@ -1,17 +1,9 @@
 import { useState, useEffect } from 'react';
 import PixelMan from './PixelMan';
 
-/**
- * One-time PixelMan-led tour of the canvas menu options.
- *
- * Triggered by the WelcomePage's "Open" / "Start painting" CTAs the first
- * time per session. Gated externally by sessionStorage so this component
- * just renders if `open` is true and reports back via onComplete / onSkip.
- *
- * Skip = continue to /login anyway (the user did click Open, so honour the
- * intent). On either button press we set the sessionStorage flag so the
- * tour doesn't nag again this session.
- */
+// One-time PixelMan-led tour of the canvas, shown the first time per session
+// (gated by sessionStorage). Renders when `open` is true and reports back via
+// onComplete / onSkip; Skip still continues to /login.
 const STORAGE_KEY = 'canvas_tutorial_seen';
 
 const STEPS = [
@@ -80,7 +72,6 @@ const CanvasTutorial = ({ open, onComplete, onSkip }) => {
           boxShadow: '0 10px 40px rgba(0,0,0,0.25)',
         }}
       >
-        {/* Skip button (top right) */}
         <button
           onClick={() => finish('skip')}
           style={{
@@ -94,7 +85,6 @@ const CanvasTutorial = ({ open, onComplete, onSkip }) => {
           Skip tour →
         </button>
 
-        {/* Step counter */}
         <p style={{
           fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
           color: 'rgb(var(--text-muted))', textTransform: 'uppercase',
@@ -103,9 +93,7 @@ const CanvasTutorial = ({ open, onComplete, onSkip }) => {
           Step {step + 1} of {STEPS.length}
         </p>
 
-        {/* Bubble + PixelMan row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 22 }}>
-          {/* Speech bubble */}
           <div
             style={{
               flex: 1,
@@ -136,13 +124,11 @@ const CanvasTutorial = ({ open, onComplete, onSkip }) => {
             />
           </div>
 
-          {/* PixelMan with gentle float */}
           <div style={{ animation: 'ct-float 2.4s ease-in-out infinite', flexShrink: 0 }}>
             <PixelMan px={10} tilt={8} />
           </div>
         </div>
 
-        {/* Progress dots */}
         <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 16 }}>
           {STEPS.map((_, i) => (
             <span
@@ -158,7 +144,6 @@ const CanvasTutorial = ({ open, onComplete, onSkip }) => {
           ))}
         </div>
 
-        {/* Buttons */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           {step > 0 && (
             <button

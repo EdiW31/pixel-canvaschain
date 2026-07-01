@@ -28,10 +28,9 @@ const LoginPage = () => {
 
       <div className="flex-1 grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto w-full px-6 pb-20 items-center">
 
-        {/* ─── LEFT: brand + mini canvas ──────────────────────────── */}
+        {/* LEFT: brand + mini canvas */}
         <div className="hidden lg:flex flex-col gap-8 animate-fade-in">
 
-          {/* Header */}
           <div className="relative">
             <Dot color="#E53E3E" style={{ top: -10, left: '70%' }} />
             <Dot color="#4299E1" style={{ top: 30,  left: '80%' }} />
@@ -55,7 +54,6 @@ const LoginPage = () => {
             </p>
           </div>
 
-          {/* Trust items */}
           <ul className="space-y-3 text-sm text-textSecondary">
             <TrustItem accent="#E53E3E">
               <strong className="text-textPrimary font-semibold">Zero account creation.</strong>{' '}
@@ -73,14 +71,11 @@ const LoginPage = () => {
 
         </div>
 
-        {/* ─── RIGHT: action card ──────────────────────────────────── */}
         <div className="w-full max-w-md mx-auto lg:mx-0 animate-slide-up">
           <div className="card p-8 sm:p-10 relative overflow-hidden">
-            {/* Coloured top bar */}
             <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl"
               style={{ background: 'linear-gradient(90deg,#E53E3E,#ED8936,#ECC94B,#48BB78,#4299E1,#9F7AEA,#ED64A6)' }} />
 
-            {/* Mobile-only mini-hero */}
             <div className="lg:hidden text-center mb-6 mt-2">
               <div className="w-14 h-14 rounded-2xl bg-primary mx-auto mb-4 flex items-center justify-center text-2xl shadow-soft">🎨</div>
               <h1 className="font-heading text-3xl font-semibold tracking-tight">Connect wallet</h1>
@@ -92,7 +87,6 @@ const LoginPage = () => {
               <p className="text-sm text-textSecondary">Pick a wallet to continue. We'll never ask for your seed phrase.</p>
             </div>
 
-            {/* Connect button */}
             <button
               onClick={handleConnect}
               disabled={isConnecting}
@@ -105,7 +99,6 @@ const LoginPage = () => {
               )}
             </button>
 
-            {/* Supported wallets */}
             <div className="mt-8 pt-6 border-t border-border">
               <p className="text-xs uppercase tracking-wider text-textMuted font-semibold mb-4 text-center">
                 Supported wallets
@@ -123,7 +116,6 @@ const LoginPage = () => {
             </p>
           </div>
 
-          {/* New to wallets? */}
           <details className="mt-5 group">
             <summary className="cursor-pointer text-sm text-textMuted hover:text-textSecondary text-center select-none transition-colors">
               ▸ New to MultiversX wallets?
@@ -147,7 +139,7 @@ const LoginPage = () => {
   );
 };
 
-/* ─── Sub-components ──────────────────────────────────────────────────────── */
+// Sub-components
 
 const Spinner = () => (
   <span className="inline-block w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin" />

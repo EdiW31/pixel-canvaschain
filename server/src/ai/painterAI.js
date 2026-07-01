@@ -1,20 +1,9 @@
 /**
- * Painter NFT co-creation pipeline.
- *
- * Two-step:
- *   1. Vision model (gpt-4o) captions the canvas in one sentence.
- *   2. Image model (gpt-image-1) generates a 1024×1024 reinterpretation
- *      using the caption as the prompt.
- *
- * Files written next to the existing per-epoch snapshots so the
- * `GET /snapshots/epoch/:n/painter.png` route can serve them once they
- * exist. Until then, the route falls back to `canvas.png` — the NFT URI
- * stays stable, the file behind it just appears later.
- *
- * Always fire-and-forget. Any failure logs but never throws upstream;
- * the painter NFT silently falls back to the raw pixel snapshot.
+ * Painter NFT co-creation pipeline: gpt-4o captions the canvas, then
+ * gpt-image-1 reinterprets it from that caption. Output files sit beside the
+ * per-epoch snapshots. Fire-and-forget — any failure logs and falls back to
+ * the raw pixel snapshot rather than throwing.
  */
-
 import fs from 'fs';
 import path from 'path';
 import { vision, generateImage, isAIAvailable } from './aiClient.js';
@@ -30,13 +19,7 @@ const STYLE_SUFFIX =
   'cinematic lighting, and clean composition. Preserve the original ' +
   'subject and layout. No text, no watermarks.';
 
-/**
- * Run the full painter pipeline for one epoch.
- *
- * @param {number} epoch          The epoch number being finalised.
- * @param {string} snapshotsDir   Absolute path to server/snapshots/.
- * @returns {Promise<{caption: string, imagePath: string} | null>}
- */
+// Run the full painter pipeline for one epoch (snapshotsDir = server/snapshots/).
 export async function generatePainterArtifact(epoch, snapshotsDir) {
   if (!isAIAvailable()) {
     console.log(`[painterAI] OPENAI_API_KEY not set — skipping epoch ${epoch}`);
@@ -52,7 +35,7 @@ export async function generatePainterArtifact(epoch, snapshotsDir) {
   const captionPath = path.join(snapshotsDir, `epoch-${epoch}-caption.txt`);
   const imagePath   = path.join(snapshotsDir, `epoch-${epoch}-ai.png`);
 
-  // Step 1 — caption
+  // Step 1 — caption the canvas.
   let caption;
   try {
     const buf = fs.readFileSync(canvasPath);
@@ -66,7 +49,7 @@ export async function generatePainterArtifact(epoch, snapshotsDir) {
     return null;
   }
 
-  // Step 2 — image
+  // Step 2 — generate the image from the caption.
   try {
     const prompt = caption + STYLE_SUFFIX;
     console.log(`[painterAI] epoch ${epoch}: generating image…`);
@@ -76,7 +59,6 @@ export async function generatePainterArtifact(epoch, snapshotsDir) {
     return { caption, imagePath };
   } catch (err) {
     console.error(`[painterAI] epoch ${epoch} image gen failed:`, err?.message ?? err);
-    // Caption is still on disk — NftPage will at least show that.
     return null;
   }
 }

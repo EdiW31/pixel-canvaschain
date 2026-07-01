@@ -36,10 +36,8 @@ const ShopPage = () => {
 
       <main className="max-w-7xl mx-auto px-6 py-12">
 
-        {/* ─── Page header ─────────────────────────────────────────── */}
         <div className="mb-10 animate-fade-in">
           <div className="relative overflow-hidden rounded-2xl bg-backgroundAlt border border-border px-8 pt-10 pb-8 mb-8">
-            {/* Paint-drop decorations */}
             <Dot color="#E53E3E" style={{ top: 18,  left:  '4%'  }} />
             <Dot color="#4299E1" style={{ top: 40,  right: '6%'  }} />
             <Dot color="#48BB78" style={{ bottom: 20, left: '60%' }} />
@@ -72,7 +70,6 @@ const ShopPage = () => {
             </div>
           </div>
 
-          {/* Balance strip */}
           <div className="card p-5 flex flex-wrap items-center gap-x-8 gap-y-3">
             <BalanceItem label="Wallet balance" value={wallet.egld} unit="EGLD" />
             <Divider />
@@ -83,14 +80,12 @@ const ShopPage = () => {
           </div>
         </div>
 
-        {/* ─── Tier cards ──────────────────────────────────────────── */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {TIERS.map((tier) => (
             <ShopCard key={tier.name} tier={tier} accentColor={tier.dot} />
           ))}
         </div>
 
-        {/* ─── Info row ────────────────────────────────────────────── */}
         <div className="mt-16 grid md:grid-cols-3 gap-5">
           <InfoCard
             accent={INFO_COLORS[0]}
@@ -115,10 +110,9 @@ const ShopPage = () => {
 
       </main>
 
-      {/* ─── Charity voting — full width ─────────────────────────────── */}
+      {/* Charity voting — full width */}
       {epochInfo.epoch > 0 && (
         <div data-theme="light" className="w-full relative overflow-hidden py-16 bg-primary">
-          {/* Decorative dots */}
           <div className="absolute top-5 right-10 w-4 h-4 rounded-full bg-primaryDark/20" />
           <div className="absolute bottom-8 left-14 w-3 h-3 rounded-full bg-primaryDark/15" />
           <div className="absolute top-10 left-8 w-2 h-2 rounded-full bg-primaryDark/25" />
@@ -187,7 +181,7 @@ const ShopPage = () => {
   );
 };
 
-/* ─── Sub-components ──────────────────────────────────────────────────────── */
+// Sub-components
 
 const BalanceItem = ({ label, value, unit, emphasis }) => (
   <div>
@@ -203,7 +197,6 @@ const Divider = () => <div className="hidden sm:block w-px h-10 bg-border" />;
 
 const InfoCard = ({ accent, tag, title, body, charity }) => (
   <div className="card p-6 overflow-hidden relative">
-    {/* Coloured top bar */}
     <div className="absolute top-0 left-0 right-0 h-1 rounded-t-xl" style={{ background: accent }} />
     <div className={`${charity ? 'pill-charity' : 'pill'} mb-3 mt-2`}>{tag}</div>
     <h3 className="font-heading text-lg font-semibold mb-2">{title}</h3>

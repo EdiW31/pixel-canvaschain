@@ -14,11 +14,10 @@ const PIXEL_TOKEN_ID = import.meta.env.VITE_PIXEL_TOKEN_ID ?? 'PIXEL-a7cad6';
 const MIN_BRUSH = 1;
 const MAX_BRUSH = 4;
 
-// Encode a string as hex
 const toHex = (str) => Array.from(new TextEncoder().encode(str))
   .map((b) => b.toString(16).padStart(2, '0')).join('');
 
-// Ensure hex string has even length
+// Pad to even length (required for tx data hex args).
 const evenHex = (hex) => (hex.length % 2 === 0 ? hex : '0' + hex);
 
 const Toolbar = () => {
@@ -36,7 +35,7 @@ const Toolbar = () => {
   const handleUndo = () => {
     const reverts = undoPendingPixels(); // reverts local gridState + clears pending
     if (reverts.length && socket && isConnected) {
-      // Tell server to restore original colors so other clients see the revert
+      // Restore original colors on the server so other clients see the revert.
       socket.emit('pixels:paint', { pixels: reverts });
     }
     if (reverts.length) {
@@ -44,12 +43,11 @@ const Toolbar = () => {
     }
   };
 
-  // Reset txSent once the pending section fully clears (pixels:committed fired)
   useEffect(() => {
     if (pendingCount === 0) setTxSent(false);
   }, [pendingCount]);
 
-  // Keyboard shortcuts: [/] cycle brush, R reset view, +/- zoom
+  // Keyboard shortcuts: [ ] brush size, R reset view, +/- zoom.
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -83,16 +81,16 @@ const Toolbar = () => {
     try {
       const pixels = Array.from(pendingPixels.values());
 
-      // Worst-case amount: assume every pixel is an overpaint (costs 2 PIXEL each).
-      // The contract refunds any excess automatically.
+      // Worst-case amount: assume every pixel is an overpaint (2 PIXEL each).
+      // The contract refunds any excess.
       const amount = BigInt(pixels.length * 2);
       const amountHex = evenHex(amount.toString(16));
 
-      // Encode ManagedVec<PixelData>: concatenation of (x u32 BE)(y u32 BE)(color u32 BE) per pixel
+      // ManagedVec<PixelData>: per pixel, (x u32 BE)(y u32 BE)(color u32 BE),
+      // where color is '#RRGGBB' → uint32 with a zero upper byte.
       const pixelDataHex = pixels.map((p) => {
         const x = p.x.toString(16).padStart(8, '0');
         const y = p.y.toString(16).padStart(8, '0');
-        // color is '#RRGGBB' → uint32 (upper byte = 0)
         const colorHex = p.color.replace('#', '').padStart(8, '0');
         return x + y + colorHex;
       }).join('');
@@ -101,8 +99,8 @@ const Toolbar = () => {
       const data =
         `ESDTTransfer@${toHex(PIXEL_TOKEN_ID)}@${amountHex}@${toHex('paintPixels')}@${pixelDataHex}`;
 
-      // Base cost covers ESDT validation + refund path; 3M per pixel covers two
-      // storage reads/writes + potential royalty ESDT send per pixel.
+      // Base gas covers ESDT validation + refund; 3M per pixel covers its storage
+      // reads/writes and a possible royalty ESDT send.
       const gasLimit = BigInt(Math.max(30_000_000, 20_000_000 + pixels.length * 3_000_000));
 
       const tx = new Transaction({
@@ -121,34 +119,25 @@ const Toolbar = () => {
 
       const txHash = signedTxs[0].getHash?.().toString() ?? '';
 
-      // Clear pending optimistically the moment the tx is broadcast. The
-      // tx is irreversible at this point — the user has signed and the
-      // wallet has handed it back — so leaving "Submit & Pay" visible
-      // would mislead the user (and let them double-sign on the next
-      // click). The server's `pixels:committed` ack used to be the only
-      // path that cleared this list; that's now redundant insurance —
-      // critical because some wallet variants return a signed tx whose
-      // `.getHash()` is missing, so the server-side ack flow never runs.
+      // Clear pending the moment the tx is broadcast: it's irreversible now, so
+      // keeping "Submit & Pay" visible would mislead and allow a double-sign.
+      // Doesn't rely on the server ack, since some wallets return no tx hash.
       clearPendingPixels();
       showToast(`${pixels.length} pixel${pixels.length !== 1 ? 's' : ''} submitted!`, 'success');
 
-      // Notify server with the pixel list so its own watcher persists/reverts
-      // independently of whether this tab stays open.
+      // Let the server's own watcher persist/revert regardless of this tab.
       if (txHash) notifyPixelsSubmitted(txHash, pixels);
 
-      // Poll devnet API for tx outcome — if it fails, revert pixels client + server.
-      // Run in background so the UI stays responsive.
-      // IMPORTANT: pass the full pixels (including color), not a stripped {x,y}.
-      // The success path emits `pixels:confirm` with these objects, which the
-      // server uses to write to SQLite — colorless pixels fail validation and
-      // never persist (the original cause of the "pixels don't save" bug).
+      // Poll devnet for the outcome in the background. Pass FULL pixels (with
+      // color): the success path emits pixels:confirm with these, and colorless
+      // pixels fail server validation and never persist.
       if (txHash) {
         watchPaintTx(txHash, pixels).catch((err) => {
           console.warn('[watchPaintTx] error:', err?.message);
         });
       }
 
-      // Refresh PIXEL balance after devnet confirms (~8s)
+      // Refresh PIXEL balance after devnet confirms.
       setTimeout(refetchPixelBalance, 8_000);
       setTimeout(refetchPixelBalance, 20_000);
     } catch (err) {
@@ -163,7 +152,6 @@ const Toolbar = () => {
     <div className="w-52 card p-3 space-y-3">
       <h3 className="font-heading text-sm font-semibold">Tools</h3>
 
-      {/* ─── Pending pixels / Submit & Pay ─────────────────────────── */}
       {pendingCount > 0 && (
         <Section label="Pending">
           <div className="bg-primaryLight/50 border border-primary/30 rounded-lg p-2.5 space-y-2">
@@ -192,10 +180,7 @@ const Toolbar = () => {
                 'Submit & Pay'
               )}
             </button>
-            {/* Undo is only available BEFORE the user signs. Once Submit is
-                clicked the tx is broadcast — undoing client-side wouldn't
-                refund the tokens, so we hide the button entirely to avoid
-                misleading the user. */}
+            {/* Undo only before signing — once broadcast it can't refund tokens. */}
             {!isSubmitting && !txSent && (
               <button
                 onClick={handleUndo}
@@ -209,7 +194,6 @@ const Toolbar = () => {
         </Section>
       )}
 
-      {/* ─── Shortcuts ─────────────────────────────────────────────── */}
       <Section label="Shortcuts">
         <div className="space-y-1 text-xs text-textSecondary bg-backgroundAlt rounded-md p-2">
           <Shortcut keys={['[', ']']} desc="Brush size" />
@@ -218,7 +202,6 @@ const Toolbar = () => {
         </div>
       </Section>
 
-      {/* ─── Zoom ──────────────────────────────────────────────────── */}
       <Section label="Zoom">
         <div className="flex items-center gap-2 mb-1.5">
           <IconBtn onClick={zoomOut} disabled={zoom <= minZoom} title="Zoom out (-)">−</IconBtn>
@@ -235,7 +218,6 @@ const Toolbar = () => {
         </div>
       </Section>
 
-      {/* ─── Brush ─────────────────────────────────────────────────── */}
       <Section label="Brush">
         <div className="flex items-center justify-center mb-2 h-10 bg-backgroundAlt rounded-md">
           <div
@@ -271,12 +253,10 @@ const Toolbar = () => {
         </p>
       </Section>
 
-      {/* ─── View ──────────────────────────────────────────────────── */}
       <button onClick={resetView} className="btn-secondary w-full text-sm">
         <RecenterIcon /> Reset view
       </button>
 
-      {/* ─── Cursor ────────────────────────────────────────────────── */}
       <Section label="Cursor">
         <div className="bg-backgroundAlt rounded-md p-2">
           {hoverPixel ? (
@@ -293,7 +273,7 @@ const Toolbar = () => {
   );
 };
 
-/* ─── Sub-components ────────────────────────────────────────────────────── */
+// Sub-components
 
 const Section = ({ label, children }) => (
   <div>
