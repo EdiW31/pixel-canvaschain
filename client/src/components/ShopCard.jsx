@@ -5,16 +5,8 @@ import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/Transactio
 import { useApp } from '../context/AppContext';
 import { getDappProvider } from '../hooks/useWallet';
 
-/**
- * ShopCard — single tier card.
- *
- * Sequence on purchase:
- *   1. Build sdk-core Transaction (value = tier price, data = "buyPixels")
- *   2. Sign via the DappProvider wrapper
- *   3. Broadcast via TransactionManager
- *   4. Overlay 15s countdown; poll credits aggressively after broadcast
- */
-
+// ShopCard — single tier card. On purchase: build a buyPixels Transaction, sign
+// via the DappProvider, broadcast, then run a 15s countdown polling the balance.
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 const CHAIN_ID = import.meta.env.VITE_CHAIN_ID ?? 'D';
 
@@ -112,14 +104,12 @@ const ShopCard = ({ tier }) => {
         ${isFeatured ? 'ring-2 ring-primary shadow-card' : 'hover:shadow-card'}
       `}
     >
-      {/* Badge */}
       {isFeatured && (
         <div className="absolute -top-3 left-6 pill">
           {tier.badge}
         </div>
       )}
 
-      {/* Tier name + cost */}
       <div className="mb-5">
         <h3 className="font-heading text-2xl font-semibold mb-3">{tier.name}</h3>
         <div className="flex items-baseline gap-1.5">
@@ -128,7 +118,6 @@ const ShopCard = ({ tier }) => {
         </div>
       </div>
 
-      {/* Pixels */}
       <div className="space-y-2 mb-5 pb-5 border-b border-border">
         <Row label="Base pixels" value={tier.basePixels.toLocaleString()} />
         {tier.bonusPixels > 0 && (
@@ -141,13 +130,11 @@ const ShopCard = ({ tier }) => {
         <Row label="Total" value={tier.total.toLocaleString()} bold />
       </div>
 
-      {/* Charity hint */}
       <div className="flex items-center gap-2 text-xs text-charityDark bg-charityLight rounded-md px-3 py-2 mb-5">
         <span>♥</span>
         <span><strong>{charityShare}</strong> EGLD will go to charity.</span>
       </div>
 
-      {/* CTA */}
       <button
         onClick={handlePurchase}
         disabled={!canAfford || isPurchasing}
@@ -170,7 +157,6 @@ const ShopCard = ({ tier }) => {
         ) : !canAfford ? 'Insufficient EGLD' : 'Buy PIXEL tokens'}
       </button>
 
-      {/* ─── Waiting / confirmed overlay ─────────────────────────────── */}
       {confirmState !== 'idle' && (
         <div className="absolute inset-0 rounded-xl bg-surface/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-10 animate-fade-in">
           {confirmState === 'waiting' ? (

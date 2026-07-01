@@ -1,14 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import PixelMan from './PixelMan';
 
-/**
- * AuctionFloatingCta — fixed bottom-LEFT pixelman that links to /auction.
- *
- * Used on WelcomePage with section-aware hiding (hide on hero, vote, bidding
- * since each of those already has its own contextual element). Pass
- * `activeSection` from the parent's IntersectionObserver and the list of
- * section IDs to hide on via `hideOnSections`.
- */
+// AuctionFloatingCta — fixed bottom-left pixelman linking to /auction. Hidden on
+// the sections in `hideOnSections` (which have their own CTA), per `activeSection`.
 const AuctionFloatingCta = ({ hideOnSections = [], activeSection = null }) => {
   const navigate = useNavigate();
 
@@ -25,7 +19,6 @@ const AuctionFloatingCta = ({ hideOnSections = [], activeSection = null }) => {
       onClick={() => navigate('/auction')}
       title="Go to Auction"
     >
-      {/* Speech bubble */}
       <div
         className="relative px-4 py-2.5 rounded-2xl shadow-lg"
         style={{

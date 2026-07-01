@@ -5,9 +5,7 @@ class UserManager {
     console.log('✅ User manager initialized');
   }
 
-  /**
-   * Register or refresh a wallet session.
-   */
+  // Register or refresh a wallet session.
   joinUser(address) {
     const existing = this.users.get(address);
     if (existing) {
@@ -30,10 +28,7 @@ class UserManager {
     return this.users.has(address);
   }
 
-  /**
-   * Record a paint action (kept for stats / analytics; no longer used for
-   * throttling — PIXEL ESDT supply enforces capacity).
-   */
+  // Record a paint action (stats only; capacity is enforced by PIXEL supply).
   recordPaint(address, x, y, color) {
     const user = this.users.get(address);
     if (!user) return;

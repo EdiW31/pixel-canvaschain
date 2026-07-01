@@ -6,11 +6,7 @@ import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGet
 
 const SocketContext = createContext();
 
-/**
- * Pull a human-readable revert reason out of a devnet transaction payload.
- * MultiversX surfaces SC errors either in `logs.events` (topic/data) or in the
- * `smartContractResults[].returnMessage`. Returns null if nothing useful found.
- */
+// Pull a human-readable SC revert reason out of a devnet tx payload, or null.
 function extractRevertReason(data) {
   try {
     const scr = data?.smartContractResults;
@@ -23,7 +19,6 @@ function extractRevertReason(data) {
     if (Array.isArray(events)) {
       for (const ev of events) {
         if (ev?.identifier === 'signalError' || ev?.identifier === 'internalVMErrors') {
-          // `data` is base64-encoded; the message is usually plain-text inside.
           const raw = ev?.data ? atob(ev.data) : '';
           const m = raw.match(/\[([^\]]+)\]/g);
           if (m && m.length) return m[m.length - 1].replace(/[[\]]/g, '');
@@ -31,7 +26,7 @@ function extractRevertReason(data) {
         }
       }
     }
-  } catch (_) { /* best-effort only */ }
+  } catch (_) {}
   return null;
 }
 
@@ -50,7 +45,7 @@ export const SocketProvider = ({ children }) => {
   const isLoggedIn = useGetIsLoggedIn();
   const { address } = useGetAccountInfo();
 
-  // 1. Create socket once on mount
+  // Create the socket once on mount and wire up all server events.
   useEffect(() => {
     const socketInstance = io('http://localhost:5001', {
       transports: ['websocket', 'polling'],
@@ -74,7 +69,6 @@ export const SocketProvider = ({ children }) => {
       setIsConnected(false);
     });
 
-    // Canvas events
     socketInstance.on('pixel:update', ({ x, y, color }) => {
       updatePixel(x, y, color);
     });
@@ -88,15 +82,12 @@ export const SocketProvider = ({ children }) => {
       console.log('🖼️  Canvas initialized from server');
     });
 
-    // wallet:joined — server confirmed session, load grid
     socketInstance.on('wallet:joined', ({ gridState }) => {
       setGridState(gridState);
     });
 
-    // pixels:committed — server acknowledged PIXEL tx, clear pending.
-    // Also kick the PIXEL balance fetcher so the displayed balance drops
-    // immediately instead of waiting up to 20s for the next poll tick.
-    // Retry after 8s to catch devnet API once the tx is reflected on-chain.
+    // Server acked the PIXEL tx: clear pending and refresh the balance now (plus
+    // a retry once devnet reflects the tx) instead of waiting for the next poll.
     socketInstance.on('pixels:committed', () => {
       clearPendingPixels();
       try { refetchPixelBalance?.(); } catch (_) {}
@@ -119,7 +110,7 @@ export const SocketProvider = ({ children }) => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 2. Emit wallet:join whenever socket connects and user is logged in
+  // Emit wallet:join whenever the socket is connected and the user is logged in.
   useEffect(() => {
     if (socket && isConnected && isLoggedIn && address) {
       console.log('📡 Emitting wallet:join for', address.slice(0, 10), '...');
@@ -127,9 +118,7 @@ export const SocketProvider = ({ children }) => {
     }
   }, [socket, isConnected, isLoggedIn, address]);
 
-  /**
-   * Paint a single pixel — updates canvas visually AND adds to pending.
-   */
+  // Paint a single pixel: broadcast it and add it to the pending set.
   const paintPixel = (x, y, color) => {
     if (!socket || !isConnected) {
       showToast('Not connected to server', 'error');
@@ -140,9 +129,7 @@ export const SocketProvider = ({ children }) => {
     return true;
   };
 
-  /**
-   * Paint multiple pixels (brush mode) — updates canvas AND adds to pending.
-   */
+  // Paint multiple pixels (brush mode): broadcast and add them to pending.
   const paintPixels = (pixels) => {
     if (!socket || !isConnected) {
       showToast('Not connected to server', 'error');
@@ -154,28 +141,17 @@ export const SocketProvider = ({ children }) => {
     return true;
   };
 
-  /**
-   * Notify server that a paintPixels ESDT tx was confirmed on-chain.
-   */
+  // Tell the server a paintPixels tx was signed. Forwarding the pixel list lets
+  // the server's own poller register the tx, surviving the user closing the tab.
   const notifyPixelsSubmitted = (txHash, pixels) => {
     if (socket && isConnected) {
-      // Forward the pixel list so the server can register the tx with its
-      // own poller (resilient to the user closing the tab before
-      // watchPaintTx resolves).
       socket.emit('pixels:submit', { txHash, pixels });
     }
   };
 
-  /**
-   * Poll the devnet API for a paintPixels tx's outcome.
-   *
-   * Pixels are already persisted server-side at paint time (socket paint →
-   * SQLite), so this watcher does NOT remove pixels on failure — it only
-   * surfaces the on-chain result to the user and refreshes the token balance
-   * once the payment actually settles.
-   *
-   * Returns a promise that resolves to 'success' | 'failed' | 'timeout'.
-   */
+  // Poll devnet for a paintPixels tx outcome → 'success' | 'failed' | 'timeout'.
+  // Pixels are already persisted at paint time, so failure doesn't remove them;
+  // this only reports the on-chain result and refreshes the balance on settle.
   const watchPaintTx = async (txHash, pixels) => {
     if (!txHash || !Array.isArray(pixels) || pixels.length === 0) return 'timeout';
     const TX_OK = ['success', 'successful', 'executed'];
@@ -190,17 +166,14 @@ export const SocketProvider = ({ children }) => {
         const data = await res.json();
         const status = data?.status;
         if (TX_OK.includes(status)) {
-          // Belt-and-suspenders: pixels were already saved at paint time, but
-          // re-confirm so the server's pending-tx watcher can clear itself.
+          // Re-confirm so the server's pending-tx watcher can clear itself.
           if (socket && isConnected) {
             socket.emit('pixels:confirm', { pixels, txHash });
           }
-          // Tokens have left the wallet for real — refresh balance now.
           try { refetchPixelBalance?.(); } catch (_) {}
           return 'success';
         }
         if (TX_BAD.includes(status)) {
-          // Surface the on-chain revert reason if the API exposes one.
           const reason = extractRevertReason(data);
           showToast(
             reason
@@ -212,11 +185,9 @@ export const SocketProvider = ({ children }) => {
         }
         // 'pending' / unknown → keep polling
       } catch (err) {
-        // network blip; keep trying
         console.warn('[watchPaintTx]', err?.message);
       }
     }
-    // Timed out waiting for devnet — pixels remain saved; just inform the user.
     showToast('Payment not confirmed yet — pixels saved, balance may update shortly.', 'error');
     return 'timeout';
   };

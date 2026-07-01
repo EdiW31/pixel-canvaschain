@@ -13,7 +13,7 @@ function formatCountdown(msLeft) {
   return `${m}m ${sec}s`;
 }
 
-// ── Pixel art mascot (8 × 11) ────────────────────────────────────────────────
+// Pixel art mascot (8 × 11)
 const T=null, G='#E5B547', GD='#C49628', SK='#FDE68A', EY='#1A1817', RD='#E05A4B', BL='#3B82F6', BK='#1A1817';
 const MASCOT = [
   [T,  T,  GD, GD, GD, GD, T,  T ],
@@ -48,7 +48,7 @@ const PixelGuy = () => (
   </div>
 );
 
-// ── Banner ────────────────────────────────────────────────────────────────────
+// Banner
 const EpochBanner = ({ className = '' }) => {
   const { epochInfo } = useApp();
   const [msLeft, setMsLeft] = useState(0);
@@ -97,7 +97,6 @@ const EpochBanner = ({ className = '' }) => {
           transition: 'box-shadow 0.3s ease',
         }}
       >
-        {/* Mascot with gentle float */}
         <div
           style={{
             display: 'flex', alignItems: 'flex-end',
@@ -110,10 +109,8 @@ const EpochBanner = ({ className = '' }) => {
           <PixelGuy />
         </div>
 
-        {/* Thin divider */}
         <div style={{ width: 1, height: 18, background: 'rgba(27,26,23,0.20)', flexShrink: 0 }} />
 
-        {/* Text */}
         <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
           {epochEnded ? (
             <>

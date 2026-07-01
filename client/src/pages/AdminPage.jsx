@@ -16,7 +16,7 @@ const API_URL = import.meta.env.VITE_API_URL;
 const ADMIN_ADDRESS = import.meta.env.VITE_ADMIN_ADDRESS;
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:5001';
 
-/* ── Encoding helpers ─────────────────────────────────────────────────────── */
+// Encoding helpers
 function b64ToBigInt(b64) {
   if (!b64) return 0n;
   const hex = atob(b64).split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
@@ -58,10 +58,8 @@ async function queryContract(funcName, args = []) {
   return json.data?.data?.returnData ?? [];
 }
 
-// Extract the broadcast tx hash from whatever shape `signTransactions`
-// returned — sdk-dapp providers vary across versions (some return a
-// Transaction with `.getHash()`, some attach a `.hash` after signing).
-// Falls back to '<unknown>' so the explorer link just isn't clickable.
+// Extract the tx hash across sdk-dapp provider versions (.getHash() vs .hash),
+// falling back to '<unknown>'.
 function extractTxHash(signed) {
   const t = Array.isArray(signed) ? signed[0] : signed;
   if (!t) return '<unknown>';
@@ -108,7 +106,7 @@ async function sendTxWithData(wallet, data, gasLimit = 5_000_000n) {
   return txHash;
 }
 
-/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+// Tabs
 const TABS = [
   { id: 'overview', label: 'Overview',    icon: '◈' },
   { id: 'start',    label: 'Start Epoch', icon: '▶' },
@@ -163,7 +161,7 @@ const AdminPage = () => {
 
   useEffect(() => { if (!isConnected) navigate('/login'); }, [isConnected, navigate]);
 
-  /* ── Fetch ─────────────────────────────────────────────────────────────── */
+  // Fetch
   const fetchStats = useCallback(async () => {
     setLoadingStats(true);
     try {
@@ -254,12 +252,8 @@ const AdminPage = () => {
     if (isConnected && wallet.address === ADMIN_ADDRESS) fetchStats();
   }, [isConnected, wallet.address, fetchStats]);
 
-  // Periodic stats refresh — without this, a once-only initial fetch can
-  // leave the admin UI permanently stale if the contract state changes
-  // (e.g. someone else started an epoch, or the page was navigated to
-  // before the wallet finished connecting). The most visible symptom
-  // was the End-Epoch button being permanently disabled because
-  // `hasActiveEpoch` rode on stale `stats?.epoch === 0`.
+  // Periodic stats refresh so the admin UI doesn't get stuck on stale state
+  // (e.g. End-Epoch staying disabled because hasActiveEpoch rode on stale stats).
   useEffect(() => {
     if (!isConnected || wallet.address !== ADMIN_ADDRESS) return;
     const id = setInterval(fetchStats, 20_000);
@@ -268,7 +262,7 @@ const AdminPage = () => {
 
   const isAdmin = wallet.address === ADMIN_ADDRESS;
 
-  /* ── Handlers ─────────────────────────────────────────────────────────── */
+  // Handlers
   const handleStartEpochWithAuction = async () => {
     const x = parseInt(auctionSectionX, 10);
     const y = parseInt(auctionSectionY, 10);
@@ -306,27 +300,21 @@ const AdminPage = () => {
   };
 
   const handleEndEpoch = async () => {
-    // Defend against UI race conditions (button held / double-click) that
-    // could fire endEpoch twice and mint duplicate NFT pairs. The contract
-    // also has an `epoch_ended` guard for safety.
+    // Guard against double-click firing endEpoch twice (the contract also has an
+    // epoch_ended guard).
     console.log('[handleEndEpoch] click', { epoch: stats?.epoch, endEpochState });
     if (endEpochState === 'pending') return;
     setEndEpochState('pending');
     setEndEpochStep('snapshotting');
     setLastNftUrl('');
-    // Force a fresh stats read before we trust `stats?.epoch` below — without
-    // this, a stale `stats === null` from a failed initial load would cascade
-    // into the "Cannot determine current epoch" toast even though the contract
-    // actually has an active epoch right now.
+    // Force a fresh stats read so stale state doesn't trip the epoch check below.
     await fetchStats().catch(() => {});
     try {
-      // Auction zone coords — sx/sy come from getAuctionState (set in fetchStats).
-      // Fall back to (40,40) only if absolutely no zone info is available.
+      // Auction zone coords from getAuctionState; fall back to (40,40).
       const sx = Number.isFinite(auctionInfo?.sx) ? auctionInfo.sx : 40;
       const sy = Number.isFinite(auctionInfo?.sy) ? auctionInfo.sy : 40;
 
-      // Current epoch number — used to name the per-epoch snapshot. If for
-      // some reason we don't have a fresh value, refuse rather than guess.
+      // Epoch number names the snapshot; refuse rather than guess if unknown.
       const epoch = Number(stats?.epoch ?? 0);
       if (!epoch || epoch <= 0) {
         showToast('Cannot determine current epoch number — refresh and retry', 'error');
@@ -335,28 +323,15 @@ const AdminPage = () => {
         return;
       }
 
-      // STEP 1 — Write the immutable per-epoch snapshot to the server's
-      // local `snapshots/` dir. Always-succeeds path that gives us a
-      // PER-EPOCH stable URL even when the public-host upload fails.
-      // This is also our fallback URI for the NFT — much better than the
-      // old `${SERVER_URL}/canvas/png` (a live endpoint that changes after
-      // every paint and every canvas wipe).
+      // Write the immutable per-epoch snapshot, giving each NFT a stable URL.
       const snapRes = await fetch(`${SERVER_URL}/snapshots/epoch/${epoch}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sx, sy, w: 20, h: 20, scale: 32 }),
       });
-      // Fallbacks default to the per-epoch snapshot URL (local only — won't
-      // render on devnet explorer, but the website does via NftPage's
-      // resolveImageUrl which substitutes snapshot paths). Caller still
-      // gets a meaningful, per-epoch-frozen URI.
-      // Three URIs, one per NFT minted by the upgraded contract:
-      //  - Painter NFT  → raw pixel canvas for that epoch (immutable snapshot)
-      //  - Auction NFT  → cropped 20×20 zone (unchanged behaviour)
-      //  - AI NFT       → AI's reimagining of the canvas (generated server-side
-      //                   in the background; GET /ai.png falls back to
-      //                   canvas.png while the AI job is still running, so the
-      //                   on-chain URI never points at a 404).
+      // Three NFT URIs (painter = full canvas, auction = 20×20 zone, ai = AI
+      // reinterpretation). These are local snapshot URLs — rendered on the
+      // website via NftPage.resolveImageUrl, though not on the devnet explorer.
       let painterUri = `${SERVER_URL}/snapshots/epoch/${epoch}/canvas.png`;
       let auctionUri = `${SERVER_URL}/snapshots/epoch/${epoch}/zone.png`;
       let aiUri      = `${SERVER_URL}/snapshots/epoch/${epoch}/ai.png`;
@@ -364,17 +339,10 @@ const AdminPage = () => {
         const txt = await snapRes.text().catch(() => '');
         console.warn('[endEpoch] snapshot write failed — keeping default fallback URIs:', snapRes.status, txt.slice(0, 200));
         showToast(`Snapshot write failed (${snapRes.status}) — continuing with live URL fallback`, 'info');
-        // Drop back to the very old live-endpoint URLs since snapshots
-        // aren't on disk; at least the demo works locally.
+        // Fall back to live endpoints when snapshots aren't on disk.
         painterUri = `${SERVER_URL}/canvas/png`;
         auctionUri = `${SERVER_URL}/canvas/section-png?x=${sx}&y=${sy}&w=20&h=20`;
       }
-
-      // STEP 2 (REMOVED) — catbox.moe and 0x0.st are both dead (catbox 404,
-      // 0x0.st 503 "uploads disabled"). The old block here tried both via
-      // Promise.allSettled and burned ~30s of timeout per click for nothing.
-      // The NFT URIs stay as the per-epoch snapshot URLs (set above) —
-      // viewable on the website's NftPage but NOT on the devnet explorer.
 
       setLastNftUrl({ painter: painterUri, auction: auctionUri, ai: aiUri });
 
@@ -506,7 +474,6 @@ const AdminPage = () => {
   return (
     <div style={{ minHeight: '100vh', background: 'rgb(var(--bg))', display: 'flex', flexDirection: 'column' }}>
 
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <header style={{
         borderBottom: '1px solid rgb(var(--border))',
         background: 'rgb(var(--surface))',
@@ -557,7 +524,6 @@ const AdminPage = () => {
       ) : (
         <div style={{ flex: 1, display: 'flex' }}>
 
-          {/* ── Sidebar ──────────────────────────────────────────────────── */}
           <aside style={{ width: 220, flexShrink: 0, borderRight: '1px solid rgb(var(--border))', background: 'rgb(var(--surface))', padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'rgb(var(--text-muted))', textTransform: 'uppercase', padding: '4px 12px', marginBottom: 4 }}>Navigation</p>
             {TABS.map(tab => (
@@ -573,7 +539,6 @@ const AdminPage = () => {
             </div>
           </aside>
 
-          {/* ── Main ─────────────────────────────────────────────────────── */}
           <main style={{ flex: 1, padding: '28px 32px', overflowY: 'auto', maxHeight: 'calc(100vh - 56px)' }}>
 
             {activeTab === 'overview' && (
@@ -764,7 +729,7 @@ const MetricCard = ({ icon, label, value, sub, accent, delta }) => (
   </div>
 );
 
-/* ── Custom recharts tooltip ─────────────────────────────────────────────── */
+// Custom recharts tooltip
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -814,7 +779,6 @@ const OverviewTab = ({ stats, auctionInfo, loading }) => {
     <div className="admin-fade">
       <PageTitle title="Overview" subtitle="Live snapshot of contract state and canvas health." />
 
-      {/* Metric cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 14, marginBottom: 28 }}>
         <MetricCard icon="🏛"  label="Current Epoch" value={stats.epoch > 0 ? `#${stats.epoch}` : '—'} sub={stats.endsAt ? `Ends ${stats.endsAt.toLocaleString()}` : 'Not started'} accent={stats.epoch > 0 ? '#48BB78' : '#9B978F'} />
         <MetricCard icon="🎨"  label="Canvas Fill"   value={`${fillPct}%`} sub={`${painted.toLocaleString()} / ${total.toLocaleString()} px`} accent="#E5B547" />
@@ -824,10 +788,8 @@ const OverviewTab = ({ stats, auctionInfo, loading }) => {
         <MetricCard icon="🪙"  label="PIXEL Pending" value={stats.pixelForCharity.toLocaleString()} sub="PIXEL for charity pool" accent="#48BB78" />
       </div>
 
-      {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
-        {/* Canvas fill donut */}
         <Card title="Canvas Fill" description="Painted vs blank pixels across the 100×100 grid" accent="#E5B547">
           <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
             <ResponsiveContainer width={140} height={140}>
@@ -851,7 +813,6 @@ const OverviewTab = ({ stats, auctionInfo, loading }) => {
           </div>
         </Card>
 
-        {/* EGLD funds */}
         <Card title="Charity Funds" description="Distributed vs pending EGLD for charity" accent="#9F7AEA">
           <ResponsiveContainer width="100%" height={140}>
             <BarChart data={fundData} barSize={28} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
@@ -875,7 +836,6 @@ const OverviewTab = ({ stats, auctionInfo, loading }) => {
         </Card>
       </div>
 
-      {/* Epoch progress timeline */}
       {stats.epoch > 0 && stats.startTimestamp > 0 && (
         <Card title="Epoch Timeline" description={`Epoch #${stats.epoch} progress`} accent="#48BB78">
           <div style={{ marginBottom: 10 }}>
@@ -907,7 +867,6 @@ const OverviewTab = ({ stats, auctionInfo, loading }) => {
         </Card>
       )}
 
-      {/* Contract detail table */}
       <Card title="Contract Details" description="Full parameter snapshot" accent="rgb(var(--primary))">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 32px' }}>
           {[
@@ -946,7 +905,6 @@ const StartEpochTab = ({
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
         <div>
-          {/* Step 1 — Charities */}
           <Card title="Set Epoch Charities" description="Define charity candidates users will vote for this epoch." accent="#48BB78" badge={<StepBadge n={1} done={readyCount > 0} />}>
             <Field label="For epoch #">
               <Input type="number" value={charityEpochInput} onChange={e => setCharityEpochInput(e.target.value)} placeholder={stats?.epoch ? String(stats.epoch + 1) : '1'} min="1" style={{ width: 120 }} />
@@ -998,7 +956,6 @@ const StartEpochTab = ({
             </div>
           </Card>
 
-          {/* Step 2 — Launch */}
           <Card title="Start Epoch with Auction" description={`Launch epoch ${(stats?.epoch ?? 0) + 1} + open a ${stats?.auctionDurationSeconds ? fmtDuration(stats.auctionDurationSeconds) : '5-min'} auction for the selected zone.`} accent="#E5B547" badge={<StepBadge n={2} done={false} />}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               <Field label="Auction zone X (0–80)">
@@ -1015,13 +972,11 @@ const StartEpochTab = ({
           </Card>
         </div>
 
-        {/* Zone minimap sidebar */}
         <div>
           <Card title="Zone Preview" description="10×10 minimap (each cell = 10×10 px)" accent="rgb(var(--border-strong))">
             <ZoneMinimap x={parseInt(auctionSectionX, 10) || 0} y={parseInt(auctionSectionY, 10) || 0} />
           </Card>
 
-          {/* Charity readiness */}
           <Card title="Charity Readiness" description="Status of entered charity rows" accent="#48BB78">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {charityRows.map((r, i) => {
@@ -1047,11 +1002,8 @@ const StartEpochTab = ({
   );
 };
 
-/* ── Charity photo preview thumbnail ──────────────────────────────────────
-   Renders 88×88 of the charity's photo URL, falling back to a green-accent
-   initial bubble when the URL is empty, blank, or fails to load. The
-   `failed` state is reset whenever the URL changes so the admin can fix a
-   typo without remounting the row. */
+// Charity photo thumbnail; falls back to an initial bubble when the URL is
+// empty or fails to load. The failed state resets when the URL changes.
 const CharityPhotoPreview = ({ url, name }) => {
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [url]);
@@ -1083,7 +1035,7 @@ const CharityPhotoPreview = ({ url, name }) => {
   );
 };
 
-/* ── Zone minimap (10×10 CSS grid, each cell = 10×10 px) ─────────────────── */
+// Zone minimap (10×10 CSS grid, each cell = 10×10 px)
 const ZoneMinimap = ({ x, y }) => {
   /* Auction zone occupies 20×20 px → 2×2 cells in the 10×10 minimap */
   const zoneCol = Math.floor(x / 10);
@@ -1128,7 +1080,6 @@ const EndEpochTab = ({
     <div className="admin-fade">
       <PageTitle title="End the Current Epoch" subtitle="Run steps in order. Close the auction first, then end the epoch." />
 
-      {/* Auto-distribution info banner */}
       <div style={{ display: 'flex', gap: 10, padding: '12px 16px', borderRadius: 10, background: 'rgba(72,187,120,0.08)', border: '1px solid rgba(72,187,120,0.25)', marginBottom: 20, fontSize: 12, color: 'rgb(var(--text-secondary))', lineHeight: 1.6 }}>
         <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✅</span>
         <div>
@@ -1218,9 +1169,7 @@ const EndEpochTab = ({
           </Card>
         </div>
 
-        {/* Right sidebar: charts */}
         <div>
-          {/* Vote tally chart */}
           <Card title="Vote Tallies" description="Charity votes this epoch" accent="#4299E1">
             {voteTallies.length === 0 ? (
               <p style={{ fontSize: 12, color: 'rgb(var(--text-muted))', padding: '10px 0' }}>No vote data — refresh after charities are set.</p>
@@ -1249,7 +1198,6 @@ const EndEpochTab = ({
             )}
           </Card>
 
-          {/* Pending funds summary */}
           <Card title="Pending Funds" description="Accumulated this epoch" accent="#E5B547">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[
@@ -1350,7 +1298,6 @@ const ConfigTab = ({
           </Card>
         </div>
 
-        {/* Duration chart sidebar */}
         <div>
           <Card title="Duration Comparison" description="Epoch vs Auction in seconds" accent="rgb(var(--border-strong))">
             <ResponsiveContainer width="100%" height={160}>
@@ -1384,7 +1331,6 @@ const ConfigTab = ({
             </div>
           </Card>
 
-          {/* Quick reference */}
           <Card title="Duration Reference" description="Common demo values" accent="rgb(var(--border-strong))">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {[

@@ -1,14 +1,6 @@
-/**
- * SQLite persistence for the pixel canvas.
- *
- * The canvas state is the source of truth for fast restart (DB-first hydration);
- * blockchain queries remain authoritative for ownership but are NOT used to
- * reconstruct the grid on boot.
- *
- * Schema is a single (x, y) primary-keyed `pixels` table — one row per painted
- * pixel. Unpainted pixels do not exist in the DB (the grid defaults them to
- * DEFAULT_PIXEL_COLOR).
- */
+// SQLite persistence for the canvas — DB-first hydration on restart. One row
+// per painted pixel in a single (x, y) primary-keyed `pixels` table; unpainted
+// pixels are absent (the grid defaults them to DEFAULT_PIXEL_COLOR).
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -79,10 +71,7 @@ export function deletePixels(pixels) {
 
 const truncateStmt = db.prepare('DELETE FROM pixels');
 
-/**
- * Wipe every row from `pixels`. Called when the on-chain epoch increments —
- * each epoch starts on a blank canvas.
- */
+// Wipe every row — called when the on-chain epoch increments.
 export function clearAllPixels() {
   const result = truncateStmt.run();
   console.log(`🗑  Cleared ${result.changes} pixels from DB`);

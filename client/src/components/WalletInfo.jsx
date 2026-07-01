@@ -28,30 +28,25 @@ const WalletInfo = () => {
 
   return (
     <div className="flex items-center gap-2">
-      {/* Address pill */}
       <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-backgroundAlt border border-border text-xs font-mono">
         <span className="w-1.5 h-1.5 rounded-full bg-success animate-subtle-pulse" />
         <span className="text-textSecondary">{getTruncatedAddress()}</span>
       </div>
 
-      {/* EGLD */}
       <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primaryLight border border-primary/30 text-sm">
         <span className="font-semibold text-textPrimary">{egld}</span>
         <span className="text-textMuted text-xs">EGLD</span>
       </div>
 
-      {/* PIXEL balance */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primaryLight border border-primary/30 text-sm">
         <span className="font-semibold text-textPrimary">{pixelBalance.toLocaleString()}</span>
         <span className="text-textMuted text-xs">PIXEL</span>
       </div>
 
-      {/* Shop */}
       <Link to="/shop" className="btn-ghost text-sm">
         Shop
       </Link>
 
-      {/* Disconnect */}
       <button
         onClick={handleLogout}
         title="Disconnect wallet"

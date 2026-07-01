@@ -1,18 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 
-/**
- * ColorPicker — pro paint tools panel.
- *
- * Layout (top → bottom):
- *   1. Selected swatch + hex input + RGB readout
- *   2. HSV square + hue strip (drag to pick any colour)
- *   3. Tabbed palette: Basics / Pastels / Earth / Neon
- *   4. Recent colours (color history)
- *   5. Eyedropper button (native EyeDropper API where available)
- */
+// ColorPicker — swatch + hex/RGB, HSV square + hue strip, tabbed palettes,
+// recent colours, and a native-EyeDropper pick button where available.
 
-// ─── Palettes ───────────────────────────────────────────────────────────────
 const PALETTES = {
   Basics: [
     '#000000','#404040','#808080','#C0C0C0','#FFFFFF',
@@ -35,7 +26,7 @@ const PALETTES = {
   ],
 };
 
-// ─── Color conversion helpers ───────────────────────────────────────────────
+// Color conversion helpers.
 const hexToRgb = (hex) => {
   const h = hex.replace('#', '');
   return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
@@ -92,7 +83,7 @@ const ColorPicker = () => {
     changeColor(rgbToHex(rgb.r, rgb.g, rgb.b));
   }, [changeColor]);
 
-  // ─── HSV square drag ─────────────────────────────────────────────────
+  // HSV square drag.
   const squareRef = useRef(null);
   const onSquareDown = (e) => {
     const handleMove = (evt) => {
@@ -112,7 +103,7 @@ const ColorPicker = () => {
     window.addEventListener('mouseup', onUp);
   };
 
-  // ─── Hue strip drag ──────────────────────────────────────────────────
+  // Hue strip drag.
   const hueRef = useRef(null);
   const onHueDown = (e) => {
     const handleMove = (evt) => {
@@ -130,7 +121,7 @@ const ColorPicker = () => {
     window.addEventListener('mouseup', onUp);
   };
 
-  // ─── Hex input ───────────────────────────────────────────────────────
+  // Hex input.
   const onHexChange = (e) => {
     setCustomHex(e.target.value.toUpperCase());
   };
@@ -139,7 +130,7 @@ const ColorPicker = () => {
     if (/^#[0-9A-F]{6}$/i.test(customHex)) changeColor(customHex.toUpperCase());
   };
 
-  // ─── Eyedropper (native API where available) ─────────────────────────
+  // Eyedropper (native API where available)
   const hasEyedropper = typeof window !== 'undefined' && 'EyeDropper' in window;
   const pickWithEyedropper = async () => {
     try {
@@ -148,13 +139,11 @@ const ColorPicker = () => {
     } catch (_) { /* user cancelled */ }
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────
   const rgb = hsvToRgb(hsv.h, hsv.s, hsv.v);
   const hueColor = `hsl(${hsv.h}, 100%, 50%)`;
 
   return (
     <div className="w-64 card p-3 space-y-3">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-heading text-base font-semibold">Colour</h3>
         {hasEyedropper && (
@@ -168,7 +157,6 @@ const ColorPicker = () => {
         )}
       </div>
 
-      {/* Selected colour + hex/RGB */}
       <div className="flex items-center gap-3">
         <div
           className="w-14 h-14 rounded-lg border border-borderStrong shadow-soft flex-shrink-0"
@@ -189,7 +177,6 @@ const ColorPicker = () => {
         </form>
       </div>
 
-      {/* HSV square */}
       <div>
         <div
           ref={squareRef}
@@ -202,7 +189,6 @@ const ColorPicker = () => {
             `,
           }}
         >
-          {/* Pointer */}
           <div
             className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border-2 border-white shadow-card pointer-events-none"
             style={{
@@ -212,7 +198,6 @@ const ColorPicker = () => {
           />
         </div>
 
-        {/* Hue strip */}
         <div
           ref={hueRef}
           onMouseDown={onHueDown}
@@ -228,7 +213,6 @@ const ColorPicker = () => {
         </div>
       </div>
 
-      {/* Palette tabs */}
       <div>
         <div className="flex gap-1 mb-2 text-xs">
           {Object.keys(PALETTES).map((name) => (
@@ -262,7 +246,6 @@ const ColorPicker = () => {
         </div>
       </div>
 
-      {/* Recent */}
       {colorHistory.length > 0 && (
         <div>
           <p className="text-xs uppercase tracking-wider text-textMuted font-medium mb-2">Recent</p>

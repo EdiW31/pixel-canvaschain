@@ -29,23 +29,9 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5001';
 const DEVNET_API = 'https://devnet-api.multiversx.com';
 const EXPLORER  = 'https://devnet-explorer.multiversx.com';
 
-/**
- * Resolve the best displayable image URL for a given NFT.
- *
- * The on-chain URI for epochs 4–8 historically points to
- * `http://localhost:5001/canvas/png`, which is a) unreachable from any
- * external viewer and b) a LIVE endpoint that renders the *current*
- * canvas — not the snapshot at that epoch's end. So even the user's own
- * browser sees the wrong image once the canvas wipes for the next epoch.
- *
- * Recovery strategy: if the on-chain URI looks broken (localhost / no
- * URI / live endpoint), substitute the server's per-epoch snapshot route
- * `/snapshots/epoch/:n/canvas.png` (or `.../zone.png`) derived from the
- * NFT's `attributes` field. The snapshot is the SAME content the NFT
- * meant to capture — just hosted from the user's machine instead of
- * the dead catbox URL. Future epochs (after the upload guard lands)
- * will already have correct https URIs and bypass this fallback.
- */
+// Resolve the best displayable image URL for an NFT. Some older epochs have a
+// broken on-chain URI (localhost / the live /canvas/png endpoint); for those we
+// fall back to the server's immutable per-epoch snapshot derived from attributes.
 function resolveImageUrl(nft, attrs) {
   const onChainUrl =
     nft.url ||
@@ -53,8 +39,7 @@ function resolveImageUrl(nft, attrs) {
     nft.assets?.pngUrl ||
     (nft.uris?.[0] ? atob(nft.uris[0]) : null);
 
-  // If we have a real https URL that ISN'T pointing at the live
-  // `/canvas/png` endpoint, use it directly.
+  // Prefer a real https URL that isn't the live /canvas/png endpoint.
   if (
     onChainUrl &&
     onChainUrl.startsWith('https://') &&
@@ -64,14 +49,10 @@ function resolveImageUrl(nft, attrs) {
     return onChainUrl;
   }
 
-  // Otherwise fall back to the local per-epoch snapshot.
+  // Otherwise fall back to the local per-epoch snapshot. Each NFT type maps to a
+  // distinct file: auction → zone, ai → ai reinterpretation, painter → canvas.
   const epoch = attrs.epoch;
-  if (!epoch) return onChainUrl ?? null; // no way to derive snapshot path
-  // Three NFT types, each served from a distinct per-epoch file:
-  //   - auction → 20×20 zone image
-  //   - ai      → AI-generated reinterpretation (falls back to canvas.png
-  //               server-side while the AI job is still running)
-  //   - painter → raw full-canvas pixel art (the default)
+  if (!epoch) return onChainUrl ?? null;
   const kind =
     attrs.type === 'auction' ? 'zone' :
     attrs.type === 'ai'      ? 'ai'   :
@@ -99,13 +80,7 @@ function parseAttributes(rawAttributes) {
   }
 }
 
-/* ── Type badge ─────────────────────────────────────────────────────────────── */
-/**
- * Three NFT types share the badge:
- *   - auction → purple (zone winner)
- *   - ai      → teal/cyan (AI Vision — the AI's reinterpretation)
- *   - painter → amber (top painter, raw canvas pixel art)
- */
+// Badge per NFT type: auction → purple, ai → teal, painter → amber.
 function TypeBadge({ type }) {
   const palette =
     type === 'auction' ? { grad: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)', shadow: 'rgba(124,58,237,0.40)', icon: '🏆', label: 'Auction Winner' } :
@@ -132,7 +107,7 @@ function TypeBadge({ type }) {
   );
 }
 
-/* ── NFT Card ───────────────────────────────────────────────────────────────── */
+// NFT Card
 function NftCard({ nft }) {
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -222,7 +197,6 @@ function NftCard({ nft }) {
         flexDirection: 'column',
       }}
     >
-      {/* ── Image area ── */}
       <div
         style={{
           position: 'relative',
@@ -297,7 +271,6 @@ function NftCard({ nft }) {
           </div>
         )}
 
-        {/* Epoch badge overlay */}
         {attrs.epoch && (
           <div
             style={{
@@ -318,7 +291,6 @@ function NftCard({ nft }) {
           </div>
         )}
 
-        {/* NFT number badge */}
         <div
           style={{
             position: 'absolute',
@@ -338,10 +310,8 @@ function NftCard({ nft }) {
         </div>
       </div>
 
-      {/* ── Content ── */}
       <div style={{ padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
 
-        {/* Name + type */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <p style={{ fontFamily: 'var(--font-heading, sans-serif)', fontWeight: 700, fontSize: 15, color: 'rgb(var(--text-primary))', lineHeight: 1.3, margin: 0 }}>
             {nft.name}
@@ -349,7 +319,6 @@ function NftCard({ nft }) {
           <TypeBadge type={nftType} />
         </div>
 
-        {/* Stats row */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {attrs.pixels && (
             <StatChip icon="🖌" label="Pixels" value={Number(attrs.pixels).toLocaleString()} color={accentColor} />
@@ -393,10 +362,8 @@ function NftCard({ nft }) {
           </div>
         )}
 
-        {/* Divider */}
         <div style={{ height: 1, background: 'rgb(var(--border))' }} />
 
-        {/* Owner row */}
         {nft.owner ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <div>
@@ -436,7 +403,6 @@ function NftCard({ nft }) {
           <p style={{ fontSize: 12, color: 'rgb(var(--text-muted))', fontStyle: 'italic' }}>No owner data</p>
         )}
 
-        {/* Explorer link */}
         <a
           href={`${EXPLORER}/nfts/${nft.identifier}`}
           target="_blank"
@@ -465,7 +431,7 @@ function NftCard({ nft }) {
   );
 }
 
-/* ── Stat chip ──────────────────────────────────────────────────────────────── */
+// Stat chip
 function StatChip({ icon, label, value, color }) {
   return (
     <div
@@ -489,7 +455,7 @@ function StatChip({ icon, label, value, color }) {
   );
 }
 
-/* ── Setup required ─────────────────────────────────────────────────────────── */
+// Setup required
 function SetupRequired() {
   return (
     <div className="card max-w-lg mx-auto mt-16 text-center flex flex-col gap-4">
@@ -507,7 +473,7 @@ function SetupRequired() {
   );
 }
 
-/* ── Page ───────────────────────────────────────────────────────────────────── */
+// Page
 const NftPage = () => {
   const [nfts, setNfts]       = useState([]);
   const [loading, setLoading] = useState(true);
@@ -550,7 +516,6 @@ const NftPage = () => {
       <MarketingNav />
       <main className="max-w-5xl mx-auto px-6 py-12">
 
-        {/* Header */}
         <div className="mb-10">
           <div className="pill mb-3 inline-flex">NFT Gallery</div>
           <h1 className="font-heading text-4xl font-semibold tracking-tight text-textPrimary mb-2">
@@ -572,7 +537,6 @@ const NftPage = () => {
             </span>
           </p>
 
-          {/* Legend */}
           {!loading && nfts.length > 0 && (
             <div className="flex items-center gap-4 mt-4 flex-wrap">
               <LegendItem color="#b45309" shadow="rgba(180,83,9,0.30)" label="Top Painter NFT" icon="🎨" />

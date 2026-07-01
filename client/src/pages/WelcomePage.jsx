@@ -10,7 +10,7 @@ import PixelMan from '../components/PixelMan';
 import AuctionFloatingCta from '../components/AuctionFloatingCta';
 import charityPhoto from '../../images/charity_photo.jpg';
 
-/* ─── Pixel art canvas data (24 cols × 13 rows) ──────────────────────────── */
+// Pixel art canvas data (24 cols × 13 rows)
 /* eslint-disable no-unused-vars */
 const _=null, r='#E53E3E', dr='#C53030', w='#BFDBFE', g='#93C5FD',
       t='#2D3748', hb='#718096', y='#ECC94B',
@@ -50,11 +50,11 @@ const CHARITIES = [
   { name: 'Plan International',      mission: 'Ending child marriage and advancing girls\' rights globally.',       color: '#9F7AEA', icon: '✊', link: 'https://plan-international.org' },
 ];
 
-/* ─── Smooth scroll helper ───────────────────────────────────────────────── */
+// Smooth scroll helper
 const scrollTo = (id) =>
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-/* ─── WelcomePage ────────────────────────────────────────────────────────── */
+// WelcomePage
 const WelcomePage = () => {
   const { epochInfo, votingState, totalDonatedEgld, auctionState, wallet, showToast } = useApp();
   const { liveStats } = useSocket();
@@ -95,7 +95,7 @@ const WelcomePage = () => {
     return () => window.removeEventListener('resize', update);
   }, []);
 
-  // ── Nav colour tokens ────────────────────────────────────────────────────────
+  // Nav colour tokens
   const isVoteSec = activeSection === 'vote';
   let navBg, navLinkClr, navLinkActv, navLinkHov, navBorderClr, navCircBorder, navLogoClr, navBrandClr, navSubClr;
   if (isVoteSec) {
@@ -145,7 +145,6 @@ const WelcomePage = () => {
       hideOnSections={['hero', 'vote', 'bidding']}
     />
 
-    {/* ─── Nav ─────────────────────────────────────────────────────── */}
     <nav
       ref={navRef}
       className="flex-shrink-0 z-40"
@@ -165,7 +164,7 @@ const WelcomePage = () => {
           width: '100%', boxSizing: 'border-box',
         }}
       >
-        {/* ── Logo + brand (left grid cell) ── */}
+        {/* Logo + brand (left grid cell) */}
         <button
           onClick={() => scrollTo('hero')}
           style={{
@@ -198,7 +197,7 @@ const WelcomePage = () => {
           </div>
         </button>
 
-        {/* ── Center links (center grid cell — auto-centred by 1fr/1fr columns) ── */}
+        {/* Center links (center grid cell — auto-centred by 1fr/1fr columns) */}
         <div className="hidden md:flex items-center" style={{ gap: 36 }}>
           <NavLink sectionId="mission"   linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov}>Mission</NavLink>
           <HowItWorksNavLinks            linkColor={navLinkClr} activeColor={navLinkActv} hoverColor={navLinkHov} />
@@ -226,7 +225,7 @@ const WelcomePage = () => {
           </button>
         </div>
 
-        {/* ── Right side: epoch + theme + CTA (right grid cell) ── */}
+        {/* Right side: epoch + theme + CTA (right grid cell) */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
           <EpochBanner className="hidden md:inline-flex" />
           <div style={{ width: 1, height: 22, background: navBorderClr, flexShrink: 0 }} />
@@ -242,13 +241,12 @@ const WelcomePage = () => {
       </div>
     </nav>
 
-    {/* ─── Scroll container (smooth, no snap) ──────────────────────── */}
+    {/* Scroll container (smooth, no snap) */}
     <div
       className="flex-1 min-h-0 overflow-y-scroll"
       style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth', scrollSnapType: 'y mandatory' }}
     >
 
-      {/* ── 1. Hero ───────────────────────────────────────────────── */}
       <AnimatedSection
         id="hero"
         className="flex items-center relative overflow-hidden"
@@ -298,7 +296,7 @@ const WelcomePage = () => {
           </div>
         </div>
 
-        {/* ── Hero pixelman — charity nudge / live-vote nudge after voting ── */}
+        {/* Hero pixelman — charity nudge / live-vote nudge after voting */}
         <div
           className="hidden xl:flex absolute select-none"
           style={{
@@ -312,7 +310,6 @@ const WelcomePage = () => {
           onClick={() => scrollTo('vote')}
           title={votingState.hasVoted ? 'See the live votes' : 'Vote for charities this epoch'}
         >
-          {/* Speech bubble */}
           <div
             style={{
               position: 'relative',
@@ -351,7 +348,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 2. Voting section ────────────────────────────────────── */}
       {epochInfo.epoch > 0 && (
         <AnimatedSection
           id="vote"
@@ -434,7 +430,6 @@ const WelcomePage = () => {
         </AnimatedSection>
       )}
 
-      {/* ── 3. Mission ────────────────────────────────────────────── */}
       <AnimatedSection
         id="mission"
         className="bg-backgroundAlt border-t border-border flex items-center relative overflow-hidden"
@@ -507,7 +502,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 3. How it works ───────────────────────────────────────── */}
       <AnimatedSection
         id="how-it-works"
         className="border-t border-border flex items-center relative overflow-hidden"
@@ -547,7 +541,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 4. Epochs ─────────────────────────────────────────────── */}
       <AnimatedSection
         id="epochs"
         className="bg-backgroundAlt border-t border-border flex items-center relative overflow-hidden"
@@ -602,7 +595,7 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 5. Charity of the Epoch ───────────────────────────────── */}
+      {/* 5. Charity of the Epoch */}
       <AnimatedSection
         id="charity"
         className="border-t border-border flex items-center relative overflow-hidden"
@@ -650,7 +643,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 6. Bidding ────────────────────────────────────────────── */}
       <AnimatedSection
         id="bidding"
         className="bg-backgroundAlt border-t border-border flex items-center relative overflow-hidden"
@@ -667,7 +659,6 @@ const WelcomePage = () => {
         <Dot color="#E53E3E" style={{ top: 80,    right: '22%' }} />
 
         <div className="max-w-5xl mx-auto px-6 py-4 w-full">
-          {/* Header row */}
           <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
             <div>
               <div className="pill mb-1.5">Bidding</div>
@@ -705,7 +696,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 7. NFT Rewards ────────────────────────────────────────── */}
       <AnimatedSection
         id="nft"
         className="border-t border-border flex items-center relative overflow-hidden"
@@ -734,7 +724,6 @@ const WelcomePage = () => {
               </p>
 
               <div className="space-y-3 mb-4">
-                {/* Top-painter NFT */}
                 <div className="rounded-xl border border-border p-3 flex items-start gap-3 bg-backgroundAlt">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
                     style={{ background: '#9F7AEA22' }}>🏆</div>
@@ -745,7 +734,6 @@ const WelcomePage = () => {
                     </p>
                   </div>
                 </div>
-                {/* AI Vision NFT */}
                 <div className="rounded-xl border border-border p-3 flex items-start gap-3 bg-backgroundAlt">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
                     style={{ background: '#06b6d422' }}>🤖</div>
@@ -756,7 +744,6 @@ const WelcomePage = () => {
                     </p>
                   </div>
                 </div>
-                {/* Auction-winner NFT */}
                 <div className="rounded-xl border border-border p-3 flex items-start gap-3 bg-backgroundAlt">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
                     style={{ background: '#E5B54722' }}>🔨</div>
@@ -794,7 +781,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 8. Split & Tiers ──────────────────────────────────────── */}
       <AnimatedSection
         id="split"
         className="bg-backgroundAlt border-t border-border flex items-center relative overflow-hidden"
@@ -853,7 +839,6 @@ const WelcomePage = () => {
 
       </AnimatedSection>
 
-      {/* ── 9. CTA + Footer ───────────────────────────────────────── */}
       <AnimatedSection
         id="cta"
         className="border-t border-border flex flex-col relative overflow-hidden"
@@ -900,8 +885,8 @@ const WelcomePage = () => {
   );
 };
 
-/* ─── NavButton — nav item with gold underline when section is in view ────── */
-/* ─── Pixel mascot (bigger scale for hero corner) ───────────────────────── */
+// NavButton — nav item with gold underline when section is in view
+// Pixel mascot (bigger scale for hero corner)
 const M_X=null, M_G='#E5B547', M_GD='#C49628', M_SK='#FDE68A', M_EY='#1A1817', M_RD='#E05A4B', M_BL='#3B82F6', M_BK='#1A1817';
 const MASCOT_BIG = [
   [M_X,  M_X,  M_GD, M_GD, M_GD, M_GD, M_X,  M_X  ],
@@ -936,7 +921,7 @@ const PixelManBig = () => (
   </div>
 );
 
-/* ─── NavLink — colour-aware nav button (used in the WelcomePage navbar) ──── */
+// NavLink — colour-aware nav button (used in the WelcomePage navbar)
 const NavLink = ({ sectionId, children, linkColor, activeColor, hoverColor }) => {
   const [active, setActive] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -961,7 +946,7 @@ const NavLink = ({ sectionId, children, linkColor, activeColor, hoverColor }) =>
   );
 };
 
-/* ─── HowItWorksNavLinks — colour-aware cycling nav with dot indicators ──── */
+// HowItWorksNavLinks — colour-aware cycling nav with dot indicators
 const HowItWorksNavLinks = ({ linkColor, activeColor, hoverColor }) => {
   const [step, setStep] = useState(-1);
   const [hovered, setHovered] = useState(false);
@@ -995,7 +980,7 @@ const HowItWorksNavLinks = ({ linkColor, activeColor, hoverColor }) => {
   );
 };
 
-/* ─── ScrollDownButton — mouse + chevrons indicator, centered bottom ─────── */
+// ScrollDownButton — mouse + chevrons indicator, centered bottom
 const ScrollDownButton = ({ targetId }) => (
   <button
     onClick={() => scrollTo(targetId)}
@@ -1024,7 +1009,7 @@ const ScrollDownButton = ({ targetId }) => (
   </button>
 );
 
-/* ─── AnimatedSection ────────────────────────────────────────────────────── */
+// AnimatedSection
 const AnimatedSection = ({ children, className = '', style, id, scrollTarget }) => (
   <section
     id={id}
@@ -1044,7 +1029,7 @@ const AnimatedSection = ({ children, className = '', style, id, scrollTarget }) 
   </section>
 );
 
-/* ─── HeroCanvasPreview ──────────────────────────────────────────────────── */
+// HeroCanvasPreview
 const HeroCanvasPreview = ({ onlineUsers }) => (
   <div className="w-full">
     <div className="flex items-center gap-2 mb-2">
@@ -1076,7 +1061,7 @@ const HeroCanvasPreview = ({ onlineUsers }) => (
   </div>
 );
 
-/* ─── BiddingPreview ─────────────────────────────────────────────────────── */
+// BiddingPreview
 const BiddingPreview = ({ onPlaceBid }) => (
   <div className="card p-3 bg-backgroundAlt relative overflow-hidden">
     <div className="absolute top-0 left-0 right-0 h-0.5"
@@ -1162,7 +1147,7 @@ const AuctionBid = ({ rank, address, amount, leading }) => (
   </div>
 );
 
-/* ─── Remaining sub-components ───────────────────────────────────────────── */
+// Remaining sub-components
 
 const Stat = ({ label, value, emphasis }) => (
   <div>

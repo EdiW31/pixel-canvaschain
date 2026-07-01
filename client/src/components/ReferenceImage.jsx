@@ -35,7 +35,6 @@ const ReferenceImage = () => {
 
   return (
     <div className="w-64 card p-3 space-y-2">
-      {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CameraIcon />
@@ -53,7 +52,7 @@ const ReferenceImage = () => {
       </div>
 
       {!refImageSrc ? (
-        /* ── No image: upload prompt ── */
+        // No image: upload prompt
         <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-lg border-2 border-dashed border-border hover:border-primary/60 bg-backgroundAlt hover:bg-primaryLight/30 cursor-pointer transition-colors group">
           <UploadIcon className="text-textMuted group-hover:text-primary transition-colors" />
           <span className="text-xs text-textMuted group-hover:text-primary transition-colors font-medium">
@@ -63,14 +62,12 @@ const ReferenceImage = () => {
           <input ref={inputRef} type="file" accept="image/*" className="sr-only" onChange={handleFile} />
         </label>
       ) : (
-        /* ── Image loaded: controls ── */
+        // Image loaded: controls
         <>
-          {/* Thumbnail */}
           <div className="w-full h-20 rounded-md overflow-hidden border border-border bg-backgroundAlt flex-shrink-0">
             <img src={refImageSrc} alt="Reference" className="w-full h-full object-contain" />
           </div>
 
-          {/* Opacity */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-textMuted uppercase tracking-wider font-medium">Opacity</span>
@@ -87,7 +84,6 @@ const ReferenceImage = () => {
             />
           </div>
 
-          {/* Lock toggle */}
           <button
             onClick={() => setRefImageLocked((l) => !l)}
             title={refImageLocked ? 'Unlock — move & resize image' : 'Lock — paint over image normally'}

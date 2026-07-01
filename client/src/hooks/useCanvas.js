@@ -3,25 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useSocket } from './useSocket';
 
-/**
- * useCanvas - Canvas interaction hook
- *
- * Manages:
- * - Zoom (1x to 20x)
- * - Pan (click & drag)
- * - Pixel painting (single and brush)
- * - Hover coordinates
- * - Grid rendering
- * - Brush preview
- */
+// useCanvas — zoom, pan, painting (single + brush), hover, and view helpers.
 
-const CANVAS_SIZE = 100; // 100x100 pixels (matches server)
+const CANVAS_SIZE = 100; // matches server
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 20;
 
-/**
- * Calculate all pixels in brush area (anchor at top-left)
- */
+// All pixels in a brushSize×brushSize square anchored at (x, y).
 function getBrushPixels(x, y, brushSize, color, canvasSize = CANVAS_SIZE) {
   const pixels = [];
   for (let dy = 0; dy < brushSize; dy++) {
@@ -41,21 +29,19 @@ export const useCanvas = () => {
   const { paintPixel, paintPixels } = useSocket();
   const navigate = useNavigate();
 
-  // Canvas state (local, not shared)
   const [isPanning, setIsPanning] = useState(false);
   const [isPainting, setIsPainting] = useState(false);
-  const [hoverPixel, setHoverPixel] = useState(null); // { x, y }
+  const [hoverPixel, setHoverPixel] = useState(null);
 
-  // Refs
   const panStart = useRef({ x: 0, y: 0 });
   const canvasRef = useRef(null);
-  const lastPaintedPixel = useRef(null); // For drag-to-paint throttling
-  const hoverThrottleRef = useRef(null); // For hover throttling
-  const strokeBlockedRef = useRef(false); // Debounce redirect when dragging into auction zone
+  const lastPaintedPixel = useRef(null);   // drag-to-paint throttling
+  const hoverThrottleRef = useRef(null);
+  const strokeBlockedRef = useRef(false);  // fire blocked-toast at most once per stroke
 
-  // ── Smooth zoom (eased lerp toward a target) ──
+  // Smooth zoom (eased lerp toward a target).
   const targetZoomRef = useRef(zoom);
-  const zoomFocusRef = useRef(null);   // {x,y} in screen px to keep stable under zoom
+  const zoomFocusRef = useRef(null);   // screen px to keep stable under zoom
   const zoomRafRef = useRef(null);
 
   const animateZoom = useCallback(() => {
@@ -66,12 +52,10 @@ export const useCanvas = () => {
         const target = targetZoomRef.current;
         const diff = target - prev;
         if (Math.abs(diff) < 0.01) { stop = true; return target; }
-        const next = prev + diff * 0.22; // ease factor
-        // Keep the focal screen point stable
+        const next = prev + diff * 0.22;
+        // Keep the focal screen point stable as zoom changes.
         const focus = zoomFocusRef.current;
         if (focus) {
-          // worldX = (screenX - offset.x) / prev
-          // newOffset.x = screenX - worldX * next
           setOffset((prevOffset) => {
             const worldX = (focus.x - prevOffset.x) / prev;
             const worldY = (focus.y - prevOffset.y) / prev;
@@ -92,7 +76,7 @@ export const useCanvas = () => {
     zoomRafRef.current = requestAnimationFrame(step);
   }, [setZoom, setOffset]);
 
-  // ── Pan momentum ──
+  // Pan momentum.
   const panVelocityRef = useRef({ vx: 0, vy: 0 });
   const lastMoveRef = useRef({ x: 0, y: 0, t: 0 });
   const momentumRafRef = useRef(null);
@@ -113,18 +97,13 @@ export const useCanvas = () => {
     momentumRafRef.current = requestAnimationFrame(step);
   }, [setOffset]);
 
-  // Cleanup rAFs on unmount
   useEffect(() => () => {
     if (zoomRafRef.current) cancelAnimationFrame(zoomRafRef.current);
     if (momentumRafRef.current) cancelAnimationFrame(momentumRafRef.current);
   }, []);
 
-  /**
-   * Returns a reason if the (x,y) coord lies inside a blocked auction zone,
-   * or null otherwise. The zone is blocked if:
-   *   - the auction is active (no one paints here yet), OR
-   *   - the auction is closed AND the wallet is not the winner.
-   */
+  // Reason the (x,y) coord is in a blocked auction zone, or null: blocked while
+  // the auction is active, or after close for everyone but the winner.
   const auctionBlockReason = useCallback((x, y) => {
     if (!auctionState) return null;
     const { active, sectionX, sectionY, endTs, winner } = auctionState;
@@ -138,9 +117,6 @@ export const useCanvas = () => {
     return null;
   }, [auctionState, wallet?.address]);
 
-  /**
-   * Calculate pixel coordinates from mouse event
-   */
   const getPixelCoords = useCallback((e) => {
     if (!canvasRef.current) return null;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -152,19 +128,14 @@ export const useCanvas = () => {
     return null;
   }, [offset, zoom]);
 
-  /**
-   * Paint at current mouse position
-   */
   const paintAtPosition = useCallback((e) => {
     if (!wallet.isConnected) {
       showToast('Please connect your wallet first', 'error');
       return;
     }
 
-    // Epoch gate — block paints in the dead window between endEpoch and
-    // the next startEpochWithAuction. The lock state is computed in
-    // AppContext from epochInfo + the contract's `isEpochEnded` flag.
-    // Reuse strokeBlockedRef so a drag stroke fires the toast at most once.
+    // Epoch gate: block paints in the dead window between endEpoch and the next
+    // startEpochWithAuction (paintLocked is derived in AppContext).
     if (paintLocked) {
       if (!strokeBlockedRef.current) {
         strokeBlockedRef.current = true;
@@ -176,8 +147,8 @@ export const useCanvas = () => {
     const coords = getPixelCoords(e);
     if (!coords) return;
 
-    // Block painting if any pixel in the brush footprint sits in a locked
-    // auction zone. Show a toast and (once per stroke) redirect to /auction.
+    // Block the paint if any brush pixel sits in a locked auction zone, and
+    // (once per stroke) redirect to /auction.
     const allBrushPixels = getBrushPixels(coords.x, coords.y, brushSize, selectedColor);
     const blockedReason = allBrushPixels
       .map(p => auctionBlockReason(p.x, p.y))
@@ -196,7 +167,7 @@ export const useCanvas = () => {
       return;
     }
 
-    // Skip if same pixel (for drag painting)
+    // Skip if still on the same pixel (drag painting).
     if (lastPaintedPixel.current &&
         lastPaintedPixel.current.x === coords.x &&
         lastPaintedPixel.current.y === coords.y) {
@@ -221,16 +192,12 @@ export const useCanvas = () => {
     }
   }, [wallet, brushSize, selectedColor, paintPixel, paintPixels, showToast, getPixelCoords, auctionBlockReason, navigate, paintLocked]);
 
-  /**
-   * Handle mouse wheel zoom — eased toward a target, focal point preserved
-   * so the pixel under the cursor stays put as you zoom in.
-   */
+  // Wheel zoom — eased toward a target, focal point under the cursor preserved.
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -1 : 1;
     const next = Math.max(minZoom, Math.min(MAX_ZOOM, targetZoomRef.current + delta));
     targetZoomRef.current = next;
-    // Capture the screen-space focal point of the wheel event
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect) {
       zoomFocusRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -238,24 +205,20 @@ export const useCanvas = () => {
     animateZoom();
   }, [minZoom, animateZoom]);
 
-  /**
-   * Handle mouse down (start panning or painting)
-   */
   const handleMouseDown = useCallback((e) => {
-    // Cancel any in-flight pan momentum on a fresh click
+    // Cancel in-flight pan momentum on a fresh click.
     if (momentumRafRef.current) {
       cancelAnimationFrame(momentumRafRef.current);
       momentumRafRef.current = null;
       panVelocityRef.current = { vx: 0, vy: 0 };
     }
     if (e.button === 0) {
-      // Left click - start painting
       e.preventDefault();
       setIsPainting(true);
       lastPaintedPixel.current = null;
       paintAtPosition(e);
     } else if (e.button === 1 || e.button === 2) {
-      // Middle or right mouse button - pan
+      // Middle/right button — pan.
       e.preventDefault();
       setIsPanning(true);
       panStart.current = {
@@ -266,17 +229,13 @@ export const useCanvas = () => {
     }
   }, [offset, paintAtPosition]);
 
-  /**
-   * Handle mouse move (panning, painting, or hover)
-   */
   const handleMouseMove = useCallback((e) => {
     if (isPanning) {
-      // Pan camera
       setOffset({
         x: e.clientX - panStart.current.x,
         y: e.clientY - panStart.current.y,
       });
-      // Track velocity for momentum on release (px / 16ms frame)
+      // Track velocity for release momentum (px / 16ms frame).
       const now = performance.now();
       const last = lastMoveRef.current;
       const dt = Math.max(1, now - last.t);
@@ -286,31 +245,24 @@ export const useCanvas = () => {
       };
       lastMoveRef.current = { x: e.clientX, y: e.clientY, t: now };
     } else {
-      // Update hover pixel with throttling
       const coords = getPixelCoords(e);
 
-      // Throttle hover updates to reduce redraws
+      // Throttle hover updates to ~60fps to reduce redraws.
       if (hoverThrottleRef.current) {
         clearTimeout(hoverThrottleRef.current);
       }
-
       hoverThrottleRef.current = setTimeout(() => {
         setHoverPixel(coords);
-      }, 16); // ~60fps
+      }, 16);
 
-      // Paint while dragging
       if (isPainting) {
         paintAtPosition(e);
       }
     }
   }, [isPanning, isPainting, setOffset, getPixelCoords, paintAtPosition]);
 
-  /**
-   * Handle mouse up (stop panning and painting)
-   */
   const handleMouseUp = useCallback(() => {
     if (isPanning) {
-      // Trigger momentum decay if the user released with meaningful velocity
       const { vx, vy } = panVelocityRef.current;
       if (Math.abs(vx) > 1 || Math.abs(vy) > 1) startMomentum();
     }
@@ -320,9 +272,6 @@ export const useCanvas = () => {
     strokeBlockedRef.current = false;
   }, [isPanning, startMomentum]);
 
-  /**
-   * Handle mouse leave (clear hover and stop painting)
-   */
   const handleMouseLeave = useCallback(() => {
     setHoverPixel(null);
     setIsPainting(false);
@@ -334,9 +283,7 @@ export const useCanvas = () => {
     }
   }, []);
 
-  /**
-   * Center canvas in view with appropriate zoom
-   */
+  // Center the canvas and set the minimum (fit) zoom.
   const centerCanvas = useCallback((containerWidth, containerHeight) => {
     const padding = 40;
     const availableWidth = containerWidth - padding * 2;
@@ -348,16 +295,12 @@ export const useCanvas = () => {
     const centerX = (containerWidth - scaledSize) / 2;
     const centerY = (containerHeight - scaledSize) / 2;
 
-    // Set this as the minimum zoom level (can't zoom out past initial fit)
     setMinZoom(initialZoom);
     setZoom(initialZoom);
     targetZoomRef.current = initialZoom;
     setOffset({ x: centerX, y: centerY });
   }, [setZoom, setOffset, setMinZoom]);
 
-  /**
-   * Zoom in
-   */
   const zoomIn = useCallback(() => {
     setZoom((prev) => {
       const next = Math.min(MAX_ZOOM, prev + 1);
@@ -366,9 +309,6 @@ export const useCanvas = () => {
     });
   }, [setZoom]);
 
-  /**
-   * Zoom out
-   */
   const zoomOut = useCallback(() => {
     setZoom((prev) => {
       const next = Math.max(minZoom, prev - 1);
@@ -377,18 +317,12 @@ export const useCanvas = () => {
     });
   }, [setZoom, minZoom]);
 
-  /**
-   * Reset zoom and offset to initial centered view
-   */
   const resetView = useCallback(() => {
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     centerCanvas(rect.width, rect.height);
   }, [centerCanvas]);
 
-  /**
-   * Center view on specific pixel
-   */
   const centerOn = useCallback((x, y) => {
     if (!canvasRef.current) return;
 
@@ -402,9 +336,7 @@ export const useCanvas = () => {
     });
   }, [zoom, setOffset]);
 
-  /**
-   * Get visible area of canvas (for optimized rendering)
-   */
+  // Visible canvas bounds, for render culling.
   const getVisibleArea = useCallback(() => {
     if (!canvasRef.current) {
       return { startX: 0, startY: 0, endX: CANVAS_SIZE, endY: CANVAS_SIZE };
@@ -420,13 +352,9 @@ export const useCanvas = () => {
     return { startX, startY, endX, endY };
   }, [offset, zoom]);
 
-  /**
-   * Check if grid should be displayed (only at high zoom)
-   */
   const shouldShowGrid = zoom >= 5;
 
   return {
-    // State
     zoom,
     offset,
     isPanning,
@@ -439,7 +367,6 @@ export const useCanvas = () => {
     setZoom,
     setOffset,
 
-    // Methods
     handleWheel,
     handleMouseDown,
     handleMouseMove,
@@ -453,7 +380,6 @@ export const useCanvas = () => {
     getVisibleArea,
     auctionBlockReason,
 
-    // Constants
     CANVAS_SIZE,
     MIN_ZOOM,
     MAX_ZOOM,
